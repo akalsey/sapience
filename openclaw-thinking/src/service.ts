@@ -1,4 +1,4 @@
-import { readFile, writeFile, unlink, mkdir } from "fs/promises";
+import { readFile, writeFile, unlink, mkdir, access } from "fs/promises";
 import { join } from "path";
 import { definePluginEntry } from "openclaw/plugin-sdk/plugin-entry";
 import { Type } from "@sinclair/typebox";
@@ -139,7 +139,8 @@ export default definePluginEntry({
             outcomes = expireOldProposals(outcomes);
             await saveOutcomes(outcomes, config.output.trackerPath);
           }
-          await maybeDeliver(proposals, api, config);
+          const sapienceActive = await access(join(workspaceDir, "sapience", ".present")).then(() => true, () => false);
+          if (!sapienceActive) await maybeDeliver(proposals, api, config);
         } catch (err) {
           const passId = (params.proposals as Record<string, unknown>)?.pass_id as string ?? "unknown";
           await appendError(passId, err instanceof ParseError ? err.message : String(err), config.output.logPath);

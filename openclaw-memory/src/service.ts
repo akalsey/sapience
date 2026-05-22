@@ -22,34 +22,36 @@ export default definePluginEntry({
   name: "Sapience Memory",
   description: "Per-turn-lean memory: small core + on-demand BM25 indexed retrieval",
 
-  async register(api: any) {
+  register(api: any) {
     const workspaceDir = (api.runtime.agent.resolveAgentWorkspaceDir as (cfg: unknown) => string)(api.pluginConfig);
     const config = mergeConfig(api.pluginConfig as Record<string, unknown>, workspaceDir);
     const indexedDir = join(config.memoryPath, "indexed");
     const searchLogPath = join(config.memoryPath, "_searches.json");
-    await mkdir(indexedDir, { recursive: true });
 
     const store = new IndexStore();
-    await store.loadFromDirectory(indexedDir);
 
-    const { watch } = await import("chokidar");
-    const watcher = watch(indexedDir, { ignoreInitial: true });
-    watcher
-      .on("add", async (filePath: string) => {
-        const filename = basename(filePath);
-        if (!filename.endsWith(".md")) return;
-        const { readEntry } = await import("./storage.js");
-        store.add(await readEntry(indexedDir, filename));
-      })
-      .on("change", async (filePath: string) => {
-        const filename = basename(filePath);
-        if (!filename.endsWith(".md")) return;
-        const { readEntry } = await import("./storage.js");
-        store.update(await readEntry(indexedDir, filename));
-      })
-      .on("unlink", (filePath: string) => {
-        store.removeByFilename(basename(filePath));
-      });
+    // Async init: tools await this before use so register stays synchronous
+    const ready = (async () => {
+      await mkdir(indexedDir, { recursive: true });
+      await store.loadFromDirectory(indexedDir);
+      const { watch } = await import("chokidar");
+      watch(indexedDir, { ignoreInitial: true })
+        .on("add", async (filePath: string) => {
+          const filename = basename(filePath);
+          if (!filename.endsWith(".md")) return;
+          const { readEntry } = await import("./storage.js");
+          store.add(await readEntry(indexedDir, filename));
+        })
+        .on("change", async (filePath: string) => {
+          const filename = basename(filePath);
+          if (!filename.endsWith(".md")) return;
+          const { readEntry } = await import("./storage.js");
+          store.update(await readEntry(indexedDir, filename));
+        })
+        .on("unlink", (filePath: string) => {
+          store.removeByFilename(basename(filePath));
+        });
+    })();
 
     api.registerTool({
       name: "memory_search",
@@ -64,6 +66,7 @@ export default definePluginEntry({
         required: ["query"],
       },
       async execute(_id: any, params: any) {
+        await ready;
         const input = params as { query: string; tags?: string[]; limit?: number };
         const output = store.search(
           input,
@@ -91,6 +94,7 @@ export default definePluginEntry({
         required: ["id"],
       },
       async execute(_id: any, params: any) {
+        await ready;
         const { id } = params as { id: string };
         const entry = store.getById(id);
         if (!entry) {
@@ -126,6 +130,7 @@ export default definePluginEntry({
         required: ["content", "tags"],
       },
       async execute(_id: any, params: any) {
+        await ready;
         const input = params as { content: string; tags: string[]; title?: string; source?: string };
         if (config.write.requireTags && input.tags.length < config.write.minTags) {
           return { content: [{ type: "text", text: JSON.stringify({ error: `At least ${config.write.minTags} tag required` }) }] };
@@ -164,6 +169,7 @@ export default definePluginEntry({
         required: ["old_id", "new_content", "new_tags", "reason"],
       },
       async execute(_id: any, params: any) {
+        await ready;
         const input = params as { old_id: string; new_content: string; new_tags: string[]; reason: string };
         const old = store.getById(input.old_id);
         if (!old) {
@@ -194,6 +200,7 @@ export default definePluginEntry({
       description: "Return statistics about the memory corpus: entry count, size, top tags, recent activity.",
       parameters: { type: "object", properties: {} },
       async execute(_id: any, _params: any) {
+        await ready;
         return { content: [{ type: "text", text: JSON.stringify(computeStats(store.getAll())) }] };
       },
     });
@@ -206,6 +213,7 @@ export default definePluginEntry({
         properties: { limit: { type: "number", description: "Number of recent searches to return (default 20)" } },
       },
       async execute(_id: any, params: any) {
+        await ready;
         const { limit = 20 } = ((params ?? {}) as { limit?: number });
         const log = await loadSearchLog(searchLogPath);
         return { content: [{ type: "text", text: JSON.stringify(log.slice(-limit)) }] };

@@ -1,11 +1,13 @@
 // src/service.ts
+import { writeFile, mkdir } from "fs/promises";
+import { join } from "path";
 import { definePluginEntry } from "openclaw/plugin-sdk/plugin-entry";
 import { DEFAULT_CONFIG, type SapienceConfig } from "./types.js";
 import { resolveDataPath, isWithinActiveHours } from "./utils.js";
 import { loadProfile, saveProfile, upsertEntry } from "./calibration.js";
 import { routeItem } from "./autonomy.js";
 import { readUnprocessedPasses, proposalSetToItems } from "./proposal-adapter.js";
-import { loadProcessedPasses, markPassProcessed } from "./processed-passes.js";
+import { loadProcessedPasses, markPassProcessed, bootstrapProcessedPasses } from "./processed-passes.js";
 import { deliverItems } from "./delivery.js";
 import { isDigestDay, buildDigestPrompt } from "./weekly-digest.js";
 
@@ -41,6 +43,12 @@ export default definePluginEntry({
     const workspaceDir = (api.runtime.agent.resolveAgentWorkspaceDir as (cfg: unknown) => string)(api.pluginConfig);
     const config = mergeConfig(api.pluginConfig as Record<string, unknown>, workspaceDir);
 
+    // Write presence marker so sapience-thinking knows to defer direct delivery
+    const markerDir = join(workspaceDir, "sapience");
+    void mkdir(markerDir, { recursive: true }).then(() =>
+      writeFile(join(markerDir, ".present"), "", "utf-8")
+    );
+
     api.registerTool({
       name: "process_proposals",
       description: "Process new proposals from the sapience-thinking log and route them through the autonomy tier function. Called by the sapience cron.",
@@ -50,10 +58,16 @@ export default definePluginEntry({
           return { content: [{ type: "text", text: "SILENT_REPLY_TOKEN" }] };
         }
 
-        const [processed, profile] = await Promise.all([
-          loadProcessedPasses(config.output.processedPassesPath),
-          loadProfile(config.output.calibrationPath),
-        ]);
+        let processed = await loadProcessedPasses(config.output.processedPassesPath);
+        const profile = await loadProfile(config.output.calibrationPath);
+
+        // On first run, mark all existing passes as processed to avoid re-delivering stale proposals
+        if (processed.size === 0) {
+          processed = await bootstrapProcessedPasses(
+            config.proactiveThinking.proposalsPath,
+            config.output.processedPassesPath,
+          );
+        }
 
         const newPasses = await readUnprocessedPasses(
           config.proactiveThinking.proposalsPath,

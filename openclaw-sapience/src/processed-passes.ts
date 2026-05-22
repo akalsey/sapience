@@ -10,6 +10,24 @@ export async function loadProcessedPasses(path: string): Promise<Set<string>> {
   } catch { return new Set(); }
 }
 
+export async function bootstrapProcessedPasses(
+  proposalsPath: string,
+  processedPath: string,
+): Promise<Set<string>> {
+  try {
+    const content = await readFile(resolvePath(proposalsPath), "utf-8");
+    const ids = new Set(
+      content.trim().split("\n").filter(Boolean)
+        .map(l => (JSON.parse(l) as { pass_id: string }).pass_id)
+    );
+    if (ids.size === 0) return ids;
+    const resolved = resolvePath(processedPath);
+    await mkdir(dirname(resolved), { recursive: true });
+    await writeFile(resolved, JSON.stringify({ pass_ids: [...ids] }, null, 2), "utf-8");
+    return ids;
+  } catch { return new Set(); }
+}
+
 export async function markPassProcessed(
   passId: string,
   path: string,
