@@ -106,12 +106,5 @@ export default definePluginEntry({
       },
     });
 
-    (api.session.workflow as any).scheduleSessionTurn({
-      schedule: { cron: config.schedule },
-      sessionTarget: "isolated",
-      tag: "sapience-routing-pass",
-      systemPrompt: `You are the sapience routing agent. Call process_proposals() to route new thinking pass proposals. Reply SILENT_REPLY_TOKEN after the tool call.`,
-      maxTurns: 2,
-    });
   },
 });

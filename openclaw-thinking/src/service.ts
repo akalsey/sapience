@@ -74,14 +74,6 @@ function mergeConfig(raw: Record<string, unknown>, workspaceDir: string): Plugin
   };
 }
 
-const ISOLATED_SYSTEM_PROMPT = `You are running a scheduled thinking pass.
-
-1. Call get_thinking_context() to receive your context and instructions.
-2. If it returns { "status": "skip" }, reply with SILENT_REPLY_TOKEN and stop.
-3. Otherwise, review the context carefully, then call record_thinking_output() with your proposals.
-
-Do not produce any other output.`;
-
 export default definePluginEntry({
   id: "sapience-thinking",
   name: "Sapience Thinking",
@@ -151,14 +143,5 @@ export default definePluginEntry({
       },
     });
 
-    // NOTE: exact scheduleSessionTurn signature may need adjustment based on installed SDK version.
-    // Refer to: https://docs.openclaw.ai/plugins/sdk-overview
-    (api.session.workflow as any).scheduleSessionTurn({
-      schedule: { cron: config.schedule },
-      sessionTarget: "isolated",
-      tag: "sapience-thinking-pass",
-      systemPrompt: ISOLATED_SYSTEM_PROMPT,
-      maxTurns: 3,
-    });
   },
 });

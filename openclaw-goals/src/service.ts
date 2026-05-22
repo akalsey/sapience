@@ -127,12 +127,5 @@ export default definePluginEntry({
       },
     });
 
-    (api.session.workflow as any).scheduleSessionTurn({
-      schedule: { cron: config.schedule },
-      sessionTarget: "isolated",
-      tag: "sapience-goals-check-pass",
-      systemPrompt: `You are the goals tracking agent. Call check_goals() to process new goals and deliver weekly status updates. Reply SILENT_REPLY_TOKEN after the tool call.`,
-      maxTurns: 2,
-    });
   },
 });
