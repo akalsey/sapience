@@ -98,7 +98,7 @@ All plugins work out of the box with defaults. Override per-plugin in your OpenC
 ```json
 {
   "plugins": {
-    "thinking": {
+    "proactive-thinking": {
       "activeHours": { "start": "08:00", "end": "20:00", "timezone": "America/Los_Angeles" }
     },
     "sapience": {
