@@ -34,6 +34,42 @@ export default definePluginEntry({
     const config = mergeConfig(api.pluginConfig as Record<string, unknown>);
 
     api.registerTool({
+      name: "goal_submit",
+      description: "Submit a new long-running goal. Call this when the user expresses a fuzzy objective that spans multiple sessions. Returns the new goal's id.",
+      parameters: {
+        type: "object",
+        properties: {
+          description: { type: "string", description: "The goal as stated by the user — fuzzy and long-running is fine" },
+        },
+        required: ["description"],
+      },
+      async execute(_id: any, params: any) {
+        const { description } = params as { description: string };
+        let goals = await loadGoals(config.output.goalsPath);
+        const goal: Goal = {
+          id: generateId(),
+          description,
+          decomposed_approaches: [],
+          active_approach: "",
+          status: "decomposing",
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          progress_notes: [],
+          blockers: [],
+          next_status_delivery: nextWeeklyDate(
+            config.weeklyCheckInDay,
+            config.weeklyCheckInTime,
+            config.activeHours.timezone
+          ),
+        };
+        goals = addGoal(goals, goal);
+        await saveGoals(goals, config.output.goalsPath);
+        await deliverDecomposition(description, api);
+        return { content: [{ type: "text", text: JSON.stringify({ id: goal.id }) }] };
+      },
+    });
+
+    api.registerTool({
       name: "check_goals",
       description: "Check inbox for new goals and deliver weekly status for active goals. Called by the goals cron.",
       parameters: {} as any,

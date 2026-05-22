@@ -59,16 +59,23 @@ The plugin won't error if the file is missing, but you need it to submit goals.
 
 ## Submitting a goal
 
-Append any plain-text goal statement to the inbox file:
+Just tell the agent in conversation:
+
+> "I want to improve our OKR scoring rate"
+> "Figure out why PostHog costs keep spiking"
+> "Help me build a habit of writing weekly team updates"
+
+The agent recognizes long-running objectives and calls `goal_submit` automatically. A `[GOALS: DECOMPOSE]` prompt arrives within seconds with concrete approaches to choose from.
+
+### Via the inbox file (scripting/external use)
+
+You can also append goals directly to the inbox file for use from scripts or other tools:
 
 ```bash
 echo "Our teams aren't scoring OKRs regularly — improve that" >> ~/.openclaw/sapience/goals-inbox.md
-echo "Get better signal on what's actually blocking our engineers" >> ~/.openclaw/sapience/goals-inbox.md
 ```
 
-Lines starting with `#` are ignored (use them for comments). Blank lines are ignored.
-
-The next cron pass (within 15 minutes) reads new lines and triggers decomposition for each one.
+The next cron pass (within 15 minutes) picks it up.
 
 ---
 
