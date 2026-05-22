@@ -35,7 +35,7 @@ function mergeConfig(raw: Record<string, unknown>, workspaceDir: string): Sapien
 export default definePluginEntry({
   id: "sapience",
   name: "Sapience",
-  description: "Autonomy layer: routes proactive-thinking proposals through tier function, calibrates to human preferences, delivers weekly digest",
+  description: "Autonomy layer: routes sapience-thinking proposals through tier function, calibrates to human preferences, delivers weekly digest",
 
   register(api: any) {
     const workspaceDir = (api.runtime.agent.resolveAgentWorkspaceDir as (cfg: unknown) => string)(api.pluginConfig);
@@ -43,7 +43,7 @@ export default definePluginEntry({
 
     api.registerTool({
       name: "process_proposals",
-      description: "Process new proposals from the proactive-thinking log and route them through the autonomy tier function. Called by the sapience cron.",
+      description: "Process new proposals from the sapience-thinking log and route them through the autonomy tier function. Called by the sapience cron.",
       parameters: {} as any,
       async execute(_id: any, _params: any) {
         if (!isWithinActiveHours(config)) {

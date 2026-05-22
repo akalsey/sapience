@@ -23,7 +23,7 @@ Add to your OpenClaw config:
 ```json
 {
   "plugins": {
-    "proactive-thinking": {
+    "sapience-thinking": {
       "schedule": "*/15 * * * *",
       "activeHours": {
         "start": "08:00",
@@ -75,7 +75,7 @@ Passes only fire within `activeHours`. Outside that window, the cron fires but s
 **Nothing in the log after install**
 The plugin fires on cron schedule, not immediately. Wait for the next 15-minute boundary, or manually trigger:
 ```bash
-openclaw cron run proactive-thinking-pass
+openclaw cron run sapience-thinking-pass
 ```
 
 **Passes are running but log is empty**

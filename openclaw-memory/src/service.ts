@@ -18,8 +18,8 @@ function mergeConfig(raw: Record<string, unknown>, workspaceDir: string): Memory
 }
 
 export default definePluginEntry({
-  id: "memory",
-  name: "Memory",
+  id: "sapience-memory",
+  name: "Sapience Memory",
   description: "Per-turn-lean memory: small core + on-demand BM25 indexed retrieval",
 
   async register(api: any) {

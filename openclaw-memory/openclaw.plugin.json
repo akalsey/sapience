@@ -1,6 +1,6 @@
 {
-  "id": "memory",
-  "name": "Memory",
+  "id": "sapience-memory",
+  "name": "Sapience Memory",
   "version": "0.1.0",
   "description": "Per-turn-lean memory: small always-loaded core + on-demand BM25 search over indexed markdown files",
   "contracts": {

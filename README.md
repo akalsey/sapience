@@ -98,18 +98,18 @@ All plugins work out of the box with defaults. Override per-plugin in your OpenC
 ```json
 {
   "plugins": {
-    "proactive-thinking": {
+    "sapience-thinking": {
       "activeHours": { "start": "08:00", "end": "20:00", "timezone": "America/Los_Angeles" }
     },
     "sapience": {
       "autonomy": { "defaultTier": "propose" },
       "digest": { "day": "friday", "time": "17:00" }
     },
-    "goals": {
+    "sapience-goals": {
       "weeklyCheckInDay": "monday",
       "weeklyCheckInTime": "09:00"
     },
-    "memory": {
+    "sapience-memory": {
       "memoryPath": "~/.openclaw/memory"
     }
   }

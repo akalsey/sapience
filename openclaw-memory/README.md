@@ -17,7 +17,7 @@ openclaw plugins install npm:@akalsey/openclaw-memory
 ```json
 {
   "plugins": {
-    "memory": {
+    "sapience-memory": {
       "memoryPath": "~/.openclaw/memory",
       "search": {
         "defaultLimit": 5,

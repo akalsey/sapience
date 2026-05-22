@@ -6,14 +6,14 @@ The suite has four plugins that each work independently and compose into a whole
 
 | Plugin | Does |
 |--------|------|
-| `openclaw-proactive-thinking` | Periodic thinking passes; generates observations and proposals |
+| `openclaw-thinking` | Periodic thinking passes; generates observations and proposals |
 | `openclaw-sapience` *(this plugin)* | Routes proposals through autonomy tiers; calibrates to your preferences; delivers weekly digest |
 | `openclaw-feedback` | Captures corrections and confirmations from chat; recalibrates autonomy profile |
 | `openclaw-goals` | Accepts fuzzy long-running goals; decomposes them; tracks progress; weekly status |
 
 ## How it works
 
-`openclaw-proactive-thinking` runs a thinking pass every 15 minutes and writes proposals to `proposals.jsonl`. `openclaw-sapience` reads that sidecar, routes each proposal through an autonomy decision function, and delivers it to your main session at the right level:
+`openclaw-thinking` runs a thinking pass every 15 minutes and writes proposals to `proposals.jsonl`. `openclaw-sapience` reads that sidecar, routes each proposal through an autonomy decision function, and delivers it to your main session at the right level:
 
 - **Act** — high-confidence, reversible, low-blast-radius → done immediately, brief notification
 - **Propose** — worth doing, needs your approval → surfaces it for a yes/no
@@ -27,7 +27,7 @@ The routing decision uses a calibration profile: per-domain, per-action-class en
 
 ### Prerequisites
 
-Install `openclaw-proactive-thinking` first. Sapience reads its output.
+Install `openclaw-thinking` first. Sapience reads its output.
 
 ### Install order
 

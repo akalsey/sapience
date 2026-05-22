@@ -27,7 +27,7 @@ openclaw plugins install npm:@akalsey/openclaw-feedback
 ```json
 {
   "plugins": {
-    "feedback": {
+    "sapience-feedback": {
       "logPath": "~/.openclaw/sapience/feedback.md",
       "calibrationPath": "~/.openclaw/sapience/calibration.json",
       "memoryEnabled": true

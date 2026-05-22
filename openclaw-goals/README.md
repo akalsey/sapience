@@ -23,7 +23,7 @@ openclaw plugins install npm:@akalsey/openclaw-goals
 ```json
 {
   "plugins": {
-    "goals": {
+    "sapience-goals": {
       "weeklyCheckInDay": "monday",
       "weeklyCheckInTime": "09:00",
       "activeHours": {
@@ -129,7 +129,7 @@ The next delivery date is stored per-goal in `goals.json` and rolls forward auto
 **Goal submitted but no decomposition prompt**
 The cron fires every 15 minutes. Wait for the next pass, or trigger manually:
 ```bash
-openclaw cron run goals-check-pass
+openclaw cron run sapience-goals-check-pass
 ```
 Also confirm the inbox path matches your config and that the file is readable.
 

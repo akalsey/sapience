@@ -26,8 +26,8 @@ function isWeeklyCheckInDue(goal: Goal): boolean {
 }
 
 export default definePluginEntry({
-  id: "goals",
-  name: "Goals",
+  id: "sapience-goals",
+  name: "Sapience Goals",
   description: "Persistent fuzzy goal tracking with weekly status delivery",
 
   register(api: any) {
@@ -130,7 +130,7 @@ export default definePluginEntry({
     (api.session.workflow as any).scheduleSessionTurn({
       schedule: { cron: config.schedule },
       sessionTarget: "isolated",
-      tag: "goals-check-pass",
+      tag: "sapience-goals-check-pass",
       systemPrompt: `You are the goals tracking agent. Call check_goals() to process new goals and deliver weekly status updates. Reply SILENT_REPLY_TOKEN after the tool call.`,
       maxTurns: 2,
     });

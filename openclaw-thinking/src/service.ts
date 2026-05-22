@@ -83,8 +83,8 @@ const ISOLATED_SYSTEM_PROMPT = `You are running a scheduled thinking pass.
 Do not produce any other output.`;
 
 export default definePluginEntry({
-  id: "proactive-thinking",
-  name: "Proactive Thinking",
+  id: "sapience-thinking",
+  name: "Sapience Thinking",
   description: "Periodic isolated thinking passes that produce structured proposals",
 
   register(api: any) {
@@ -155,7 +155,7 @@ export default definePluginEntry({
     (api.session.workflow as any).scheduleSessionTurn({
       schedule: { cron: config.schedule },
       sessionTarget: "isolated",
-      tag: "proactive-thinking-pass",
+      tag: "sapience-thinking-pass",
       systemPrompt: ISOLATED_SYSTEM_PROMPT,
       maxTurns: 3,
     });

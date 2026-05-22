@@ -20,8 +20,8 @@ function buildMetaPointer(signal: { domain: string; action_class: string; raw_te
 }
 
 export default definePluginEntry({
-  id: "feedback",
-  name: "Feedback",
+  id: "sapience-feedback",
+  name: "Sapience Feedback",
   description: "Persists behavioral corrections and confirmations into the sapience calibration profile",
 
   register(api: any) {

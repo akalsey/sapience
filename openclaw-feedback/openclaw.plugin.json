@@ -1,6 +1,6 @@
 {
-  "id": "feedback",
-  "name": "Feedback",
+  "id": "sapience-feedback",
+  "name": "Sapience Feedback",
   "version": "0.1.0",
   "description": "Persists behavioral corrections and confirmations from session messages into the sapience calibration profile",
   "activation": { "onStartup": true },
