@@ -60,7 +60,7 @@ Goal trackers and project management tools require you to translate fuzzy object
 
 ### 1. Install the plugins
 
-Install in this order — sapience reads thinking's output, and feedback writes to sapience's calibration:
+Install any or all plugins — they work standalone and detect each other automatically:
 
 ```bash
 openclaw plugins install npm:@akalsey/openclaw-thinking
@@ -81,7 +81,7 @@ for dir in openclaw-thinking openclaw-sapience openclaw-feedback openclaw-goals 
 end
 ```
 
-There is no formal inter-plugin dependency mechanism in OpenClaw, so install order is managed manually.
+Each plugin works standalone. When sapience is installed alongside thinking, thinking automatically defers direct delivery to sapience's routing layer.
 
 ### 2. Start a session
 
