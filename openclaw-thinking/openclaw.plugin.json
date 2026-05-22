@@ -1,0 +1,15 @@
+{
+  "id": "proactive-thinking",
+  "name": "Proactive Thinking",
+  "description": "Periodic isolated thinking passes that produce structured proposals",
+  "contracts": {
+    "tools": ["get_thinking_context", "record_thinking_output"]
+  },
+  "activation": {
+    "onStartup": true
+  },
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": true
+  }
+}

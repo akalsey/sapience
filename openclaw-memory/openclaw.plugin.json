@@ -1,0 +1,7 @@
+{
+  "id": "memory",
+  "name": "Memory",
+  "description": "Per-turn-lean memory: small always-loaded core + on-demand BM25 search over indexed markdown files",
+  "version": "0.1.0",
+  "activation": { "onStartup": true }
+}
