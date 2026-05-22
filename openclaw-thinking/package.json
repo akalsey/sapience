@@ -16,7 +16,8 @@
       "minGatewayVersion": "2026.3.24-beta.2"
     },
     "install": {
-      "localPath": "."
+      "localPath": ".",
+      "npmSpec": "github:akalsey/sapience#main"
     }
   },
   "dependencies": {

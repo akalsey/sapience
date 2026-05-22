@@ -60,20 +60,17 @@ Goal trackers and project management tools require you to translate fuzzy object
 
 ### 1. Install the plugins
 
-Clone the repo, then install each plugin by path. Install in this order — sapience reads thinking's output, and feedback writes to sapience's calibration:
+Install in this order — sapience reads thinking's output, and feedback writes to sapience's calibration:
 
 ```bash
-git clone https://github.com/akalsey/sapience.git
-cd sapience
-
-openclaw plugins install ./openclaw-thinking
-openclaw plugins install ./openclaw-sapience
-openclaw plugins install ./openclaw-feedback
-openclaw plugins install ./openclaw-goals
-openclaw plugins install ./openclaw-memory
+openclaw plugins install git:github.com/akalsey/sapience/openclaw-thinking@main
+openclaw plugins install git:github.com/akalsey/sapience/openclaw-sapience@main
+openclaw plugins install git:github.com/akalsey/sapience/openclaw-feedback@main
+openclaw plugins install git:github.com/akalsey/sapience/openclaw-goals@main
+openclaw plugins install git:github.com/akalsey/sapience/openclaw-memory@main
 ```
 
-Once published to ClawHub, installation will be a single command per plugin (`openclaw plugins install clawhub:sapience-thinking`, etc.). There is no formal inter-plugin dependency mechanism in OpenClaw, so install order is managed manually.
+Once published to ClawHub, this simplifies to `openclaw plugins install clawhub:sapience-thinking`, etc. There is no formal inter-plugin dependency mechanism in OpenClaw, so install order is managed manually.
 
 ### 2. Start a session
 
