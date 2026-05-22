@@ -1,13 +1,16 @@
 {
   "id": "sapience",
   "name": "Sapience",
-  "description": "Autonomy layer: routes proactive-thinking proposals through tier function, calibrates to human preferences, delivers weekly digest",
   "version": "0.1.0",
+  "description": "Autonomy layer: routes proactive-thinking proposals through tier function, calibrates to human preferences, delivers weekly digest",
   "contracts": {
     "tools": ["process_proposals"]
   },
   "activation": {
     "onStartup": true
   },
-  "peerPlugins": ["proactive-thinking"]
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": true
+  }
 }

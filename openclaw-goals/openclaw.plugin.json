@@ -1,7 +1,14 @@
 {
   "id": "goals",
   "name": "Goals",
-  "description": "Persistent fuzzy goal tracking: accepts vague objectives, decomposes them into candidate approaches, tracks incremental progress, and delivers weekly status",
   "version": "0.1.0",
-  "activation": { "onStartup": true }
+  "description": "Persistent fuzzy goal tracking: accepts vague objectives, decomposes them into candidate approaches, tracks incremental progress, and delivers weekly status",
+  "contracts": {
+    "tools": ["goal_submit", "check_goals"]
+  },
+  "activation": { "onStartup": true },
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": true
+  }
 }

@@ -60,24 +60,22 @@ Goal trackers and project management tools require you to translate fuzzy object
 
 ### 1. Install the plugins
 
-Install in this order — sapience depends on thinking, feedback and goals depend on sapience:
+Clone the repo, then install each plugin by path. Install in this order — sapience reads thinking's output, and feedback writes to sapience's calibration:
 
 ```bash
-openclaw plugins install local:/path/to/sapience-suite/openclaw-thinking
-openclaw plugins install local:/path/to/sapience-suite/openclaw-sapience
-openclaw plugins install local:/path/to/sapience-suite/openclaw-feedback
-openclaw plugins install local:/path/to/sapience-suite/openclaw-goals
-openclaw plugins install local:/path/to/sapience-suite/openclaw-memory
+git clone https://github.com/akalsey/sapience.git
+cd sapience
+
+openclaw plugins install ./openclaw-thinking
+openclaw plugins install ./openclaw-sapience
+openclaw plugins install ./openclaw-feedback
+openclaw plugins install ./openclaw-goals
+openclaw plugins install ./openclaw-memory
 ```
 
-### 2. Create the data directories
+Once published to ClawHub, installation will be a single command per plugin (`openclaw plugins install clawhub:sapience-thinking`, etc.). There is no formal inter-plugin dependency mechanism in OpenClaw, so install order is managed manually.
 
-```bash
-mkdir -p ~/.openclaw/sapience ~/.openclaw/memory/indexed
-touch ~/.openclaw/sapience/goals-inbox.md
-```
-
-### 3. Start a session
+### 2. Start a session
 
 Everything runs automatically. The thinking plugin fires every 15 minutes. Within the first hour you'll see your first proposals delivered to your active session.
 

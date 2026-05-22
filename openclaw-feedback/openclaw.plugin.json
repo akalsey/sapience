@@ -1,8 +1,11 @@
 {
   "id": "feedback",
   "name": "Feedback",
-  "description": "Persists behavioral corrections and confirmations from session messages into the sapience calibration profile",
   "version": "0.1.0",
+  "description": "Persists behavioral corrections and confirmations from session messages into the sapience calibration profile",
   "activation": { "onStartup": true },
-  "peerPlugins": ["sapience"]
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": true
+  }
 }
