@@ -99,7 +99,7 @@ export interface MemoryConfig {
 }
 
 export const DEFAULT_CONFIG: MemoryConfig = {
-  memoryPath: "~/.openclaw/memory",
+  memoryPath: "memory",
   search: {
     defaultLimit: 5,
     maxLimit: 20,

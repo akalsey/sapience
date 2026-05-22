@@ -1,17 +1,17 @@
 // src/service.ts
 import { definePluginEntry } from "openclaw/plugin-sdk/plugin-entry";
 import { DEFAULT_CONFIG, type FeedbackConfig, type FeedbackEntry } from "./types.js";
-import { resolvePath, generateId } from "./utils.js";
+import { resolveDataPath, generateId } from "./utils.js";
 import { parseMessage } from "./feedback-parser.js";
 import { appendFeedback } from "./log-writer.js";
 import { applyFeedbackToProfile } from "./calibration-bridge.js";
 
-function mergeConfig(raw: Record<string, unknown>): FeedbackConfig {
+function mergeConfig(raw: Record<string, unknown>, workspaceDir: string): FeedbackConfig {
   return {
     ...DEFAULT_CONFIG,
     ...(raw as Partial<FeedbackConfig>),
-    logPath: resolvePath(((raw as any).logPath ?? DEFAULT_CONFIG.logPath) as string),
-    calibrationPath: resolvePath(((raw as any).calibrationPath ?? DEFAULT_CONFIG.calibrationPath) as string),
+    logPath: resolveDataPath((raw as any).logPath, workspaceDir, DEFAULT_CONFIG.logPath),
+    calibrationPath: resolveDataPath((raw as any).calibrationPath, workspaceDir, DEFAULT_CONFIG.calibrationPath),
   };
 }
 
@@ -25,7 +25,8 @@ export default definePluginEntry({
   description: "Persists behavioral corrections and confirmations into the sapience calibration profile",
 
   register(api: any) {
-    const config = mergeConfig(api.pluginConfig as Record<string, unknown>);
+    const workspaceDir = (api.runtime.agent.resolveAgentWorkspaceDir as (cfg: unknown) => string)(api.pluginConfig);
+    const config = mergeConfig(api.pluginConfig as Record<string, unknown>, workspaceDir);
 
     if (api.session?.onMessage) {
       api.session.onMessage(async (message: { role: string; content: string }) => {

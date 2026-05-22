@@ -91,8 +91,8 @@ export const DEFAULT_CONFIG: PluginConfig = {
   activeHours: { start: "08:00", end: "20:00", timezone: "America/Los_Angeles" },
   context: { lookbackHours: 2, maxContextTokens: 8000 },
   output: {
-    logPath: "~/.openclaw/proactive-thinking/log.md",
-    trackerPath: "~/.openclaw/proactive-thinking/outcomes.json",
+    logPath: "proactive-thinking/log.md",
+    trackerPath: "proactive-thinking/outcomes.json",
   },
   delivery: { heartbeatTrigger: true, priorityThreshold: 4, maxProposalsPerHeartbeat: 3 },
   learning: { trackOutcomes: true, adjustPromptBasedOnSignal: true, bootstrapDays: 14 },

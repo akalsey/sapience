@@ -2,16 +2,16 @@ import { mkdir } from "fs/promises";
 import { join, basename } from "path";
 import { definePluginEntry } from "openclaw/plugin-sdk/plugin-entry";
 import { DEFAULT_CONFIG, type MemoryConfig, type MemoryEntry } from "./types.js";
-import { resolvePath, generateId, generateFilename, extractTitle } from "./utils.js";
+import { resolveDataPath, generateId, generateFilename, extractTitle } from "./utils.js";
 import { writeEntry, deleteEntry } from "./storage.js";
 import { IndexStore } from "./index-store.js";
 import { computeStats, loadSearchLog, appendSearchLog } from "./stats.js";
 
-function mergeConfig(raw: Record<string, unknown>): MemoryConfig {
+function mergeConfig(raw: Record<string, unknown>, workspaceDir: string): MemoryConfig {
   return {
     ...DEFAULT_CONFIG,
     ...(raw as Partial<MemoryConfig>),
-    memoryPath: resolvePath(((raw as any).memoryPath ?? DEFAULT_CONFIG.memoryPath) as string),
+    memoryPath: resolveDataPath((raw as any).memoryPath, workspaceDir, DEFAULT_CONFIG.memoryPath),
     search: { ...DEFAULT_CONFIG.search, ...((raw as any).search ?? {}) },
     write: { ...DEFAULT_CONFIG.write, ...((raw as any).write ?? {}) },
   };
@@ -23,7 +23,8 @@ export default definePluginEntry({
   description: "Per-turn-lean memory: small core + on-demand BM25 indexed retrieval",
 
   async register(api: any) {
-    const config = mergeConfig(api.pluginConfig as Record<string, unknown>);
+    const workspaceDir = (api.runtime.agent.resolveAgentWorkspaceDir as (cfg: unknown) => string)(api.pluginConfig);
+    const config = mergeConfig(api.pluginConfig as Record<string, unknown>, workspaceDir);
     const indexedDir = join(config.memoryPath, "indexed");
     const searchLogPath = join(config.memoryPath, "_searches.json");
     await mkdir(indexedDir, { recursive: true });

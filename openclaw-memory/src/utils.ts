@@ -6,6 +6,12 @@ export function resolvePath(p: string): string {
   return p.startsWith("~/") ? join(homedir(), p.slice(2)) : p;
 }
 
+export function resolveDataPath(override: string | undefined, workspaceDir: string, defaultRelative: string): string {
+  if (!override) return join(workspaceDir, defaultRelative);
+  if (override.startsWith('/') || override.startsWith('~/')) return resolvePath(override);
+  return join(workspaceDir, override);
+}
+
 export function generateId(date: Date = new Date()): string {
   const dateStr = date.toISOString().slice(0, 10);
   const suffix = randomBytes(4).toString("hex");

@@ -41,7 +41,7 @@ export const DEFAULT_CONFIG: GoalsConfig = {
   activeHours: { start: "08:00", end: "20:00", timezone: "America/Los_Angeles" },
   weeklyCheckInDay: "monday",
   weeklyCheckInTime: "09:00",
-  inboxPath: "~/.openclaw/sapience/goals-inbox.md",
-  inboxPositionPath: "~/.openclaw/sapience/goals-inbox-position.json",
-  output: { goalsPath: "~/.openclaw/sapience/goals.json" },
+  inboxPath: "goals/inbox.md",
+  inboxPositionPath: "goals/inbox-position.json",
+  output: { goalsPath: "goals/goals.json" },
 };

@@ -55,7 +55,7 @@ export const DEFAULT_CONFIG: SapienceConfig = {
   schedule: "*/15 * * * *",
   activeHours: { start: "08:00", end: "20:00", timezone: "America/Los_Angeles" },
   proactiveThinking: {
-    proposalsPath: "~/.openclaw/proactive-thinking/proposals.jsonl",
+    proposalsPath: "proactive-thinking/proposals.jsonl",
   },
   learning: {
     enabled: true,
@@ -68,8 +68,8 @@ export const DEFAULT_CONFIG: SapienceConfig = {
   },
   digest: { enabled: true, day: "friday", time: "17:00" },
   output: {
-    calibrationPath: "~/.openclaw/sapience/calibration.json",
-    actionLogPath: "~/.openclaw/sapience/action-log.md",
-    processedPassesPath: "~/.openclaw/sapience/processed-passes.json",
+    calibrationPath: "sapience/calibration.json",
+    actionLogPath: "sapience/action-log.md",
+    processedPassesPath: "sapience/processed-passes.json",
   },
 };

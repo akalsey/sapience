@@ -1,6 +1,5 @@
 import { readFile, writeFile, unlink, mkdir } from "fs/promises";
 import { join } from "path";
-import { homedir } from "os";
 import { definePluginEntry } from "openclaw/plugin-sdk/plugin-entry";
 import { Type } from "@sinclair/typebox";
 
@@ -12,10 +11,7 @@ import { loadOutcomes, saveOutcomes, addProposals, expireOldProposals } from "./
 import { computeSignal } from "./signal-analyzer.js";
 import { maybeDeliver } from "./delivery.js";
 import { DEFAULT_CONFIG, type PluginConfig } from "./types.js";
-import { resolvePath } from "./utils.js";
-
-const LOCK_DIR = join(homedir(), ".openclaw", "proactive-thinking");
-const LOCK_FILE = join(LOCK_DIR, ".pass.lock");
+import { resolveDataPath } from "./utils.js";
 
 interface LockData {
   pid: number;
@@ -26,10 +22,10 @@ function isProcessAlive(pid: number): boolean {
   try { process.kill(pid, 0); return true; } catch { return false; }
 }
 
-async function acquireLock(): Promise<boolean> {
-  await mkdir(LOCK_DIR, { recursive: true });
+async function acquireLock(lockDir: string, lockFile: string): Promise<boolean> {
+  await mkdir(lockDir, { recursive: true });
   try {
-    const lock = JSON.parse(await readFile(LOCK_FILE, "utf-8")) as LockData;
+    const lock = JSON.parse(await readFile(lockFile, "utf-8")) as LockData;
     const ageHours = (Date.now() - new Date(lock.started_at).getTime()) / (1000 * 60 * 60);
 
     if (isProcessAlive(lock.pid)) {
@@ -41,12 +37,12 @@ async function acquireLock(): Promise<boolean> {
     }
   } catch { /* no lock file */ }
 
-  await writeFile(LOCK_FILE, JSON.stringify({ pid: process.pid, started_at: new Date().toISOString() }), "utf-8");
+  await writeFile(lockFile, JSON.stringify({ pid: process.pid, started_at: new Date().toISOString() }), "utf-8");
   return true;
 }
 
-async function releaseLock(): Promise<void> {
-  try { await unlink(LOCK_FILE); } catch {}
+async function releaseLock(lockFile: string): Promise<void> {
+  try { await unlink(lockFile); } catch {}
 }
 
 function isWithinActiveHours(config: PluginConfig): boolean {
@@ -61,7 +57,7 @@ function isWithinActiveHours(config: PluginConfig): boolean {
   return now >= (sh ?? 0) * 60 + (sm ?? 0) && now <= (eh ?? 0) * 60 + (em ?? 0);
 }
 
-function mergeConfig(raw: Record<string, unknown>): PluginConfig {
+function mergeConfig(raw: Record<string, unknown>, workspaceDir: string): PluginConfig {
   return {
     ...DEFAULT_CONFIG,
     ...(raw as Partial<PluginConfig>),
@@ -70,8 +66,8 @@ function mergeConfig(raw: Record<string, unknown>): PluginConfig {
     output: {
       ...DEFAULT_CONFIG.output,
       ...((raw.output as object) ?? {}),
-      logPath: resolvePath(((raw as any).output?.logPath ?? DEFAULT_CONFIG.output.logPath) as string),
-      trackerPath: resolvePath(((raw as any).output?.trackerPath ?? DEFAULT_CONFIG.output.trackerPath) as string),
+      logPath: resolveDataPath((raw as any).output?.logPath, workspaceDir, DEFAULT_CONFIG.output.logPath),
+      trackerPath: resolveDataPath((raw as any).output?.trackerPath, workspaceDir, DEFAULT_CONFIG.output.trackerPath),
     },
     delivery: { ...DEFAULT_CONFIG.delivery, ...((raw.delivery as object) ?? {}) },
     learning: { ...DEFAULT_CONFIG.learning, ...((raw.learning as object) ?? {}) },
@@ -92,7 +88,10 @@ export default definePluginEntry({
   description: "Periodic isolated thinking passes that produce structured proposals",
 
   register(api: any) {
-    const config = mergeConfig(api.pluginConfig as Record<string, unknown>);
+    const workspaceDir = (api.runtime.agent.resolveAgentWorkspaceDir as (cfg: unknown) => string)(api.pluginConfig);
+    const config = mergeConfig(api.pluginConfig as Record<string, unknown>, workspaceDir);
+    const lockDir = join(workspaceDir, "proactive-thinking");
+    const lockFile = join(lockDir, ".pass.lock");
     const agentId: string = ((api.config as Record<string, unknown>)?.agent as Record<string, unknown>)?.id as string ?? "default";
 
     api.registerTool({
@@ -103,7 +102,7 @@ export default definePluginEntry({
         if (!isWithinActiveHours(config)) {
           return { content: [{ type: "text", text: JSON.stringify({ status: "skip", reason: "outside_active_hours" }) }] };
         }
-        const acquired = await acquireLock();
+        const acquired = await acquireLock(lockDir, lockFile);
         if (!acquired) {
           await appendSkipped("pass_already_running", config.output.logPath);
           return { content: [{ type: "text", text: JSON.stringify({ status: "skip", reason: "pass_already_running" }) }] };
@@ -119,7 +118,7 @@ export default definePluginEntry({
           const prompt = await buildPrompt(bundle, signal);
           return { content: [{ type: "text", text: prompt }] };
         } catch (err) {
-          await releaseLock();
+          await releaseLock(lockFile);
           throw err;
         }
       },
@@ -145,7 +144,7 @@ export default definePluginEntry({
           const passId = (params.proposals as Record<string, unknown>)?.pass_id as string ?? "unknown";
           await appendError(passId, err instanceof ParseError ? err.message : String(err), config.output.logPath);
         } finally {
-          await releaseLock();
+          await releaseLock(lockFile);
         }
         return { content: [{ type: "text", text: "SILENT_REPLY_TOKEN" }] };
       },

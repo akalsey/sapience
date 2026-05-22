@@ -1,7 +1,7 @@
 // src/service.ts
 import { definePluginEntry } from "openclaw/plugin-sdk/plugin-entry";
 import { DEFAULT_CONFIG, type SapienceConfig } from "./types.js";
-import { resolvePath, isWithinActiveHours } from "./utils.js";
+import { resolveDataPath, isWithinActiveHours } from "./utils.js";
 import { loadProfile, saveProfile, upsertEntry } from "./calibration.js";
 import { routeItem } from "./autonomy.js";
 import { readUnprocessedPasses, proposalSetToItems } from "./proposal-adapter.js";
@@ -9,21 +9,25 @@ import { loadProcessedPasses, markPassProcessed } from "./processed-passes.js";
 import { deliverItems } from "./delivery.js";
 import { isDigestDay, buildDigestPrompt } from "./weekly-digest.js";
 
-function mergeConfig(raw: Record<string, unknown>): SapienceConfig {
+function mergeConfig(raw: Record<string, unknown>, workspaceDir: string): SapienceConfig {
   return {
     ...DEFAULT_CONFIG,
     ...(raw as Partial<SapienceConfig>),
     activeHours: { ...DEFAULT_CONFIG.activeHours, ...((raw.activeHours as object) ?? {}) },
-    proactiveThinking: { ...DEFAULT_CONFIG.proactiveThinking, ...((raw.proactiveThinking as object) ?? {}) },
+    proactiveThinking: {
+      ...DEFAULT_CONFIG.proactiveThinking,
+      ...((raw.proactiveThinking as object) ?? {}),
+      proposalsPath: resolveDataPath((raw as any).proactiveThinking?.proposalsPath, workspaceDir, DEFAULT_CONFIG.proactiveThinking.proposalsPath),
+    },
     learning: { ...DEFAULT_CONFIG.learning, ...((raw.learning as object) ?? {}) },
     autonomy: { ...DEFAULT_CONFIG.autonomy, ...((raw.autonomy as object) ?? {}) },
     digest: { ...DEFAULT_CONFIG.digest, ...((raw.digest as object) ?? {}) },
     output: {
       ...DEFAULT_CONFIG.output,
       ...((raw.output as object) ?? {}),
-      calibrationPath: resolvePath(((raw as any).output?.calibrationPath ?? DEFAULT_CONFIG.output.calibrationPath) as string),
-      actionLogPath: resolvePath(((raw as any).output?.actionLogPath ?? DEFAULT_CONFIG.output.actionLogPath) as string),
-      processedPassesPath: resolvePath(((raw as any).output?.processedPassesPath ?? DEFAULT_CONFIG.output.processedPassesPath) as string),
+      calibrationPath: resolveDataPath((raw as any).output?.calibrationPath, workspaceDir, DEFAULT_CONFIG.output.calibrationPath),
+      actionLogPath: resolveDataPath((raw as any).output?.actionLogPath, workspaceDir, DEFAULT_CONFIG.output.actionLogPath),
+      processedPassesPath: resolveDataPath((raw as any).output?.processedPassesPath, workspaceDir, DEFAULT_CONFIG.output.processedPassesPath),
     },
   };
 }
@@ -34,7 +38,8 @@ export default definePluginEntry({
   description: "Autonomy layer: routes proactive-thinking proposals through tier function, calibrates to human preferences, delivers weekly digest",
 
   register(api: any) {
-    const config = mergeConfig(api.pluginConfig as Record<string, unknown>);
+    const workspaceDir = (api.runtime.agent.resolveAgentWorkspaceDir as (cfg: unknown) => string)(api.pluginConfig);
+    const config = mergeConfig(api.pluginConfig as Record<string, unknown>, workspaceDir);
 
     api.registerTool({
       name: "process_proposals",

@@ -23,7 +23,7 @@ export interface FeedbackConfig {
 }
 
 export const DEFAULT_CONFIG: FeedbackConfig = {
-  logPath: "~/.openclaw/sapience/feedback.md",
-  calibrationPath: "~/.openclaw/sapience/calibration.json",
+  logPath: "sapience/feedback.md",
+  calibrationPath: "sapience/calibration.json",
   memoryEnabled: true,
 };

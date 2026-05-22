@@ -1,12 +1,12 @@
 // src/service.ts
 import { definePluginEntry } from "openclaw/plugin-sdk/plugin-entry";
 import { DEFAULT_CONFIG, type GoalsConfig, type Goal } from "./types.js";
-import { resolvePath, generateId, isWithinActiveHours, nextWeeklyDate } from "./utils.js";
+import { resolveDataPath, generateId, isWithinActiveHours, nextWeeklyDate } from "./utils.js";
 import { loadGoals, saveGoals, addGoal, updateNextDelivery } from "./goal-store.js";
 import { readNewGoals, savePosition } from "./inbox-reader.js";
 import { deliverDecomposition, deliverWeeklyStatus } from "./delivery.js";
 
-function mergeConfig(raw: Record<string, unknown>): GoalsConfig {
+function mergeConfig(raw: Record<string, unknown>, workspaceDir: string): GoalsConfig {
   return {
     ...DEFAULT_CONFIG,
     ...(raw as Partial<GoalsConfig>),
@@ -14,10 +14,10 @@ function mergeConfig(raw: Record<string, unknown>): GoalsConfig {
     output: {
       ...DEFAULT_CONFIG.output,
       ...((raw.output as object) ?? {}),
-      goalsPath: resolvePath(((raw as any).output?.goalsPath ?? DEFAULT_CONFIG.output.goalsPath) as string),
+      goalsPath: resolveDataPath((raw as any).output?.goalsPath, workspaceDir, DEFAULT_CONFIG.output.goalsPath),
     },
-    inboxPath: resolvePath(((raw as any).inboxPath ?? DEFAULT_CONFIG.inboxPath) as string),
-    inboxPositionPath: resolvePath(((raw as any).inboxPositionPath ?? DEFAULT_CONFIG.inboxPositionPath) as string),
+    inboxPath: resolveDataPath((raw as any).inboxPath, workspaceDir, DEFAULT_CONFIG.inboxPath),
+    inboxPositionPath: resolveDataPath((raw as any).inboxPositionPath, workspaceDir, DEFAULT_CONFIG.inboxPositionPath),
   };
 }
 
@@ -31,7 +31,8 @@ export default definePluginEntry({
   description: "Persistent fuzzy goal tracking with weekly status delivery",
 
   register(api: any) {
-    const config = mergeConfig(api.pluginConfig as Record<string, unknown>);
+    const workspaceDir = (api.runtime.agent.resolveAgentWorkspaceDir as (cfg: unknown) => string)(api.pluginConfig);
+    const config = mergeConfig(api.pluginConfig as Record<string, unknown>, workspaceDir);
 
     api.registerTool({
       name: "goal_submit",
