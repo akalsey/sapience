@@ -15,7 +15,7 @@ This plugin can be used without Sapience if all you want to do is track multi-st
 ### Install
 
 ```bash
-openclaw plugins install local:/path/to/openclaw-goals
+openclaw plugins install npm:@akalsey/openclaw-goals
 ```
 
 ### Configuration

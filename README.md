@@ -63,11 +63,11 @@ Goal trackers and project management tools require you to translate fuzzy object
 Install in this order — sapience reads thinking's output, and feedback writes to sapience's calibration:
 
 ```bash
-openclaw plugins install @akalsey/openclaw-thinking
-openclaw plugins install @akalsey/openclaw-sapience
-openclaw plugins install @akalsey/openclaw-feedback
-openclaw plugins install @akalsey/openclaw-goals
-openclaw plugins install @akalsey/openclaw-memory
+openclaw plugins install npm:@akalsey/openclaw-thinking
+openclaw plugins install npm:@akalsey/openclaw-sapience
+openclaw plugins install npm:@akalsey/openclaw-feedback
+openclaw plugins install npm:@akalsey/openclaw-goals
+openclaw plugins install npm:@akalsey/openclaw-memory
 ```
 
 To install from source instead:

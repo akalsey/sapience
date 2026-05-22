@@ -19,7 +19,7 @@ This plugin can be used without Sapience if all you want to do is have the agent
 ### Install
 
 ```bash
-openclaw plugins install local:/path/to/openclaw-feedback
+openclaw plugins install npm:@akalsey/openclaw-feedback
 ```
 
 ### Configuration

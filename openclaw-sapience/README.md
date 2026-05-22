@@ -32,10 +32,10 @@ Install `openclaw-proactive-thinking` first. Sapience reads its output.
 ### Install order
 
 ```bash
-openclaw plugins install local:/path/to/openclaw-proactive-thinking
-openclaw plugins install local:/path/to/openclaw-sapience
-openclaw plugins install local:/path/to/openclaw-feedback   # optional
-openclaw plugins install local:/path/to/openclaw-goals       # optional
+openclaw plugins install npm:@akalsey/openclaw-thinking
+openclaw plugins install npm:@akalsey/openclaw-sapience
+openclaw plugins install npm:@akalsey/openclaw-feedback   # optional
+openclaw plugins install npm:@akalsey/openclaw-goals       # optional
 ```
 
 ### Configuration (sapience)

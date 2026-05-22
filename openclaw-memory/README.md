@@ -9,7 +9,7 @@ A per-turn-lean memory plugin. Small always-loaded core, explicit on-demand retr
 ### Install
 
 ```bash
-openclaw plugins install local:/path/to/openclaw-memory
+openclaw plugins install npm:@akalsey/openclaw-memory
 ```
 
 ### Configuration

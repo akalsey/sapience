@@ -13,7 +13,7 @@ This plugin can be used without Sapience if all you want to do is surface observ
 ### Install
 
 ```bash
-openclaw plugins install local:/path/to/openclaw-proactive-thinking
+openclaw plugins install npm:@akalsey/openclaw-thinking
 ```
 
 ### Configuration
