@@ -1,4 +1,4 @@
-# Using openclaw-goals
+# Using sapience-goals
 
 ## When to submit a goal
 

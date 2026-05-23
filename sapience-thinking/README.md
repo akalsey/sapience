@@ -13,7 +13,7 @@ This plugin can be used without Sapience if all you want to do is surface observ
 ### Install
 
 ```bash
-openclaw plugins install npm:@akalsey/openclaw-thinking
+openclaw plugins install npm:@akalsey/sapience-thinking
 ```
 
 ### Configuration
@@ -46,7 +46,7 @@ All settings are optional — the defaults above are used if omitted.
 |------|---------|
 | `~/.openclaw/proactive-thinking/thinking-log.md` | Human-readable log of every pass |
 | `~/.openclaw/proactive-thinking/outcomes.json` | Tracks which proposals you acted on |
-| `~/.openclaw/proactive-thinking/proposals.jsonl` | Structured sidecar read by `openclaw-sapience` |
+| `~/.openclaw/proactive-thinking/proposals.jsonl` | Structured sidecar read by `sapience` |
 
 ---
 

@@ -26,10 +26,10 @@ That's the sapience suite.
 
 | Plugin | Does |
 |--------|------|
-| `openclaw-thinking` | Runs periodic isolated "thinking passes" every 15 minutes. Generates structured proposals — observations, suggested actions, audits, open questions — and writes them to a sidecar file for the routing layer to process. |
-| `openclaw-sapience` | Routes proposals through autonomy tiers based on blast radius, reversibility, and calibrated confidence. Act on the obvious. Surface the uncertain. Ask before anything sensitive. Delivers a weekly digest. |
-| `openclaw-feedback` | Scans your messages for corrections and confirmations. "Don't push to main without a PR" automatically drops confidence for that domain. "Yes, exactly" reinforces the pattern. No manual calibration file to manage. |
-| `openclaw-goals` | Accepts fuzzy long-running objectives, decomposes them into concrete approaches, and delivers a weekly status update per goal. "Improve our OKR scoring rate" becomes a tracked initiative. |
+| `sapience-thinking` | Runs periodic isolated "thinking passes" every 15 minutes. Generates structured proposals — observations, suggested actions, audits, open questions — and writes them to a sidecar file for the routing layer to process. |
+| `sapience` | Routes proposals through autonomy tiers based on blast radius, reversibility, and calibrated confidence. Act on the obvious. Surface the uncertain. Ask before anything sensitive. Delivers a weekly digest. |
+| `sapience-feedback` | Scans your messages for corrections and confirmations. "Don't push to main without a PR" automatically drops confidence for that domain. "Yes, exactly" reinforces the pattern. No manual calibration file to manage. |
+| `sapience-goals` | Accepts fuzzy long-running objectives, decomposes them into concrete approaches, and delivers a weekly status update per goal. "Improve our OKR scoring rate" becomes a tracked initiative. |
 
 Each plugin works standalone. Together, they compose into a coherent system.
 
@@ -43,15 +43,15 @@ OpenClaw by itself is a capable reactive assistant. The sapience suite adds the 
 
 **vs. tools that inject everything into context**
 
-Some memory tools preload all stored memories into every session. This burns context on irrelevant material and degrades the quality of the session. The sapience suite uses OpenClaw's native memory API selectively: `openclaw-feedback` writes a behavioral reminder directly into OpenClaw's memory whenever it captures a correction. Future sessions see exactly that pointer — not a dump of everything ever stored.
+Some memory tools preload all stored memories into every session. This burns context on irrelevant material and degrades the quality of the session. The sapience suite uses OpenClaw's native memory API selectively: `sapience-feedback` writes a behavioral reminder directly into OpenClaw's memory whenever it captures a correction. Future sessions see exactly that pointer — not a dump of everything ever stored.
 
 **vs. static config files**
 
-Systems that ask you to configure autonomy upfront require you to know your preferences before you've seen the agent act. `openclaw-sapience` + `openclaw-feedback` start conservative and calibrate from how you actually respond — confirmations build confidence, corrections drop it. The profile that emerges reflects your real preferences, not your guesses about them.
+Systems that ask you to configure autonomy upfront require you to know your preferences before you've seen the agent act. `sapience` + `sapience-feedback` start conservative and calibrate from how you actually respond — confirmations build confidence, corrections drop it. The profile that emerges reflects your real preferences, not your guesses about them.
 
 **vs. one-shot task tools**
 
-Goal trackers and project management tools require you to translate fuzzy objectives into structured tasks. `openclaw-goals` accepts the objective as-is and handles the decomposition, then checks in weekly without you needing to maintain a separate system.
+Goal trackers and project management tools require you to translate fuzzy objectives into structured tasks. `sapience-goals` accepts the objective as-is and handles the decomposition, then checks in weekly without you needing to maintain a separate system.
 
 ---
 
@@ -62,10 +62,10 @@ Goal trackers and project management tools require you to translate fuzzy object
 Install any or all plugins — they work standalone and detect each other automatically:
 
 ```bash
-openclaw plugins install npm:@akalsey/openclaw-thinking
-openclaw plugins install npm:@akalsey/openclaw-sapience
-openclaw plugins install npm:@akalsey/openclaw-feedback
-openclaw plugins install npm:@akalsey/openclaw-goals
+openclaw plugins install npm:@akalsey/sapience-thinking
+openclaw plugins install npm:@akalsey/sapience
+openclaw plugins install npm:@akalsey/sapience-feedback
+openclaw plugins install npm:@akalsey/sapience-goals
 ```
 
 To install from source instead:
@@ -73,7 +73,7 @@ To install from source instead:
 ```bash
 git clone https://github.com/akalsey/sapience.git
 cd sapience
-for dir in openclaw-thinking openclaw-sapience openclaw-feedback openclaw-goals
+for dir in sapience-thinking sapience sapience-feedback sapience-goals
     cd $dir && npm install && npm run build && cd ..
     openclaw plugins install ./$dir
 end
@@ -188,7 +188,7 @@ Everything is plain files. Nothing is sent anywhere.
 
 Each plugin has its own README with full configuration reference, troubleshooting, and design details:
 
-- [`openclaw-thinking/README.md`](openclaw-thinking/README.md)
-- [`openclaw-sapience/README.md`](openclaw-sapience/README.md)
-- [`openclaw-feedback/README.md`](openclaw-feedback/README.md)
-- [`openclaw-goals/README.md`](openclaw-goals/README.md)
+- [`sapience-thinking/README.md`](sapience-thinking/README.md)
+- [`sapience/README.md`](sapience/README.md)
+- [`sapience-feedback/README.md`](sapience-feedback/README.md)
+- [`sapience-goals/README.md`](sapience-goals/README.md)

@@ -1,6 +1,6 @@
 {
-  "name": "@akalsey/openclaw-goals",
-  "version": "0.1.2",
+  "name": "@akalsey/sapience-feedback",
+  "version": "0.1.1",
   "type": "module",
   "main": "./dist/index.js",
   "exports": {
@@ -9,8 +9,7 @@
   "files": [
     "dist",
     "openclaw.plugin.json",
-    "README.md",
-    "SKILL.md"
+    "README.md"
   ],
   "scripts": {
     "build": "tsc",

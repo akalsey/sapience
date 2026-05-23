@@ -1,6 +1,6 @@
 {
-  "name": "@akalsey/openclaw-feedback",
-  "version": "0.1.1",
+  "name": "@akalsey/sapience-thinking",
+  "version": "0.1.4",
   "type": "module",
   "main": "./dist/index.js",
   "exports": {
@@ -29,6 +29,9 @@
     "install": {
       "localPath": "."
     }
+  },
+  "dependencies": {
+    "@sinclair/typebox": "^0.33.0"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

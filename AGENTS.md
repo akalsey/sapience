@@ -10,10 +10,10 @@ Shared instructions for all AI coding agents (Claude Code, Cursor, Copilot, Gemi
 
 | Plugin | Status | Does |
 |--------|--------|------|
-| `openclaw-thinking/` | Implemented | Periodic thinking passes; generates observations and proposals; writes `proposals.jsonl` sidecar |
-| `openclaw-sapience/` | Implemented | Routes proposals through autonomy tiers (Act/Propose/Ask/Explore/Learning); calibration profile; weekly digest |
-| `openclaw-feedback/` | Implemented | Captures corrections and confirmations from chat; updates calibration profile; writes meta-pointers via `api.memory.add` |
-| `openclaw-goals/` | Implemented | Accepts fuzzy long-running goals; decomposes them; tracks progress; weekly status |
+| `sapience-thinking/` | Implemented | Periodic thinking passes; generates observations and proposals; writes `proposals.jsonl` sidecar |
+| `sapience/` | Implemented | Routes proposals through autonomy tiers (Act/Propose/Ask/Explore/Learning); calibration profile; weekly digest |
+| `sapience-feedback/` | Implemented | Captures corrections and confirmations from chat; updates calibration profile; writes meta-pointers via `api.memory.add` |
+| `sapience-goals/` | Implemented | Accepts fuzzy long-running goals; decomposes them; tracks progress; weekly status |
 
 ---
 
@@ -25,13 +25,13 @@ sapience-suite/
 ├── CLAUDE.md                  ← Claude Code pointer to this file
 ├── .gitignore
 ├── internal-docs/             ← design docs, specs, plans — NOT in git
-├── openclaw-thinking/         ← proactive thinking plugin
-├── openclaw-sapience/         ← autonomy routing plugin
-├── openclaw-feedback/         ← feedback calibration plugin
-└── openclaw-goals/            ← goal tracking plugin
+├── sapience-thinking/         ← proactive thinking plugin
+├── sapience/                  ← autonomy routing plugin
+├── sapience-feedback/         ← feedback calibration plugin
+└── sapience-goals/            ← goal tracking plugin
 ```
 
-Each plugin is a standalone npm package with its own `package.json`, `tsconfig.json`, `vitest.config.ts`, and `src/` directory.
+Each plugin is a standalone npm package with its own `package.json`, `tsconfig.json`, `vitest.config.ts`, and `src/` directory. npm package names match plugin IDs: `@akalsey/sapience-thinking`, `@akalsey/sapience`, `@akalsey/sapience-feedback`, `@akalsey/sapience-goals`.
 
 ---
 
@@ -52,7 +52,7 @@ Each plugin is a standalone npm package with its own `package.json`, `tsconfig.j
 Every plugin follows this pattern:
 
 ```
-openclaw-<name>/
+sapience-<name>/
 ├── package.json           — "type": "module", dependencies, scripts (test, typecheck)
 ├── openclaw.plugin.json   — id, name, description, version, activation
 ├── tsconfig.json          — NodeNext, strict: true

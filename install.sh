@@ -40,10 +40,10 @@ header "Checking plugins..."
 PLUGIN_LIST=$(openclaw plugins list 2>&1)
 
 declare -A PLUGIN_PACKAGES=(
-  [sapience-thinking]="npm:@akalsey/openclaw-thinking"
-  [sapience]="npm:@akalsey/openclaw-sapience"
-  [sapience-feedback]="npm:@akalsey/openclaw-feedback"
-  [sapience-goals]="npm:@akalsey/openclaw-goals"
+  [sapience-thinking]="npm:@akalsey/sapience-thinking"
+  [sapience]="npm:@akalsey/sapience"
+  [sapience-feedback]="npm:@akalsey/sapience-feedback"
+  [sapience-goals]="npm:@akalsey/sapience-goals"
 )
 
 PLUGINS_TO_INSTALL=()
