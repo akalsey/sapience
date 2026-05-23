@@ -14,7 +14,9 @@ This plugin can be used without Sapience if all you want to do is have the agent
 
 ### Prerequisites
 
-`openclaw-sapience` must be installed. This plugin writes to the shared calibration profile at `~/.openclaw/sapience/calibration.json`.
+None required. This plugin works standalone.
+
+If `openclaw-sapience` is also installed, the calibration profile at `~/.openclaw/sapience/calibration.json` feeds directly into autonomy routing. Without sapience, the profile is still written but nothing reads it.
 
 ### Install
 
@@ -114,13 +116,13 @@ Each entry shows:
 
 ## Meta-memory pointers
 
-For corrections, the plugin writes a memory pointer:
+For corrections, the plugin calls `api.memory.add` to write a behavioral reminder directly into OpenClaw's native memory:
 
 > "Before working on github / github/action: check feedback log — correction recorded: 'don't push to main without a PR'"
 
-This means future sessions will be reminded to check the feedback log before acting in that domain, even if the calibration confidence hasn't yet dropped below the threshold.
+Future sessions surface this pointer automatically through OpenClaw's standard memory system. No separate memory plugin is required — memory writes go through the same API OpenClaw itself uses.
 
-Requires `memoryEnabled: true` (default) and OpenClaw's built-in memory API.
+To disable memory writes, set `memoryEnabled: false` in config.
 
 ---
 

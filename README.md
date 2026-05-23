@@ -43,7 +43,7 @@ OpenClaw by itself is a capable reactive assistant. The sapience suite adds the 
 
 **vs. tools that inject everything into context**
 
-Some memory tools preload all stored memories into every session. This burns context on irrelevant material and degrades the quality of the session. `openclaw-memory` loads a small always-relevant core and lets the agent search for detail on demand. You get recall without context bloat.
+Some memory tools preload all stored memories into every session. This burns context on irrelevant material and degrades the quality of the session. The sapience suite uses OpenClaw's native memory API selectively: `openclaw-feedback` writes a behavioral reminder directly into OpenClaw's memory whenever it captures a correction. Future sessions see exactly that pointer — not a dump of everything ever stored.
 
 **vs. static config files**
 
@@ -103,12 +103,12 @@ All plugins work out of the box with defaults. Override per-plugin in your OpenC
       "autonomy": { "defaultTier": "propose" },
       "digest": { "day": "friday", "time": "17:00" }
     },
+    "sapience-feedback": {
+      "memoryEnabled": true
+    },
     "sapience-goals": {
       "weeklyCheckInDay": "monday",
       "weeklyCheckInTime": "09:00"
-    },
-    "sapience-memory": {
-      "memoryPath": "~/.openclaw/memory"
     }
   }
 }
