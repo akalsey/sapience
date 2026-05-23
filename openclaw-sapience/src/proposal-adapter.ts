@@ -62,6 +62,14 @@ export async function readUnprocessedPasses(
   try {
     const content = await readFile(resolvePath(proposalsPath), "utf-8");
     const lines = content.trim().split("\n").filter(Boolean);
-    return lines.map(l => JSON.parse(l) as ProposalSet).filter(p => !processedIds.has(p.pass_id));
+    const passes: ProposalSet[] = [];
+    for (const line of lines) {
+      try {
+        passes.push(JSON.parse(line) as ProposalSet);
+      } catch {
+        // skip malformed line rather than dropping all proposals
+      }
+    }
+    return passes.filter(p => !processedIds.has(p.pass_id));
   } catch { return []; }
 }

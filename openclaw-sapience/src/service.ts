@@ -1,5 +1,5 @@
 // src/service.ts
-import { writeFile, mkdir } from "fs/promises";
+import { mkdirSync, writeFileSync } from "fs";
 import { join } from "path";
 import { definePluginEntry } from "openclaw/plugin-sdk/plugin-entry";
 import { DEFAULT_CONFIG, type SapienceConfig } from "./types.js";
@@ -43,66 +43,69 @@ export default definePluginEntry({
     const workspaceDir = (api.runtime.agent.resolveAgentWorkspaceDir as (cfg: unknown) => string)(api.pluginConfig);
     const config = mergeConfig(api.pluginConfig as Record<string, unknown>, workspaceDir);
 
-    // Write presence marker so sapience-thinking knows to defer direct delivery
+    // Write presence marker synchronously so sapience-thinking's .present check is race-free
     const markerDir = join(workspaceDir, "sapience");
-    void mkdir(markerDir, { recursive: true }).then(() =>
-      writeFile(join(markerDir, ".present"), "", "utf-8")
-    );
+    mkdirSync(markerDir, { recursive: true });
+    writeFileSync(join(markerDir, ".present"), "", "utf-8");
 
     api.registerTool({
       name: "process_proposals",
       description: "Process new proposals from the sapience-thinking log and route them through the autonomy tier function. Called by the sapience cron.",
       parameters: {} as any,
       async execute(_id: any, _params: any) {
-        if (!isWithinActiveHours(config)) {
-          return { content: [{ type: "text", text: "SILENT_REPLY_TOKEN" }] };
-        }
+        try {
+          if (!isWithinActiveHours(config)) {
+            return { content: [{ type: "text", text: "SILENT_REPLY_TOKEN" }] };
+          }
 
-        let processed = await loadProcessedPasses(config.output.processedPassesPath);
-        const profile = await loadProfile(config.output.calibrationPath);
+          let processed = await loadProcessedPasses(config.output.processedPassesPath);
+          const profile = await loadProfile(config.output.calibrationPath);
 
-        // On first run, mark all existing passes as processed to avoid re-delivering stale proposals
-        if (processed.size === 0) {
-          processed = await bootstrapProcessedPasses(
+          // On first run, mark all existing passes as processed to avoid re-delivering stale proposals
+          if (processed.size === 0) {
+            processed = await bootstrapProcessedPasses(
+              config.proactiveThinking.proposalsPath,
+              config.output.processedPassesPath,
+            );
+          }
+
+          const newPasses = await readUnprocessedPasses(
             config.proactiveThinking.proposalsPath,
-            config.output.processedPassesPath,
+            processed
           );
-        }
 
-        const newPasses = await readUnprocessedPasses(
-          config.proactiveThinking.proposalsPath,
-          processed
-        );
+          let updatedProcessed = processed;
+          let updatedProfile = profile;
 
-        let updatedProcessed = processed;
-        let updatedProfile = profile;
+          for (const pass of newPasses) {
+            const items = proposalSetToItems(pass);
+            const routed = items.map(item => routeItem(item, updatedProfile, config));
 
-        for (const pass of newPasses) {
-          const items = proposalSetToItems(pass);
-          const routed = items.map(item => routeItem(item, updatedProfile, config));
+            await deliverItems(routed, api, config);
+            updatedProcessed = await markPassProcessed(pass.pass_id, config.output.processedPassesPath, updatedProcessed);
 
-          await deliverItems(routed, api, config);
-          updatedProcessed = await markPassProcessed(pass.pass_id, config.output.processedPassesPath, updatedProcessed);
-
-          for (const item of routed) {
-            const exists = updatedProfile.find(e => e.domain === item.domain && e.action_class === item.action_class);
-            if (!exists) {
-              updatedProfile = upsertEntry(updatedProfile, item.domain, item.action_class, {
-                tier: config.autonomy.defaultTier,
-                confidence: 0,
-              });
+            for (const item of routed) {
+              const exists = updatedProfile.find(e => e.domain === item.domain && e.action_class === item.action_class);
+              if (!exists) {
+                updatedProfile = upsertEntry(updatedProfile, item.domain, item.action_class, {
+                  tier: config.autonomy.defaultTier,
+                  confidence: 0,
+                });
+              }
             }
           }
+
+          await saveProfile(updatedProfile, config.output.calibrationPath);
+
+          if (config.digest.enabled && isDigestDay(config)) {
+            const prompt = await buildDigestPrompt(config);
+            await api.session.workflow.enqueueNextTurnInjection({ sessionTarget: "main", text: prompt });
+          }
+
+          return { content: [{ type: "text", text: "SILENT_REPLY_TOKEN" }] };
+        } catch (err) {
+          return { content: [{ type: "text", text: `[sapience] process_proposals error: ${String(err)}` }] };
         }
-
-        await saveProfile(updatedProfile, config.output.calibrationPath);
-
-        if (config.digest.enabled && isDigestDay(config) && newPasses.length === 0) {
-          const prompt = await buildDigestPrompt(config);
-          await api.session.workflow.enqueueNextTurnInjection({ sessionTarget: "main", text: prompt });
-        }
-
-        return { content: [{ type: "text", text: "SILENT_REPLY_TOKEN" }] };
       },
     });
 

@@ -28,14 +28,20 @@ export async function bootstrapProcessedPasses(
   } catch { return new Set(); }
 }
 
+const MAX_PROCESSED_ENTRIES = 1000;
+
 export async function markPassProcessed(
   passId: string,
   path: string,
   processed: Set<string>
 ): Promise<Set<string>> {
-  const updated = new Set([...processed, passId]);
+  let ids = [...processed, passId];
+  if (ids.length > MAX_PROCESSED_ENTRIES) {
+    ids = ids.slice(ids.length - MAX_PROCESSED_ENTRIES);
+  }
+  const updated = new Set(ids);
   const resolved = resolvePath(path);
   await mkdir(dirname(resolved), { recursive: true });
-  await writeFile(resolved, JSON.stringify({ pass_ids: [...updated] }, null, 2), "utf-8");
+  await writeFile(resolved, JSON.stringify({ pass_ids: ids }, null, 2), "utf-8");
   return updated;
 }
