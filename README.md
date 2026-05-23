@@ -30,7 +30,6 @@ That's the sapience suite.
 | `openclaw-sapience` | Routes proposals through autonomy tiers based on blast radius, reversibility, and calibrated confidence. Act on the obvious. Surface the uncertain. Ask before anything sensitive. Delivers a weekly digest. |
 | `openclaw-feedback` | Scans your messages for corrections and confirmations. "Don't push to main without a PR" automatically drops confidence for that domain. "Yes, exactly" reinforces the pattern. No manual calibration file to manage. |
 | `openclaw-goals` | Accepts fuzzy long-running objectives, decomposes them into concrete approaches, and delivers a weekly status update per goal. "Improve our OKR scoring rate" becomes a tracked initiative. |
-| `openclaw-memory` | Per-session-lean persistent memory. Stores notes as indexed markdown files. On-demand BM25 search returns the right notes when needed — not a context dump, not a vector database. |
 
 Each plugin works standalone. Together, they compose into a coherent system.
 
@@ -67,7 +66,6 @@ openclaw plugins install npm:@akalsey/openclaw-thinking
 openclaw plugins install npm:@akalsey/openclaw-sapience
 openclaw plugins install npm:@akalsey/openclaw-feedback
 openclaw plugins install npm:@akalsey/openclaw-goals
-openclaw plugins install npm:@akalsey/openclaw-memory
 ```
 
 To install from source instead:
@@ -75,7 +73,7 @@ To install from source instead:
 ```bash
 git clone https://github.com/akalsey/sapience.git
 cd sapience
-for dir in openclaw-thinking openclaw-sapience openclaw-feedback openclaw-goals openclaw-memory
+for dir in openclaw-thinking openclaw-sapience openclaw-feedback openclaw-goals
     cd $dir && npm install && npm run build && cd ..
     openclaw plugins install ./$dir
 end
@@ -143,16 +141,6 @@ The feedback plugin captures your corrections and confirmations automatically. J
 - `"Good call, keep doing that"` → confidence increases
 - `"Just do it, you don't need to ask about GitHub actions"` → tier bumped toward Act
 
-**Memory:**
-
-The agent writes memories during sessions when it learns something worth keeping. You can search them:
-
-```
-What do you know about our PostHog billing setup?
-```
-
-The agent will call `memory_search` and retrieve relevant entries rather than guessing from training data.
-
 **Submitting a goal:**
 
 ```bash
@@ -193,8 +181,6 @@ Everything is plain files. Nothing is sent anywhere.
 | `~/.openclaw/sapience/action-log.md` | Log of everything acted on |
 | `~/.openclaw/sapience/goals.json` | All goals with status and progress |
 | `~/.openclaw/sapience/goals-inbox.md` | Where you write new goals |
-| `~/.openclaw/memory/indexed/` | Memory entries as markdown files |
-| `~/.openclaw/memory/_searches.json` | Recent search log |
 
 ---
 
@@ -206,4 +192,3 @@ Each plugin has its own README with full configuration reference, troubleshootin
 - [`openclaw-sapience/README.md`](openclaw-sapience/README.md)
 - [`openclaw-feedback/README.md`](openclaw-feedback/README.md)
 - [`openclaw-goals/README.md`](openclaw-goals/README.md)
-- [`openclaw-memory/README.md`](openclaw-memory/README.md)

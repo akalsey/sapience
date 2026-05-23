@@ -12,9 +12,8 @@ Shared instructions for all AI coding agents (Claude Code, Cursor, Copilot, Gemi
 |--------|--------|------|
 | `openclaw-thinking/` | Implemented | Periodic thinking passes; generates observations and proposals; writes `proposals.jsonl` sidecar |
 | `openclaw-sapience/` | Implemented | Routes proposals through autonomy tiers (Act/Propose/Ask/Explore/Learning); calibration profile; weekly digest |
-| `openclaw-feedback/` | Implemented | Captures corrections and confirmations from chat; updates calibration profile |
+| `openclaw-feedback/` | Implemented | Captures corrections and confirmations from chat; updates calibration profile; writes meta-pointers via `api.memory.add` |
 | `openclaw-goals/` | Implemented | Accepts fuzzy long-running goals; decomposes them; tracks progress; weekly status |
-| `openclaw-memory/` | In progress | Per-turn-lean memory: small always-loaded core + on-demand BM25 search over indexed markdown files |
 
 ---
 
@@ -29,8 +28,7 @@ sapience-suite/
 ├── openclaw-thinking/         ← proactive thinking plugin
 ├── openclaw-sapience/         ← autonomy routing plugin
 ├── openclaw-feedback/         ← feedback calibration plugin
-├── openclaw-goals/            ← goal tracking plugin
-└── openclaw-memory/           ← memory plugin (in progress)
+└── openclaw-goals/            ← goal tracking plugin
 ```
 
 Each plugin is a standalone npm package with its own `package.json`, `tsconfig.json`, `vitest.config.ts`, and `src/` directory.
@@ -81,26 +79,3 @@ The plugin entry is always `src/service.ts`, exported via `index.ts`.
 
 4. **Tests must not mock the filesystem for unit tests that can use tmpdir.** Use real temp directories (`mkdtemp`) for storage tests.
 
----
-
-## openclaw-memory Status
-
-Currently implementing. Tasks complete:
-- [x] Task 1: Project scaffold
-- [x] Task 2: Types and utils (`src/types.ts`, `src/utils.ts`)
-- [x] Task 3: Entry parser (`src/entry-parser.ts` — gray-matter wrapper)
-- [x] Task 4: Storage (`src/storage.ts` — file I/O, uses `MEMORY_FILENAME_PATTERN`)
-- [x] Task 5: BM25 (`src/bm25.ts` — hand-rolled, k1=1.5, b=0.75)
-- [x] Task 6: Search (`src/search.ts` — tag filter, recency boost, access boost, excerpt)
-- [ ] Task 7: Index Store (`src/index-store.ts`)
-- [ ] Task 8: Stats and search log (`src/stats.ts`)
-- [ ] Task 9: Service — plugin entry, 6 tools, chokidar watcher
-- [ ] Task 10: SKILL.md and README
-
-Implementation plan: `internal-docs/superpowers/plans/2026-05-21-memory.md`
-
-Key design decisions already made:
-- `generateId()` uses 8 hex chars (4 bytes entropy) — format `mem_YYYY-MM-DD_XXXXXXXX`
-- `MEMORY_FILENAME_PATTERN` enforces `YYYY-MM-DD-slug-XXXXXXXX.md` format at I/O boundary
-- BM25 corpus text boosts title and tags by repeating them twice
-- `listEntryFilenames` filters by `MEMORY_FILENAME_PATTERN`, not just `.md` extension

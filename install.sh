@@ -44,12 +44,11 @@ declare -A PLUGIN_PACKAGES=(
   [sapience]="npm:@akalsey/openclaw-sapience"
   [sapience-feedback]="npm:@akalsey/openclaw-feedback"
   [sapience-goals]="npm:@akalsey/openclaw-goals"
-  [sapience-memory]="npm:@akalsey/openclaw-memory"
 )
 
 PLUGINS_TO_INSTALL=()
 
-for plugin_id in sapience-thinking sapience sapience-feedback sapience-goals sapience-memory; do
+for plugin_id in sapience-thinking sapience sapience-feedback sapience-goals; do
   if echo "$PLUGIN_LIST" | grep -q "$plugin_id"; then
     ok "Plugin $plugin_id is installed"
   else

@@ -46,8 +46,11 @@ export default definePluginEntry({
           await appendFeedback(entry, config.logPath);
           await applyFeedbackToProfile(signal, config.calibrationPath);
 
-          if (metaPointer && config.memoryEnabled && api.memory?.write) {
-            await api.memory.write({ text: metaPointer, type: "behavioral-correction" });
+          if (metaPointer && config.memoryEnabled) {
+            await api.memory?.add({
+              content: metaPointer,
+              metadata: { tags: ["feedback", "behavioral-correction", signal.domain], source: "feedback" },
+            });
           }
         }
       });
