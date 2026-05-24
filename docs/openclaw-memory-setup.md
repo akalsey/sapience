@@ -100,16 +100,6 @@ This goes into the native memory system via `memory-core`. Dreaming then evaluat
 
 ---
 
-## Known gaps
-
-Two capabilities are not covered by the native system or `memory-wiki` as documented:
-
-**Tag-filtered retrieval.** `memory_search` is semantic. `wiki_search` ranks by claim status and confidence. Neither supports structured tag-AND queries: "all behavioral corrections for the github domain." The `metadata.tags` written by `sapience-feedback` are stored but there is no documented query interface for filtering by them. This is the one retrieval capability that may require sapience to implement something.
-
-**Programmatic write API for other plugins.** `api.memory?.add()` exists and works (sapience-feedback uses it). The optional chaining (`?.`) means it silently no-ops if the memory API is not available. Whether `memory-core` must be explicitly configured to accept plugin writes, or whether it's always available in session context, is not documented. In practice, sapience-feedback has worked. If other sapience plugins need to write to memory in the future, the same `api.memory?.add()` pattern applies.
-
----
-
 ## Summary: what to configure, what not to build
 
 | Requirement | Covered by | Action |
@@ -119,7 +109,6 @@ Two capabilities are not covered by the native system or `memory-wiki` as docume
 | On-demand retrieval, no context flooding | daily notes architecture in `memory-core` | Already how it works; keep MEMORY.md lean |
 | Index over what OpenClaw writes | `memory-wiki` bridge mode | Enable bridge + readMemoryArtifacts |
 | Dreaming / consolidation | `memory-core` dreaming | Enable dreaming explicitly |
-| Tag-filtered retrieval | **Not covered** | Potential future sapience contribution |
-| Programmatic write from sapience plugins | `api.memory?.add()` | Already implemented in sapience-feedback |
+| Programmatic write from sapience plugins | `api.memory.add({ content, metadata })` | Already implemented in sapience-feedback |
 
 Sapience does not need a private indexed directory, a custom BM25 index, or any storage layer for memory. The configuration above is the complete setup.
