@@ -155,6 +155,86 @@ if [[ ${#CRONS_TO_ADD[@]} -gt 0 ]]; then
   fi
 fi
 
+# ── memory configuration ──────────────────────────────────────────────────────
+header "Checking memory configuration..."
+
+MEMORY_WIKI_AVAILABLE=false
+if echo "$PLUGIN_LIST" | grep -q "memory-wiki"; then
+  ok "Plugin memory-wiki is installed"
+  MEMORY_WIKI_AVAILABLE=true
+else
+  warn "Plugin memory-wiki is NOT installed"
+  info "memory-wiki enables structured claim tracking for behavioral corrections"
+  if confirm "Install memory-wiki now?"; then
+    echo "  Installing clawhub:memory-wiki..."
+    openclaw plugins install clawhub:memory-wiki
+    ok "Installed memory-wiki"
+    MEMORY_WIKI_AVAILABLE=true
+  else
+    info "Skipping memory-wiki. memory-wiki config checks will be skipped."
+  fi
+fi
+
+CONFIG_KEYS_ORDER=(dreaming)
+if [[ "$MEMORY_WIKI_AVAILABLE" == "true" ]]; then
+  CONFIG_KEYS_ORDER+=(vault_mode bridge_enabled corpus)
+fi
+
+declare -A CONFIG_PATHS=(
+  [dreaming]="plugins.memory-core.dreaming.enabled"
+  [vault_mode]="plugins.memory-wiki.vaultMode"
+  [bridge_enabled]="plugins.memory-wiki.bridge.enabled"
+  [corpus]="plugins.memory-wiki.search.corpus"
+)
+
+declare -A CONFIG_EXPECTED=(
+  [dreaming]="true"
+  [vault_mode]="bridge"
+  [bridge_enabled]="true"
+  [corpus]="all"
+)
+
+CONFIGS_TO_FIX=()
+
+for key in "${CONFIG_KEYS_ORDER[@]}"; do
+  path="${CONFIG_PATHS[$key]}"
+  expected="${CONFIG_EXPECTED[$key]}"
+  actual=$(openclaw config get "$path" --json 2>/dev/null | tr -d '"')
+  if [[ "$actual" == "$expected" ]]; then
+    ok "Config $path = $expected"
+  else
+    warn "Config $path is wrong (got: '${actual:-<absent>}', need: '$expected')"
+    CONFIGS_TO_FIX+=("$key")
+  fi
+done
+
+if [[ ${#CONFIGS_TO_FIX[@]} -gt 0 ]]; then
+  echo ""
+  if confirm "Apply missing memory configuration settings now?"; then
+    for key in "${CONFIGS_TO_FIX[@]}"; do
+      case "$key" in
+        dreaming)       openclaw config set plugins.memory-core.dreaming.enabled true --strict-json ;;
+        vault_mode)     openclaw config set plugins.memory-wiki.vaultMode '"bridge"' ;;
+        bridge_enabled) openclaw config set plugins.memory-wiki.bridge.enabled true --strict-json ;;
+        corpus)         openclaw config set plugins.memory-wiki.search.corpus '"all"' ;;
+      esac
+      ok "Set ${CONFIG_PATHS[$key]}"
+    done
+  else
+    info "Skipping memory configuration. Sapience corrections may not persist across sessions."
+    echo ""
+    info "To configure manually:"
+    for key in "${CONFIGS_TO_FIX[@]}"; do
+      case "$key" in
+        dreaming)       echo "  openclaw config set plugins.memory-core.dreaming.enabled true --strict-json" ;;
+        vault_mode)     echo "  openclaw config set plugins.memory-wiki.vaultMode '\"bridge\"'" ;;
+        bridge_enabled) echo "  openclaw config set plugins.memory-wiki.bridge.enabled true --strict-json" ;;
+        corpus)         echo "  openclaw config set plugins.memory-wiki.search.corpus '\"all\"'" ;;
+      esac
+    done
+  fi
+fi
+
 # ── done ─────────────────────────────────────────────────────────────────────
 header "Done."
 echo ""
