@@ -194,6 +194,13 @@ declare -A CONFIG_EXPECTED=(
   [corpus]="all"
 )
 
+declare -A CONFIG_SET_CMDS=(
+  [dreaming]="openclaw config set plugins.memory-core.dreaming.enabled true --strict-json"
+  [vault_mode]="openclaw config set plugins.memory-wiki.vaultMode '\"bridge\"'"
+  [bridge_enabled]="openclaw config set plugins.memory-wiki.bridge.enabled true --strict-json"
+  [corpus]="openclaw config set plugins.memory-wiki.search.corpus '\"all\"'"
+)
+
 CONFIGS_TO_FIX=()
 
 for key in "${CONFIG_KEYS_ORDER[@]}"; do
@@ -212,12 +219,7 @@ if [[ ${#CONFIGS_TO_FIX[@]} -gt 0 ]]; then
   echo ""
   if confirm "Apply missing memory configuration settings now?"; then
     for key in "${CONFIGS_TO_FIX[@]}"; do
-      case "$key" in
-        dreaming)       openclaw config set plugins.memory-core.dreaming.enabled true --strict-json ;;
-        vault_mode)     openclaw config set plugins.memory-wiki.vaultMode '"bridge"' ;;
-        bridge_enabled) openclaw config set plugins.memory-wiki.bridge.enabled true --strict-json ;;
-        corpus)         openclaw config set plugins.memory-wiki.search.corpus '"all"' ;;
-      esac
+      eval "${CONFIG_SET_CMDS[$key]}"
       ok "Set ${CONFIG_PATHS[$key]}"
     done
   else
@@ -225,12 +227,7 @@ if [[ ${#CONFIGS_TO_FIX[@]} -gt 0 ]]; then
     echo ""
     info "To configure manually:"
     for key in "${CONFIGS_TO_FIX[@]}"; do
-      case "$key" in
-        dreaming)       echo "  openclaw config set plugins.memory-core.dreaming.enabled true --strict-json" ;;
-        vault_mode)     echo "  openclaw config set plugins.memory-wiki.vaultMode '\"bridge\"'" ;;
-        bridge_enabled) echo "  openclaw config set plugins.memory-wiki.bridge.enabled true --strict-json" ;;
-        corpus)         echo "  openclaw config set plugins.memory-wiki.search.corpus '\"all\"'" ;;
-      esac
+      echo "  ${CONFIG_SET_CMDS[$key]}"
     done
   fi
 fi
