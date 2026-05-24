@@ -83,7 +83,7 @@ fi
 # ── cron jobs ────────────────────────────────────────────────────────────────
 header "Checking cron jobs..."
 
-CRON_LIST=$(openclaw cron list 2>&1)
+CRON_LIST=$(openclaw cron list --json 2>&1)
 
 declare -A CRON_NAMES=(
   [thinking]="sapience-thinking-pass"
