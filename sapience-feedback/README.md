@@ -32,7 +32,12 @@ openclaw plugins install npm:@akalsey/sapience-feedback
     "sapience-feedback": {
       "logPath": "~/.openclaw/sapience/feedback.md",
       "calibrationPath": "~/.openclaw/sapience/calibration.json",
-      "memoryEnabled": true
+      "memoryEnabled": true,
+      "semanticDetection": {
+        "enabled": true,
+        "minLength": 8,
+        "minConfidence": 0.6
+      }
     }
   }
 }
@@ -40,62 +45,51 @@ openclaw plugins install npm:@akalsey/sapience-feedback
 
 All settings are optional — defaults are used if omitted.
 
+**`semanticDetection`** controls the LLM-based classifier. When enabled (the default), every user message above `minLength` characters is classified by the agent's default inference provider. Set `enabled: false` to fall back to regex-only matching (useful if you want zero LLM cost on routine chat).
+
 ---
 
 ## What it detects
 
-The plugin scans every message you send for three types of signals:
+Every user message is analyzed by the agent's default inference provider (using `api.runtime.llm.complete` — no separate provider configuration required). The classifier returns structured signals in one of three categories. No trigger words or special syntax — speak normally.
 
 ### Corrections
 
-Phrases that express "don't do that" or "do it differently":
-
-- `don't update OKRs for other teams without asking`
-- `stop doing that`
-- `never push to main without a PR`
-- `use the company template, not the default`
-- `you shouldn't have done that without checking`
+Anything that tells the agent it did something wrong or should do it differently. The classifier picks up direct phrasing ("don't push to main"), rhetorical questions ("did you check the password manager first?"), and implicit critiques ("is there something wrong with the passwords you have?").
 
 **Effect:** Confidence on the matching domain/action-class drops by 0.3.
 
 ### Confirmations
 
-Phrases that express "yes, that was right":
-
-- `yes exactly`
-- `good call`
-- `perfect, keep doing that`
-- `that's exactly right`
+Anything that reinforces what the agent just did — agreement, praise, "keep doing that".
 
 **Effect:** Confidence on the matching domain/action-class increases by 0.1.
 
 ### Tier adjustments
 
-Explicit instructions about how much autonomy you want:
-
-- `just do it` / `you don't need to ask` → bumps toward **Act**
-- `always ask me first` / `ask me before touching X` → bumps toward **Ask**
+Instructions about how much autonomy the agent should have. "Just do it" or "stop asking" bumps toward **Act**. "Always check first" or "ask me before doing X" bumps toward **Ask**.
 
 **Effect:** Tier for matching domain/action-class is updated directly.
+
+If the LLM is unavailable (no `api.runtime.llm` exposed, or the call fails), the plugin falls back to a regex matcher covering the common phrasings. The regex layer is intentionally conservative and misses paraphrases — semantic detection is the primary path.
+
+---
+
+## Explicit feedback: the `/feedback` command
+
+When you want to leave feedback without ambiguity, use the slash command:
+
+```
+/feedback always look at the password manager before asking me for credentials
+```
+
+The command runs the same classifier and then records the result as a `manual` signal. If the classifier finds no clear signal, the message is still logged as a generic correction in the `general` domain — manual feedback is never discarded.
 
 ---
 
 ## Domain detection
 
-The plugin extracts domains from context in your message:
-
-| Text contains | Domain |
-|---------------|--------|
-| `github`, `PR`, `push` | `github` |
-| `Salesforce` | `salesforce` |
-| `PostHog` | `posthog` |
-| `Slack` | `slack` |
-| `slides`, `deck` | `slides` |
-| `OKR` | `okr-system` |
-| `Linear` | `linear` |
-| (nothing matched) | `general` |
-
-Domain detection is keyword-based, not semantic. Be explicit when giving feedback: "don't update Salesforce records" works better than "don't do that" (which routes to `general`).
+The LLM extracts a domain slug from the content of your message: `github`, `credentials`, `okr-system`, `salesforce`, etc. When the LLM can't identify anything specific, it returns `general`. The regex fallback uses a fixed keyword table and is more likely to bucket things into `general`.
 
 ---
 
@@ -134,8 +128,8 @@ The plugin only scans messages you send (role: `user`), not the agent's response
 **Calibration not updating**
 Check that `calibration.json` exists and has an entry for the domain you're correcting. Feedback only updates *existing* entries — it doesn't create new ones. New domains are created by `sapience` when it first routes a proposal in that domain.
 
-**Domain matching to "general" when it shouldn't**
-Add more specific keywords to your feedback message. "Don't do that" → "Don't update the Salesforce contact without asking."
+**Feedback getting misclassified or missed**
+Raise the bar with `semanticDetection.minConfidence` if the classifier is too noisy; lower it if real feedback is being dropped. To force a recording, use `/feedback <text>` — manual entries bypass the confidence threshold.
 
-**Too many false positives in the feedback log**
-The pattern matching is intentionally broad. If casual phrases are being captured incorrectly, check the log and note which patterns are misfiring. You can't currently tune the patterns without modifying `src/feedback-parser.ts`.
+**LLM cost concerns**
+Every user message above `minLength` characters incurs one classifier call. To disable, set `semanticDetection.enabled: false` — the plugin will fall back to the regex matcher with no LLM calls.
