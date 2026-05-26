@@ -79,3 +79,4 @@ The plugin entry is always `src/service.ts`, exported via `index.ts`.
 
 4. **Tests must not mock the filesystem for unit tests that can use tmpdir.** Use real temp directories (`mkdtemp`) for storage tests.
 
+5. /docs is for end-user documentation only. Design docs and things Claude or the plugin maintainers need go into /internal-docs 
