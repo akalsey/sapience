@@ -1,7 +1,15 @@
 // src/delivery.test.ts
-import { describe, it, expect } from "vitest";
-import { buildTierPrompt } from "./delivery.js";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { mkdtemp, rm, readFile } from "fs/promises";
+import { join } from "path";
+import { tmpdir } from "os";
+import { buildTierPrompt, deliverItems } from "./delivery.js";
 import type { RoutedItem } from "./types.js";
+import { DEFAULT_CONFIG } from "./types.js";
+
+let dir: string;
+beforeEach(async () => { dir = await mkdtemp(join(tmpdir(), "delivery-")); });
+afterEach(async () => { await rm(dir, { recursive: true, force: true }); })
 
 const base: RoutedItem = {
   id: "act-1", type: "action", text: "Fix the typo in dashboard query",
@@ -35,5 +43,34 @@ describe("buildTierPrompt", () => {
   it("Learning prompt contains [SAPIENCE: CALIBRATE]", () => {
     const p = buildTierPrompt({ ...base, tier: "learning" });
     expect(p).toContain("[SAPIENCE: CALIBRATE]");
+  });
+});
+
+describe("deliverItems", () => {
+  const fakeApi = {
+    session: {
+      workflow: {
+        enqueueNextTurnInjection: async () => {},
+      },
+    },
+  };
+
+  it("emits an action_logged event for act-tier items", async () => {
+    const eventsPath = join(dir, "events.jsonl");
+    const config = {
+      ...DEFAULT_CONFIG,
+      output: {
+        ...DEFAULT_CONFIG.output,
+        actionLogPath: join(dir, "action-log.md"),
+        eventsPath,
+      },
+    };
+    const item = { ...base, tier: "act" as const, confidence: 0.9 };
+    await deliverItems([item], fakeApi, config);
+    const ev = JSON.parse((await readFile(eventsPath, "utf-8")).trim());
+    expect(ev.type).toBe("action_logged");
+    expect(ev.plugin).toBe("sapience");
+    expect(ev.domain).toBe(item.domain);
+    expect(ev.confidence).toBe(0.9);
   });
 });

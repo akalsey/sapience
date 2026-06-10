@@ -10,6 +10,8 @@ import { readUnprocessedPasses, proposalSetToItems } from "./proposal-adapter.js
 import { loadProcessedPasses, markPassProcessed, bootstrapProcessedPasses } from "./processed-passes.js";
 import { deliverItems } from "./delivery.js";
 import { isDigestDay, buildDigestPrompt } from "./weekly-digest.js";
+import { appendEvent } from "./events.js";
+import { generateDashboard } from "./dashboard.js";
 
 function mergeConfig(raw: Record<string, unknown>, workspaceDir: string): SapienceConfig {
   return {
@@ -58,6 +60,8 @@ export default definePluginEntry({
       async execute(_id: any, _params: any) {
         try {
           if (!isWithinActiveHours(config)) {
+            await appendEvent(config.output.eventsPath, { plugin: "sapience", type: "routing_skipped", reason: "outside_hours" });
+            await generateDashboard(config).catch(() => {});
             return { content: [{ type: "text", text: "SILENT_REPLY_TOKEN" }] };
           }
 
@@ -79,6 +83,8 @@ export default definePluginEntry({
 
           let updatedProcessed = processed;
           let updatedProfile = profile;
+          let totalItems = 0;
+          const byTier: Record<string, number> = {};
 
           for (const pass of newPasses) {
             const items = proposalSetToItems(pass);
@@ -88,11 +94,24 @@ export default definePluginEntry({
             updatedProcessed = await markPassProcessed(pass.pass_id, config.output.processedPassesPath, updatedProcessed);
 
             for (const item of routed) {
+              totalItems++;
+              byTier[item.tier] = (byTier[item.tier] ?? 0) + 1;
               const exists = updatedProfile.find(e => e.domain === item.domain && e.action_class === item.action_class);
               if (!exists) {
                 updatedProfile = upsertEntry(updatedProfile, item.domain, item.action_class, {
                   tier: config.autonomy.defaultTier,
                   confidence: 0,
+                });
+                await appendEvent(config.output.eventsPath, {
+                  plugin: "sapience",
+                  type: "calibration_change",
+                  domain: item.domain,
+                  action_class: item.action_class,
+                  old_confidence: null,
+                  new_confidence: 0,
+                  old_tier: null,
+                  new_tier: config.autonomy.defaultTier,
+                  source: "new_entry",
                 });
               }
             }
@@ -100,10 +119,25 @@ export default definePluginEntry({
 
           await saveProfile(updatedProfile, config.output.calibrationPath);
 
+          if (newPasses.length === 0) {
+            await appendEvent(config.output.eventsPath, { plugin: "sapience", type: "routing_skipped", reason: "no_new_passes" });
+          } else {
+            await appendEvent(config.output.eventsPath, {
+              plugin: "sapience",
+              type: "routing_completed",
+              passes: newPasses.length,
+              items: totalItems,
+              by_tier: byTier,
+            });
+          }
+
           if (config.digest.enabled && isDigestDay(config)) {
             const prompt = await buildDigestPrompt(config);
             await api.session.workflow.enqueueNextTurnInjection({ sessionTarget: "main", text: prompt });
+            await appendEvent(config.output.eventsPath, { plugin: "sapience", type: "digest_delivered" });
           }
+
+          await generateDashboard(config).catch(() => {});
 
           return { content: [{ type: "text", text: "SILENT_REPLY_TOKEN" }] };
         } catch (err) {
