@@ -175,7 +175,7 @@ export function buildDashboard(input: DashboardInput): string {
   lines.push("| Plugin | Runs (24h) | Expected | Skips (24h) | Last activity |");
   lines.push("| --- | --- | --- | --- | --- |");
   lines.push(`| thinking | ${of("thinking", ["pass_completed"]).length} | ~${exp} | ${skipSummary(of("thinking", ["pass_skipped"]))} | ${lastActivity(events.filter(e => e.plugin === "thinking"))} |`);
-  lines.push(`| sapience | ${of("sapience", ["routing_completed", "routing_skipped"]).length} | ~${exp} | ${skipSummary(of("sapience", ["routing_skipped"]))} | ${lastActivity(events.filter(e => e.plugin === "sapience"))} |`);
+  lines.push(`| sapience | ${of("sapience", ["routing_completed"]).length} | ~${exp} | ${skipSummary(of("sapience", ["routing_skipped"]))} | ${lastActivity(events.filter(e => e.plugin === "sapience"))} |`);
   lines.push(`| feedback | ${of("feedback", ["signal_detected", "signal_orphaned"]).length} signals | — | — | ${lastActivity(events.filter(e => e.plugin === "feedback"))} |`);
   lines.push(`| goals | ${of("goals", ["goal_created", "status_delivered", "check_skipped"]).length} | ~${exp} | ${skipSummary(of("goals", ["check_skipped"]))} | ${lastActivity(events.filter(e => e.plugin === "goals"))} |`);
   const active = goals.filter(g => g.status === "active").length;

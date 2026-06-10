@@ -108,11 +108,13 @@ describe("buildDashboard", () => {
       ev({ type: "pass_completed", plugin: "thinking", pass_id: "p1", observations: 2, actions: 1, audits: 0, questions: 0, nothing_to_report: false }, 1),
       ev({ type: "pass_skipped", plugin: "thinking", reason: "outside_hours" }, 2),
       ev({ type: "routing_completed", passes: 1, items: 3, by_tier: { propose: 3 } }, 1),
+      ev({ type: "routing_skipped", reason: "outside_hours" }, 2),
       ev({ type: "check_skipped", plugin: "goals", reason: "nothing_due" }, 1),
     ];
     const md = buildDashboard({ ...base, events });
     expect(md).toContain("## Heartbeat");
     expect(md).toContain("1 outside_hours");
+    expect(md).toMatch(/\| sapience \| 1 \|/);
     expect(md).toContain("**Goals:** 1 active · 1 decomposing · 2 total");
   });
 
