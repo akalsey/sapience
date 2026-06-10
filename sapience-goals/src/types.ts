@@ -33,7 +33,7 @@ export interface GoalsConfig {
   weeklyCheckInTime: string;
   inboxPath: string;
   inboxPositionPath: string;
-  output: { goalsPath: string };
+  output: { goalsPath: string; eventsPath: string };
 }
 
 export const DEFAULT_CONFIG: GoalsConfig = {
@@ -43,5 +43,5 @@ export const DEFAULT_CONFIG: GoalsConfig = {
   weeklyCheckInTime: "09:00",
   inboxPath: "goals/inbox.md",
   inboxPositionPath: "goals/inbox-position.json",
-  output: { goalsPath: "goals/goals.json" },
+  output: { goalsPath: "goals/goals.json", eventsPath: "sapience/events.jsonl" },
 };
