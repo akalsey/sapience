@@ -48,6 +48,9 @@ export interface SapienceConfig {
     calibrationPath: string;
     actionLogPath: string;
     processedPassesPath: string;
+    eventsPath: string;
+    dashboardPath: string;
+    goalsPath: string;
   };
 }
 
@@ -71,5 +74,8 @@ export const DEFAULT_CONFIG: SapienceConfig = {
     calibrationPath: "sapience/calibration.json",
     actionLogPath: "sapience/action-log.md",
     processedPassesPath: "sapience/processed-passes.json",
+    eventsPath: "sapience/events.jsonl",
+    dashboardPath: "sapience/dashboard.md",
+    goalsPath: "goals/goals.json",
   },
 };
