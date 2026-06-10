@@ -18,6 +18,14 @@ const base: RoutedItem = {
   tier: "act", confidence: 0.9,
 };
 
+const fakeApi = {
+  session: {
+    workflow: {
+      enqueueNextTurnInjection: async () => {},
+    },
+  },
+};
+
 describe("buildTierPrompt", () => {
   it("Act prompt contains [SAPIENCE: ACT] and action text", () => {
     const p = buildTierPrompt({ ...base, tier: "act" });
@@ -47,14 +55,6 @@ describe("buildTierPrompt", () => {
 });
 
 describe("deliverItems", () => {
-  const fakeApi = {
-    session: {
-      workflow: {
-        enqueueNextTurnInjection: async () => {},
-      },
-    },
-  };
-
   it("emits an action_logged event for act-tier items", async () => {
     const eventsPath = join(dir, "events.jsonl");
     const config = {
@@ -72,5 +72,20 @@ describe("deliverItems", () => {
     expect(ev.plugin).toBe("sapience");
     expect(ev.domain).toBe(item.domain);
     expect(ev.confidence).toBe(0.9);
+  });
+
+  it("emits no event for non-act tiers", async () => {
+    const eventsPath = join(dir, "events.jsonl");
+    const config = {
+      ...DEFAULT_CONFIG,
+      output: {
+        ...DEFAULT_CONFIG.output,
+        actionLogPath: join(dir, "action-log.md"),
+        eventsPath,
+      },
+    };
+    const item = { ...base, tier: "propose" as const, confidence: 0.5 };
+    await deliverItems([item], fakeApi, config);
+    await expect(readFile(eventsPath, "utf-8")).rejects.toThrow();
   });
 });
