@@ -181,6 +181,8 @@ Everything is plain files. Nothing is sent anywhere.
 | `~/.openclaw/sapience/action-log.md` | Log of everything acted on |
 | `~/.openclaw/sapience/goals.json` | All goals with status and progress |
 | `~/.openclaw/sapience/goals-inbox.md` | Where you write new goals |
+| `~/.openclaw/sapience/events.jsonl` | Unified event log written by all plugins |
+| `~/.openclaw/sapience/dashboard.md` | Auto-generated dashboard: autonomy progression, heartbeat, recent activity |
 
 ---
 
