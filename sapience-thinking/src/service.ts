@@ -129,6 +129,12 @@ export default definePluginEntry({
           const proposals = parseProposals(params.proposals);
           await appendPass(proposals, config.output.logPath);
           await appendStructuredProposals(proposals, config.output.logPath);
+          if (config.learning.trackOutcomes) {
+            let outcomes = await loadOutcomes(config.output.trackerPath);
+            outcomes = addProposals(outcomes, proposals);
+            outcomes = expireOldProposals(outcomes);
+            await saveOutcomes(outcomes, config.output.trackerPath);
+          }
           await appendEvent(config.output.eventsPath, {
             plugin: "thinking",
             type: "pass_completed",
@@ -139,12 +145,6 @@ export default definePluginEntry({
             questions: proposals.open_questions.length,
             nothing_to_report: proposals.nothing_to_report,
           });
-          if (config.learning.trackOutcomes) {
-            let outcomes = await loadOutcomes(config.output.trackerPath);
-            outcomes = addProposals(outcomes, proposals);
-            outcomes = expireOldProposals(outcomes);
-            await saveOutcomes(outcomes, config.output.trackerPath);
-          }
           const sapienceActive = await access(join(workspaceDir, "sapience", ".present")).then(() => true, () => false);
           if (!sapienceActive) await maybeDeliver(proposals, api, config);
         } catch (err) {
