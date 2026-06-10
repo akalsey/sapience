@@ -26,12 +26,17 @@ async function saveProfile(profile: CalibrationEntry[], path: string): Promise<v
   await writeFile(resolved, JSON.stringify(profile, null, 2), "utf-8");
 }
 
-export async function applyFeedbackToProfile(signal: DetectedSignal, calibrationPath: string): Promise<void> {
+export type ApplyResult =
+  | { status: "applied"; old_confidence: number; new_confidence: number; old_tier: string; new_tier: string }
+  | { status: "orphaned" }
+  | { status: "noop" };
+
+export async function applyFeedbackToProfile(signal: DetectedSignal, calibrationPath: string): Promise<ApplyResult> {
   const profile = await loadProfile(calibrationPath);
-  if (profile.length === 0) return;
+  if (profile.length === 0) return { status: "orphaned" };
 
   const idx = profile.findIndex(e => e.domain === signal.domain && e.action_class === signal.action_class);
-  if (idx === -1) return;
+  if (idx === -1) return { status: "orphaned" };
 
   const entry = profile[idx]!;
   let updated: CalibrationEntry;
@@ -43,8 +48,15 @@ export async function applyFeedbackToProfile(signal: DetectedSignal, calibration
   } else if (signal.type === "tier_adjustment" && signal.suggested_tier) {
     updated = { ...entry, tier: signal.suggested_tier, last_calibrated: new Date().toISOString() };
   } else {
-    return;
+    return { status: "noop" };
   }
 
   await saveProfile(profile.map((e, i) => i === idx ? updated : e), calibrationPath);
+  return {
+    status: "applied",
+    old_confidence: entry.confidence,
+    new_confidence: updated.confidence,
+    old_tier: entry.tier,
+    new_tier: updated.tier,
+  };
 }

@@ -27,6 +27,7 @@ export interface SemanticDetectionConfig {
 export interface FeedbackConfig {
   logPath: string;
   calibrationPath: string;
+  eventsPath: string;
   memoryEnabled: boolean;
   semanticDetection: SemanticDetectionConfig;
 }
@@ -34,6 +35,7 @@ export interface FeedbackConfig {
 export const DEFAULT_CONFIG: FeedbackConfig = {
   logPath: "sapience/feedback.md",
   calibrationPath: "sapience/calibration.json",
+  eventsPath: "sapience/events.jsonl",
   memoryEnabled: true,
   semanticDetection: {
     enabled: true,

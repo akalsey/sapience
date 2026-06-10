@@ -3,6 +3,7 @@ import { parseMessage } from "./feedback-parser.js";
 import { classifyWithLlm } from "./llm-classifier.js";
 import { appendFeedback } from "./log-writer.js";
 import { applyFeedbackToProfile } from "./calibration-bridge.js";
+import { appendEvent } from "./events.js";
 import { generateId } from "./utils.js";
 
 export function shouldClassify(text: string, config: FeedbackConfig): boolean {
@@ -49,7 +50,37 @@ export async function persistSignal(signal: DetectedSignal, ctx: PersistContext)
   };
 
   await appendFeedback(entry, ctx.config.logPath);
-  await applyFeedbackToProfile(signal, ctx.config.calibrationPath);
+  const result = await applyFeedbackToProfile(signal, ctx.config.calibrationPath);
+
+  await appendEvent(ctx.config.eventsPath, {
+    plugin: "feedback",
+    type: "signal_detected",
+    signal_type: signal.type,
+    domain: signal.domain,
+    action_class: signal.action_class,
+    source: signal.source ?? "regex",
+  });
+  if (result.status === "orphaned") {
+    await appendEvent(ctx.config.eventsPath, {
+      plugin: "feedback",
+      type: "signal_orphaned",
+      signal_type: signal.type,
+      domain: signal.domain,
+      action_class: signal.action_class,
+    });
+  } else if (result.status === "applied") {
+    await appendEvent(ctx.config.eventsPath, {
+      plugin: "feedback",
+      type: "calibration_change",
+      domain: signal.domain,
+      action_class: signal.action_class,
+      old_confidence: result.old_confidence,
+      new_confidence: result.new_confidence,
+      old_tier: result.old_tier,
+      new_tier: result.new_tier,
+      source: "feedback",
+    });
+  }
 
   if (metaPointer && ctx.config.memoryEnabled && ctx.memoryAdd) {
     await ctx.memoryAdd({
