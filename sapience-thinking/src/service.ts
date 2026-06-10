@@ -7,6 +7,7 @@ import { buildContext, getLastThreePasses } from "./context-builder.js";
 import { buildPrompt } from "./prompt-builder.js";
 import { parseProposals, ParseError } from "./output-parser.js";
 import { appendPass, appendError, appendSkipped, appendStructuredProposals } from "./log-writer.js";
+import { appendEvent } from "./events.js";
 import { loadOutcomes, saveOutcomes, addProposals, expireOldProposals } from "./outcome-tracker.js";
 import { computeSignal } from "./signal-analyzer.js";
 import { maybeDeliver } from "./delivery.js";
@@ -68,6 +69,7 @@ function mergeConfig(raw: Record<string, unknown>, workspaceDir: string): Plugin
       ...((raw.output as object) ?? {}),
       logPath: resolveDataPath((raw as any).output?.logPath, workspaceDir, DEFAULT_CONFIG.output.logPath),
       trackerPath: resolveDataPath((raw as any).output?.trackerPath, workspaceDir, DEFAULT_CONFIG.output.trackerPath),
+      eventsPath: resolveDataPath((raw as any).output?.eventsPath, workspaceDir, DEFAULT_CONFIG.output.eventsPath),
     },
     delivery: { ...DEFAULT_CONFIG.delivery, ...((raw.delivery as object) ?? {}) },
     learning: { ...DEFAULT_CONFIG.learning, ...((raw.learning as object) ?? {}) },
@@ -92,11 +94,13 @@ export default definePluginEntry({
       parameters: Type.Object({}),
       async execute(_id: any, _params: any) {
         if (!isWithinActiveHours(config)) {
+          await appendEvent(config.output.eventsPath, { plugin: "thinking", type: "pass_skipped", reason: "outside_hours" });
           return { content: [{ type: "text", text: JSON.stringify({ status: "skip", reason: "outside_active_hours" }) }] };
         }
         const acquired = await acquireLock(lockDir, lockFile);
         if (!acquired) {
           await appendSkipped("pass_already_running", config.output.logPath);
+          await appendEvent(config.output.eventsPath, { plugin: "thinking", type: "pass_skipped", reason: "already_running" });
           return { content: [{ type: "text", text: JSON.stringify({ status: "skip", reason: "pass_already_running" }) }] };
         }
         try {
@@ -125,6 +129,16 @@ export default definePluginEntry({
           const proposals = parseProposals(params.proposals);
           await appendPass(proposals, config.output.logPath);
           await appendStructuredProposals(proposals, config.output.logPath);
+          await appendEvent(config.output.eventsPath, {
+            plugin: "thinking",
+            type: "pass_completed",
+            pass_id: proposals.pass_id,
+            observations: proposals.observations.length,
+            actions: proposals.proposed_actions.length,
+            audits: proposals.proposed_audits.length,
+            questions: proposals.open_questions.length,
+            nothing_to_report: proposals.nothing_to_report,
+          });
           if (config.learning.trackOutcomes) {
             let outcomes = await loadOutcomes(config.output.trackerPath);
             outcomes = addProposals(outcomes, proposals);

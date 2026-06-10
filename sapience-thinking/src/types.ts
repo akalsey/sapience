@@ -81,7 +81,7 @@ export interface PluginConfig {
   schedule: string;
   activeHours: { start: string; end: string; timezone: string };
   context: { lookbackHours: number; maxContextTokens: number };
-  output: { logPath: string; trackerPath: string };
+  output: { logPath: string; trackerPath: string; eventsPath: string };
   delivery: { heartbeatTrigger: boolean; priorityThreshold: number; maxProposalsPerHeartbeat: number };
   learning: { trackOutcomes: boolean; adjustPromptBasedOnSignal: boolean; bootstrapDays: number };
 }
@@ -93,6 +93,7 @@ export const DEFAULT_CONFIG: PluginConfig = {
   output: {
     logPath: "proactive-thinking/log.md",
     trackerPath: "proactive-thinking/outcomes.json",
+    eventsPath: "sapience/events.jsonl",
   },
   delivery: { heartbeatTrigger: true, priorityThreshold: 4, maxProposalsPerHeartbeat: 3 },
   learning: { trackOutcomes: true, adjustPromptBasedOnSignal: true, bootstrapDays: 14 },
