@@ -1,5 +1,6 @@
 import type { RoutedItem, SapienceConfig } from "./types.js";
 import { appendAction } from "./action-log.js";
+import { appendEvent } from "./events.js";
 
 export function buildTierPrompt(item: RoutedItem): string {
   switch (item.tier) {
@@ -59,6 +60,13 @@ export async function deliverItems(
   for (const item of sorted) {
     if (item.tier === "act") {
       await appendAction(item, "Queued for immediate execution", config.output.actionLogPath);
+      await appendEvent(config.output.eventsPath, {
+        plugin: "sapience",
+        type: "action_logged",
+        domain: item.domain,
+        action_class: item.action_class,
+        confidence: item.confidence,
+      });
     }
     await api.session.workflow.enqueueNextTurnInjection({
       sessionTarget: "main",
