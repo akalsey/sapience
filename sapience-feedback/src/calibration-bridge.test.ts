@@ -46,4 +46,37 @@ describe("applyFeedbackToProfile", () => {
     const signal: DetectedSignal = { type: "confirmation", domain: "github", action_class: "pr_merge", message: "good", raw_text: "good" };
     await expect(applyFeedbackToProfile(signal, join(dir, "nonexistent.json"))).resolves.not.toThrow();
   });
+
+  it("returns the applied change details", async () => {
+    const path = join(dir, "calibration.json");
+    await writeFile(path, JSON.stringify(existingProfile), "utf-8");
+    const signal: DetectedSignal = { type: "confirmation", domain: "github", action_class: "pr_merge", message: "good call", raw_text: "good call" };
+    const result = await applyFeedbackToProfile(signal, path);
+    expect(result).toEqual(expect.objectContaining({
+      status: "applied",
+      old_confidence: 0.6,
+      old_tier: "propose",
+      new_tier: "propose",
+    }));
+    expect((result as any).new_confidence).toBeCloseTo(0.7);
+  });
+
+  it("returns orphaned when no entry matches", async () => {
+    const path = join(dir, "calibration.json");
+    await writeFile(path, JSON.stringify(existingProfile), "utf-8");
+    const signal: DetectedSignal = { type: "correction", domain: "unknown", action_class: "x", message: "m", raw_text: "m" };
+    expect(await applyFeedbackToProfile(signal, path)).toEqual({ status: "orphaned" });
+  });
+
+  it("returns orphaned when the profile is missing entirely", async () => {
+    const signal: DetectedSignal = { type: "correction", domain: "github", action_class: "pr_merge", message: "m", raw_text: "m" };
+    expect(await applyFeedbackToProfile(signal, join(dir, "nope.json"))).toEqual({ status: "orphaned" });
+  });
+
+  it("returns noop for a tier_adjustment without a suggested tier", async () => {
+    const path = join(dir, "calibration.json");
+    await writeFile(path, JSON.stringify(existingProfile), "utf-8");
+    const signal: DetectedSignal = { type: "tier_adjustment", domain: "github", action_class: "pr_merge", message: "m", raw_text: "m" };
+    expect(await applyFeedbackToProfile(signal, path)).toEqual({ status: "noop" });
+  });
 });

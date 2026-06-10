@@ -1,5 +1,5 @@
-import { describe, it, expect, vi } from "vitest";
-import { mkdtemp, readFile } from "fs/promises";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { mkdtemp, readFile, writeFile, rm } from "fs/promises";
 import { tmpdir } from "os";
 import { join } from "path";
 import { classifyMessage, persistSignal, shouldClassify } from "./feedback-handler.js";
@@ -145,5 +145,36 @@ describe("persistSignal", () => {
 
     await persistSignal(signal, { config: cfg, memoryAdd });
     expect(memoryAdd).not.toHaveBeenCalled();
+  });
+});
+
+describe("persistSignal event emission", () => {
+  let dir: string;
+  beforeEach(async () => { dir = await mkdtemp(join(tmpdir(), "feedback-events-")); });
+  afterEach(async () => { await rm(dir, { recursive: true, force: true }); });
+
+  const baseConfig: FeedbackConfig = { ...DEFAULT_CONFIG };
+
+  it("emits signal_detected and calibration_change events when applied", async () => {
+    const eventsPath = join(dir, "events.jsonl");
+    await writeFile(join(dir, "calibration.json"), JSON.stringify([
+      { domain: "github", action_class: "general", tier: "propose", confidence: 0.6, confirmed_count: 0, corrected_count: 0, last_calibrated: "2026-01-01T00:00:00Z", notes: "" },
+    ]), "utf-8");
+    const config: FeedbackConfig = { ...baseConfig, eventsPath, calibrationPath: join(dir, "calibration.json"), logPath: join(dir, "feedback.md") };
+    const signal: DetectedSignal = { type: "correction", domain: "github", action_class: "general", message: "don't", raw_text: "don't", source: "regex" };
+    await persistSignal(signal, { config });
+    const events = (await readFile(eventsPath, "utf-8")).trim().split("\n").map(l => JSON.parse(l));
+    expect(events.map((e: any) => e.type)).toEqual(["signal_detected", "calibration_change"]);
+    expect(events[1].source).toBe("feedback");
+    expect(events[1].old_confidence).toBe(0.6);
+  });
+
+  it("emits signal_orphaned when no calibration entry matches", async () => {
+    const eventsPath = join(dir, "events.jsonl");
+    const config: FeedbackConfig = { ...baseConfig, eventsPath, calibrationPath: join(dir, "missing.json"), logPath: join(dir, "feedback.md") };
+    const signal: DetectedSignal = { type: "correction", domain: "nowhere", action_class: "general", message: "don't", raw_text: "don't", source: "regex" };
+    await persistSignal(signal, { config });
+    const events = (await readFile(eventsPath, "utf-8")).trim().split("\n").map(l => JSON.parse(l));
+    expect(events.map((e: any) => e.type)).toEqual(["signal_detected", "signal_orphaned"]);
   });
 });
