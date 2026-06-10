@@ -5,6 +5,7 @@ import { resolveDataPath, generateId, isWithinActiveHours, nextWeeklyDate } from
 import { loadGoals, saveGoals, addGoal, updateNextDelivery } from "./goal-store.js";
 import { readNewGoals, savePosition } from "./inbox-reader.js";
 import { deliverDecomposition, deliverWeeklyStatus } from "./delivery.js";
+import { appendEvent } from "./events.js";
 
 function mergeConfig(raw: Record<string, unknown>, workspaceDir: string): GoalsConfig {
   return {
@@ -15,6 +16,7 @@ function mergeConfig(raw: Record<string, unknown>, workspaceDir: string): GoalsC
       ...DEFAULT_CONFIG.output,
       ...((raw.output as object) ?? {}),
       goalsPath: resolveDataPath((raw as any).output?.goalsPath, workspaceDir, DEFAULT_CONFIG.output.goalsPath),
+      eventsPath: resolveDataPath((raw as any).output?.eventsPath, workspaceDir, DEFAULT_CONFIG.output.eventsPath),
     },
     inboxPath: resolveDataPath((raw as any).inboxPath, workspaceDir, DEFAULT_CONFIG.inboxPath),
     inboxPositionPath: resolveDataPath((raw as any).inboxPositionPath, workspaceDir, DEFAULT_CONFIG.inboxPositionPath),
@@ -67,6 +69,7 @@ export default definePluginEntry({
           goals = addGoal(goals, goal);
           await saveGoals(goals, config.output.goalsPath);
           await deliverDecomposition(description, api);
+          await appendEvent(config.output.eventsPath, { plugin: "goals", type: "goal_created", goal_id: goal.id });
           return { content: [{ type: "text", text: JSON.stringify({ id: goal.id }) }] };
         } catch (err) {
           return { content: [{ type: "text", text: `[goals] goal_submit error: ${String(err)}` }] };
@@ -81,6 +84,7 @@ export default definePluginEntry({
       async execute(_id: any, _params: any) {
         try {
           if (!isWithinActiveHours(config)) {
+            await appendEvent(config.output.eventsPath, { plugin: "goals", type: "check_skipped", reason: "outside_hours" });
             return { content: [{ type: "text", text: "SILENT_REPLY_TOKEN" }] };
           }
 
@@ -110,15 +114,19 @@ export default definePluginEntry({
             };
             goals = addGoal(goals, goal);
             await deliverDecomposition(description, api);
+            await appendEvent(config.output.eventsPath, { plugin: "goals", type: "goal_created", goal_id: goal.id });
           }
 
           if (newDescriptions.length > 0) {
             await savePosition(newPosition, config.inboxPositionPath);
           }
 
+          let delivered = 0;
           for (const goal of goals) {
             if (isWeeklyCheckInDue(goal)) {
               await deliverWeeklyStatus(goal, api);
+              delivered++;
+              await appendEvent(config.output.eventsPath, { plugin: "goals", type: "status_delivered", goal_id: goal.id });
               goals = updateNextDelivery(
                 goals,
                 goal.id,
@@ -128,6 +136,9 @@ export default definePluginEntry({
           }
 
           await saveGoals(goals, config.output.goalsPath);
+          if (newDescriptions.length === 0 && delivered === 0) {
+            await appendEvent(config.output.eventsPath, { plugin: "goals", type: "check_skipped", reason: "nothing_due" });
+          }
           return { content: [{ type: "text", text: "SILENT_REPLY_TOKEN" }] };
         } catch (err) {
           return { content: [{ type: "text", text: `[goals] check_goals error: ${String(err)}` }] };
