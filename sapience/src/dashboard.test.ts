@@ -68,6 +68,13 @@ describe("confidenceTrend", () => {
     ];
     expect(confidenceTrend(events, "github", "action", 0.85, NOW)).toBe("(no history yet)");
   });
+
+  it("returns (no history yet) when all new_confidence values are non-numeric", () => {
+    const events = [
+      ev({ type: "calibration_change", domain: "github", action_class: "action", old_confidence: 0.2, new_confidence: "not-a-number" as unknown as number }, 24),
+    ];
+    expect(confidenceTrend(events, "github", "action", 0.85, NOW)).toBe("(no history yet)");
+  });
 });
 
 describe("buildDashboard", () => {
@@ -130,6 +137,14 @@ describe("buildDashboard", () => {
     const md = buildDashboard({ ...base, events: [], malformed: 3 });
     expect(md).toContain("3 malformed event line(s) skipped");
   });
+
+  it("escapes pipe characters in domain and action_class to prevent markdown injection", () => {
+    const profile: CalibrationProfile = [
+      { domain: "a|b", action_class: "c|d", tier: "act", confidence: 0.9, confirmed_count: 1, corrected_count: 0, last_calibrated: "2026-06-08T00:00:00Z", notes: "" },
+    ];
+    const md = buildDashboard({ ...base, profile, events: [] });
+    expect(md).toContain("a\\|b");
+  });
 });
 
 describe("rotateIfNeeded", () => {
@@ -141,9 +156,25 @@ describe("rotateIfNeeded", () => {
     const path = join(dir, "events.jsonl");
     await writeFile(path, "x".repeat(100), "utf-8");
     await rotateIfNeeded(path, NOW, 50);
-    const archived = await readFile(join(dir, "events-archive-2026-06-09.jsonl"), "utf-8");
+    const archived = await readFile(join(dir, "events-archive-2026-06-09-18-00-00.jsonl"), "utf-8");
     expect(archived).toHaveLength(100);
     await expect(readFile(path, "utf-8")).rejects.toThrow();
+  });
+
+  it("produces distinct archive names for two rotations within the same day", async () => {
+    const path = join(dir, "events.jsonl");
+    // First rotation
+    await writeFile(path, "x".repeat(100), "utf-8");
+    await rotateIfNeeded(path, NOW, 50);
+    // Write a new large file and rotate one second later
+    await writeFile(path, "y".repeat(100), "utf-8");
+    const NOW_PLUS_ONE = new Date(NOW.getTime() + 1000);
+    await rotateIfNeeded(path, NOW_PLUS_ONE, 50);
+    // Both archives should exist
+    const first = await readFile(join(dir, "events-archive-2026-06-09-18-00-00.jsonl"), "utf-8");
+    const second = await readFile(join(dir, "events-archive-2026-06-09-18-00-01.jsonl"), "utf-8");
+    expect(first).toHaveLength(100);
+    expect(second).toHaveLength(100);
   });
 
   it("leaves a small file alone and tolerates a missing file", async () => {

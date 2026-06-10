@@ -6,6 +6,10 @@ import type { CalibrationProfile, SapienceConfig } from "./types.js";
 import type { SapienceEvent } from "./events.js";
 
 const SPARK = "▁▂▃▄▅▆▇█";
+
+function safe(s: unknown): string {
+  return String(s).replace(/\|/g, "\\|");
+}
 const MAX_EVENTS_BYTES = 5 * 1024 * 1024;
 const DAY_MS = 24 * 60 * 60 * 1000;
 const SKIP_TYPES = new Set(["pass_skipped", "routing_skipped", "check_skipped"]);
@@ -49,6 +53,7 @@ export function confidenceTrend(
   const series = changes
     .map(e => Number(e.new_confidence))
     .filter(n => !Number.isNaN(n));
+  if (series.length === 0) return "(no history yet)";
   const baselineRaw = changes[0]!.old_confidence;
   const baseline = typeof baselineRaw === "number" ? baselineRaw : (series[0] ?? currentConfidence);
   const delta = currentConfidence - baseline;
@@ -70,6 +75,7 @@ function expectedRuns(activeHours: { start: string; end: string }): number {
   const [sh, sm] = activeHours.start.split(":").map(Number);
   const [eh, em] = activeHours.end.split(":").map(Number);
   const minutes = ((eh ?? 0) * 60 + (em ?? 0)) - ((sh ?? 0) * 60 + (sm ?? 0));
+  if (Number.isNaN(minutes)) return 0;
   return Math.max(0, Math.floor(minutes / 15) + 1);
 }
 
@@ -92,24 +98,24 @@ function describeEvent(e: SapienceEvent): string {
   switch (e.type) {
     case "pass_completed":
       return e.nothing_to_report
-        ? `thinking pass ${e.pass_id}: nothing to report`
-        : `thinking pass ${e.pass_id}: ${e.observations} obs, ${e.actions} actions, ${e.audits} audits, ${e.questions} questions`;
+        ? `thinking pass ${safe(e.pass_id)}: nothing to report`
+        : `thinking pass ${safe(e.pass_id)}: ${e.observations} obs, ${e.actions} actions, ${e.audits} audits, ${e.questions} questions`;
     case "routing_completed":
       return `routed ${e.items} item(s) from ${e.passes} pass(es)`;
     case "calibration_change":
-      return `calibration ${e.domain}/${e.action_class}: ${e.old_tier ?? "new"}→${e.new_tier} conf ${e.new_confidence}`;
+      return `calibration ${safe(e.domain)}/${safe(e.action_class)}: ${e.old_tier ?? "new"}→${e.new_tier} conf ${e.new_confidence}`;
     case "action_logged":
-      return `autonomous action (${e.domain}/${e.action_class})`;
+      return `autonomous action (${safe(e.domain)}/${safe(e.action_class)})`;
     case "digest_delivered":
       return "weekly digest delivered";
     case "signal_detected":
-      return `${e.signal_type} captured (${e.domain}, ${e.source})`;
+      return `${safe(e.signal_type)} captured (${safe(e.domain)}, ${safe(e.source)})`;
     case "signal_orphaned":
-      return `${e.signal_type} matched no calibration entry (${e.domain})`;
+      return `${safe(e.signal_type)} matched no calibration entry (${safe(e.domain)})`;
     case "goal_created":
-      return `goal created (${e.goal_id})`;
+      return `goal created (${safe(e.goal_id)})`;
     case "status_delivered":
-      return `goal status delivered (${e.goal_id})`;
+      return `goal status delivered (${safe(e.goal_id)})`;
     default:
       return String(e.type);
   }
@@ -142,7 +148,7 @@ export function buildDashboard(input: DashboardInput): string {
     lines.push("| --- | --- | --- | --- | --- | --- |");
     for (const e of [...profile].sort((a, b) => b.confidence - a.confidence)) {
       lines.push(
-        `| ${e.domain} / ${e.action_class} | ${e.tier} | ${e.confidence.toFixed(2)} | ` +
+        `| ${safe(e.domain)} / ${safe(e.action_class)} | ${e.tier} | ${e.confidence.toFixed(2)} | ` +
         `${confidenceTrend(d7, e.domain, e.action_class, e.confidence, now)} | ` +
         `${e.confirmed_count} | ${e.corrected_count} |`
       );
@@ -189,6 +195,8 @@ export function buildDashboard(input: DashboardInput): string {
   return lines.join("\n");
 }
 
+// Known benign race: a concurrent appendEvent between stat and rename can lose
+// at most one event line. This is acceptable for observability data.
 export async function rotateIfNeeded(
   eventsPath: string,
   now: Date,
@@ -197,7 +205,7 @@ export async function rotateIfNeeded(
   try {
     const s = await stat(eventsPath);
     if (s.size > maxBytes) {
-      const stamp = now.toISOString().slice(0, 10);
+      const stamp = now.toISOString().slice(0, 19).replace(/[T:]/g, "-");
       await rename(eventsPath, join(dirname(eventsPath), `events-archive-${stamp}.jsonl`));
     }
   } catch {
