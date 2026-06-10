@@ -42,4 +42,12 @@ describe("appendEvent", () => {
       appendEvent(path, { plugin: "feedback", type: "signal_detected" })
     ).resolves.toBeUndefined();
   });
+
+  it("generates ts when caller passes ts: undefined explicitly", async () => {
+    const path = join(dir, "events.jsonl");
+    await appendEvent(path, { ts: undefined, plugin: "sapience", type: "routing_completed" });
+    const ev = JSON.parse((await readFile(path, "utf-8")).trim());
+    expect(typeof ev.ts).toBe("string");
+    expect(new Date(ev.ts).getTime()).not.toBeNaN();
+  });
 });

@@ -13,7 +13,7 @@ export async function appendEvent(
   event: Omit<SapienceEvent, "ts"> & { ts?: string }
 ): Promise<void> {
   try {
-    const full = { ts: event.ts ?? new Date().toISOString(), ...event };
+    const full = { ...event, ts: event.ts ?? new Date().toISOString() };
     await mkdir(dirname(eventsPath), { recursive: true });
     await appendFile(eventsPath, JSON.stringify(full) + "\n", "utf-8");
   } catch {
