@@ -52,6 +52,13 @@ export async function persistSignal(signal: DetectedSignal, ctx: PersistContext)
   await appendFeedback(entry, ctx.config.logPath);
   const result = await applyFeedbackToProfile(signal, ctx.config.calibrationPath);
 
+  if (metaPointer && ctx.config.memoryEnabled && ctx.memoryAdd) {
+    await ctx.memoryAdd({
+      content: metaPointer,
+      metadata: { tags: ["feedback", "behavioral-correction", signal.domain], source: "feedback" },
+    });
+  }
+
   await appendEvent(ctx.config.eventsPath, {
     plugin: "feedback",
     type: "signal_detected",
@@ -79,13 +86,6 @@ export async function persistSignal(signal: DetectedSignal, ctx: PersistContext)
       old_tier: result.old_tier,
       new_tier: result.new_tier,
       source: "feedback",
-    });
-  }
-
-  if (metaPointer && ctx.config.memoryEnabled && ctx.memoryAdd) {
-    await ctx.memoryAdd({
-      content: metaPointer,
-      metadata: { tags: ["feedback", "behavioral-correction", signal.domain], source: "feedback" },
     });
   }
 

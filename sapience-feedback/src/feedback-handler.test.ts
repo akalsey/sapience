@@ -177,4 +177,16 @@ describe("persistSignal event emission", () => {
     const events = (await readFile(eventsPath, "utf-8")).trim().split("\n").map(l => JSON.parse(l));
     expect(events.map((e: any) => e.type)).toEqual(["signal_detected", "signal_orphaned"]);
   });
+
+  it("emits only signal_detected for a noop tier_adjustment", async () => {
+    const eventsPath = join(dir, "events.jsonl");
+    await writeFile(join(dir, "calibration.json"), JSON.stringify([
+      { domain: "github", action_class: "general", tier: "propose", confidence: 0.6, confirmed_count: 0, corrected_count: 0, last_calibrated: "2026-01-01T00:00:00Z", notes: "" },
+    ]), "utf-8");
+    const config: FeedbackConfig = { ...baseConfig, eventsPath, calibrationPath: join(dir, "calibration.json"), logPath: join(dir, "feedback.md") };
+    const signal: DetectedSignal = { type: "tier_adjustment", domain: "github", action_class: "general", message: "m", raw_text: "m", source: "regex" };
+    await persistSignal(signal, { config });
+    const events = (await readFile(eventsPath, "utf-8")).trim().split("\n").map(l => JSON.parse(l));
+    expect(events.map((e: any) => e.type)).toEqual(["signal_detected"]);
+  });
 });

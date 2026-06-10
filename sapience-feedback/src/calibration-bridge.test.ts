@@ -58,7 +58,10 @@ describe("applyFeedbackToProfile", () => {
       old_tier: "propose",
       new_tier: "propose",
     }));
-    expect((result as any).new_confidence).toBeCloseTo(0.7);
+    expect(result.status).toBe("applied");
+    if (result.status === "applied") {
+      expect(result.new_confidence).toBeCloseTo(0.7);
+    }
   });
 
   it("returns orphaned when no entry matches", async () => {
