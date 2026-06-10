@@ -81,6 +81,7 @@ describe("persistSignal", () => {
       ...DEFAULT_CONFIG,
       logPath: join(dir, "feedback.md"),
       calibrationPath: join(dir, "calibration.json"),
+      eventsPath: join(dir, "events.jsonl"),
     };
     const memoryAdd = vi.fn(async () => undefined);
     const signal: DetectedSignal = {
@@ -109,6 +110,7 @@ describe("persistSignal", () => {
       ...DEFAULT_CONFIG,
       logPath: join(dir, "feedback.md"),
       calibrationPath: join(dir, "calibration.json"),
+      eventsPath: join(dir, "events.jsonl"),
     };
     const memoryAdd = vi.fn(async () => undefined);
     const signal: DetectedSignal = {
@@ -131,6 +133,7 @@ describe("persistSignal", () => {
       ...DEFAULT_CONFIG,
       logPath: join(dir, "feedback.md"),
       calibrationPath: join(dir, "calibration.json"),
+      eventsPath: join(dir, "events.jsonl"),
       memoryEnabled: false,
     };
     const memoryAdd = vi.fn(async () => undefined);
