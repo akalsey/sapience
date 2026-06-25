@@ -45,6 +45,7 @@ export default definePluginEntry({
   description: "Autonomy layer: routes sapience-thinking proposals through tier function, calibrates to human preferences, delivers weekly digest",
 
   register(api: any) {
+    if (!api.runtime?.agent?.resolveAgentWorkspaceDir) return;
     const workspaceDir = (api.runtime.agent.resolveAgentWorkspaceDir as (cfg: unknown) => string)(api.pluginConfig);
     const config = mergeConfig(api.pluginConfig as Record<string, unknown>, workspaceDir);
 
