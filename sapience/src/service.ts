@@ -45,8 +45,10 @@ export default definePluginEntry({
   description: "Autonomy layer: routes sapience-thinking proposals through tier function, calibrates to human preferences, delivers weekly digest",
 
   register(api: any) {
-    if (!api.runtime?.agent?.resolveAgentWorkspaceDir) return;
-    const workspaceDir = (api.runtime.agent.resolveAgentWorkspaceDir as (cfg: unknown) => string)(api.pluginConfig);
+    let workspaceDir: string;
+    try {
+      workspaceDir = (api.runtime.agent.resolveAgentWorkspaceDir as (cfg: unknown) => string)(api.pluginConfig);
+    } catch { return; }
     const config = mergeConfig(api.pluginConfig as Record<string, unknown>, workspaceDir);
 
     // Write presence marker synchronously so sapience-thinking's .present check is race-free
