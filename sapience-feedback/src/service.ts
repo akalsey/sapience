@@ -28,6 +28,7 @@ export default definePluginEntry({
   description: "Persists behavioral corrections and confirmations into the sapience calibration profile",
 
   register(api: any) {
+    if (!api.runtime?.agent?.resolveAgentWorkspaceDir) return;
     const workspaceDir = (api.runtime.agent.resolveAgentWorkspaceDir as (cfg: unknown) => string)(api.pluginConfig);
     const config = mergeConfig(api.pluginConfig as Record<string, unknown>, workspaceDir);
     const llm = getLlmClient(api);

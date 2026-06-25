@@ -83,18 +83,44 @@ fi
 # ── cron jobs ────────────────────────────────────────────────────────────────
 header "Checking cron jobs..."
 
+read -r -p "$(echo -e "  Agent to run sapience crons under [main/all/<name>] (default: main): ")" CRON_AGENT_INPUT
+CRON_AGENT_INPUT="${CRON_AGENT_INPUT:-main}"
+
+# Detect main agent's model and warn if it's a known lightweight model
+AGENT_MODEL=$(openclaw agents list 2>/dev/null | grep -A5 "^- ${CRON_AGENT_INPUT:-main}" | grep "Model:" | awk '{print $2}' | head -1)
+if [[ -n "$AGENT_MODEL" ]] && echo "$AGENT_MODEL" | grep -qiE 'flash$|flash-lite|lite$|mini|nano'; then
+  warn "Agent '${CRON_AGENT_INPUT:-main}' uses model: $AGENT_MODEL"
+  info "Lightweight/flash models are often unreliable at tool calls. Sapience crons need a"
+  info "model that will consistently call tools — consider a full-size model for cron use."
+fi
+read -r -p "$(echo -e "  Model for sapience crons (default: anthropic/claude-haiku-4-5-20251001): ")" CRON_MODEL_INPUT
+CRON_MODEL_INPUT="${CRON_MODEL_INPUT:-anthropic/claude-haiku-4-5-20251001}"
+
+# Resolve agent list
+CRON_AGENTS=()
+if [[ "$CRON_AGENT_INPUT" == "all" ]]; then
+  while IFS= read -r aid; do
+    [[ -n "$aid" ]] && CRON_AGENTS+=("$aid")
+  done < <(openclaw agents list 2>/dev/null | grep "^- " | awk '{print $2}')
+  if [[ ${#CRON_AGENTS[@]} -eq 0 ]]; then
+    warn "Could not enumerate agents; defaulting to 'main'."
+    CRON_AGENTS=(main)
+  else
+    info "Found agents: ${CRON_AGENTS[*]}"
+  fi
+else
+  CRON_AGENTS=("$CRON_AGENT_INPUT")
+fi
+
+MULTI_AGENT=false
+[[ ${#CRON_AGENTS[@]} -gt 1 ]] && MULTI_AGENT=true
+
 CRON_LIST=$(openclaw cron list --json 2>&1)
 
-declare -A CRON_NAMES=(
+declare -A CRON_BASE_NAMES=(
   [thinking]="sapience-thinking-pass"
   [routing]="sapience-routing-pass"
   [goals]="sapience-goals-check-pass"
-)
-
-declare -A CRON_TOOLS=(
-  [thinking]="get_thinking_context,record_thinking_output"
-  [routing]="process_proposals"
-  [goals]="check_goals"
 )
 
 declare -A CRON_MESSAGES=(
@@ -103,34 +129,46 @@ declare -A CRON_MESSAGES=(
   [goals]="You are the goals tracking agent. Call check_goals() to process new goals and deliver weekly status updates. Reply SILENT_REPLY_TOKEN after the tool call."
 )
 
+cron_name() {
+  local base="$1" agent="$2"
+  if [[ "$MULTI_AGENT" == "true" ]]; then echo "${base}-${agent}"; else echo "$base"; fi
+}
+
 CRON_SCHEDULE="*/15 * * * *"
 
+# CRONS_TO_ADD stores "key:agent" pairs
 CRONS_TO_ADD=()
 
-for key in thinking routing goals; do
-  name="${CRON_NAMES[$key]}"
-  if echo "$CRON_LIST" | grep -q "$name"; then
-    ok "Cron job '$name' exists"
-  else
-    warn "Cron job '$name' is NOT registered"
-    CRONS_TO_ADD+=("$key")
-  fi
+for agent in "${CRON_AGENTS[@]}"; do
+  for key in thinking routing goals; do
+    name=$(cron_name "${CRON_BASE_NAMES[$key]}" "$agent")
+    if echo "$CRON_LIST" | grep -q "\"$name\""; then
+      ok "Cron job '$name' exists"
+    else
+      warn "Cron job '$name' is NOT registered"
+      CRONS_TO_ADD+=("${key}:${agent}")
+    fi
+  done
 done
 
 if [[ ${#CRONS_TO_ADD[@]} -gt 0 ]]; then
   echo ""
-  warn "Missing cron jobs: $(for k in "${CRONS_TO_ADD[@]}"; do echo -n "${CRON_NAMES[$k]} "; done)"
+  warn "Missing cron jobs: $(for item in "${CRONS_TO_ADD[@]}"; do key="${item%%:*}"; agent="${item##*:}"; echo -n "$(cron_name "${CRON_BASE_NAMES[$key]}" "$agent") "; done)"
   if confirm "Register missing cron jobs now?"; then
-    for key in "${CRONS_TO_ADD[@]}"; do
-      name="${CRON_NAMES[$key]}"
-      tools="${CRON_TOOLS[$key]}"
+    for item in "${CRONS_TO_ADD[@]}"; do
+      key="${item%%:*}"
+      agent="${item##*:}"
+      name=$(cron_name "${CRON_BASE_NAMES[$key]}" "$agent")
+
       message="${CRON_MESSAGES[$key]}"
-      echo "  Registering $name..."
+      echo "  Registering $name (agent: $agent)..."
       openclaw cron add \
         --name "$name" \
         --cron "$CRON_SCHEDULE" \
         --session isolated \
-        --tools "$tools" \
+        --agent "$agent" \
+        --model "$CRON_MODEL_INPUT" \
+        --no-deliver \
         --message "$message" \
         --timeout-seconds 120
       ok "Registered $name"
@@ -139,16 +177,20 @@ if [[ ${#CRONS_TO_ADD[@]} -gt 0 ]]; then
     info "Skipping cron registration. You can register manually — see README for cron commands."
     echo ""
     info "To register manually:"
-    for key in "${CRONS_TO_ADD[@]}"; do
-      name="${CRON_NAMES[$key]}"
-      tools="${CRON_TOOLS[$key]}"
+    for item in "${CRONS_TO_ADD[@]}"; do
+      key="${item%%:*}"
+      agent="${item##*:}"
+      name=$(cron_name "${CRON_BASE_NAMES[$key]}" "$agent")
+
       message="${CRON_MESSAGES[$key]}"
       echo ""
       echo "  openclaw cron add \\"
       echo "    --name \"$name\" \\"
       echo "    --cron \"$CRON_SCHEDULE\" \\"
       echo "    --session isolated \\"
-      echo "    --tools \"$tools\" \\"
+      echo "    --agent \"$agent\" \\"
+      echo "    --model \"$CRON_MODEL_INPUT\" \\"
+      echo "    --no-deliver \\"
       echo "    --message \"$message\" \\"
       echo "    --timeout-seconds 120"
     done

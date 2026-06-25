@@ -33,6 +33,7 @@ export default definePluginEntry({
   description: "Persistent fuzzy goal tracking with weekly status delivery",
 
   register(api: any) {
+    if (!api.runtime?.agent?.resolveAgentWorkspaceDir) return;
     const workspaceDir = (api.runtime.agent.resolveAgentWorkspaceDir as (cfg: unknown) => string)(api.pluginConfig);
     const config = mergeConfig(api.pluginConfig as Record<string, unknown>, workspaceDir);
 
