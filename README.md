@@ -57,7 +57,18 @@ Goal trackers and project management tools require you to translate fuzzy object
 
 ## Quickstart
 
-### 1. Install the plugins
+### 1. Install
+
+The recommended way is the installer. It checks for and installs the plugins, registers the cron jobs, and sets up the memory configuration the suite needs — prompting before each change:
+
+```bash
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/akalsey/sapience/HEAD/install.sh)"
+```
+
+It's interactive and idempotent: it only adds what's missing, so it's safe to re-run after an upgrade.
+
+<details>
+<summary>Manual installation</summary>
 
 Install any or all plugins — they work standalone and detect each other automatically:
 
@@ -78,6 +89,10 @@ for dir in sapience-thinking sapience sapience-feedback sapience-goals
     openclaw plugins install ./$dir
 end
 ```
+
+Installing the plugins manually does **not** register the cron jobs or memory configuration — run `install.sh` (or set those up by hand; see the plugin READMEs) for the suite to actually do anything.
+
+</details>
 
 Each plugin works standalone. When sapience is installed alongside thinking, thinking automatically defers direct delivery to sapience's routing layer.
 
