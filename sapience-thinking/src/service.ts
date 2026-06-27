@@ -13,6 +13,7 @@ import { computeSignal } from "./signal-analyzer.js";
 import { maybeDeliver } from "./delivery.js";
 import { DEFAULT_CONFIG, type PluginConfig } from "./types.js";
 import { resolveDataPath } from "./utils.js";
+import { writeStatusArtifact } from "./status-artifact.js";
 
 interface LockData {
   pid: number;
@@ -90,6 +91,16 @@ export default definePluginEntry({
     const lockDir = join(workspaceDir, "proactive-thinking");
     const lockFile = join(lockDir, ".pass.lock");
     const agentId: string = ((api.config as Record<string, unknown>)?.agent as Record<string, unknown>)?.id as string ?? "default";
+
+    // Record what this plugin actually resolved, for `openclaw sapience doctor`.
+    void writeStatusArtifact({
+      pluginId: "sapience-thinking",
+      version: (api.plugin?.version ?? api.manifest?.version ?? "unknown") as string,
+      agentId,
+      resolvedWorkspaceDir: workspaceDir,
+      outputPaths: config.output as unknown as Record<string, string>,
+      initAt: new Date().toISOString(),
+    }).catch(() => {});
 
     api.registerTool({
       name: "get_thinking_context",

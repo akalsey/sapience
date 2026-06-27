@@ -6,6 +6,7 @@
   "contracts": {
     "tools": ["process_proposals"]
   },
+  "commandAliases": [{ "name": "sapience" }],
   "activation": {
     "onStartup": true
   },
