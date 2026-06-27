@@ -12,6 +12,8 @@ import { deliverItems } from "./delivery.js";
 import { isDigestDay, buildDigestPrompt } from "./weekly-digest.js";
 import { appendEvent } from "./events.js";
 import { generateDashboard } from "./dashboard.js";
+import { writeStatusArtifact } from "./status-artifact.js";
+import { registerSapienceDoctorCli } from "./doctor/cli.js";
 
 function mergeConfig(raw: Record<string, unknown>, workspaceDir: string): SapienceConfig {
   return {
@@ -55,6 +57,19 @@ export default definePluginEntry({
     const markerDir = join(workspaceDir, "sapience");
     mkdirSync(markerDir, { recursive: true });
     writeFileSync(join(markerDir, ".present"), "", "utf-8");
+
+    // Record what this plugin actually resolved, so `openclaw sapience doctor` can
+    // report production reality (not a recomputation). Fire-and-forget.
+    void writeStatusArtifact({
+      pluginId: "sapience",
+      version: (api.plugin?.version ?? api.manifest?.version ?? "unknown") as string,
+      agentId: ((api.config as Record<string, unknown>)?.agent as Record<string, unknown>)?.id as string ?? "default",
+      resolvedWorkspaceDir: workspaceDir,
+      outputPaths: config.output as unknown as Record<string, string>,
+      initAt: new Date().toISOString(),
+    }).catch(() => {});
+
+    registerSapienceDoctorCli(api);
 
     api.registerTool({
       name: "process_proposals",
