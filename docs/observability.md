@@ -120,16 +120,19 @@ The dashboard is generated at the end of each routing pass. If the sapience cron
 
 The cron likely isn't running or the plugin isn't activated. Verify with `openclaw cron list` and `openclaw plugins list`.
 
+**"Crons show `error`, lastError mentions `agents.defaults.models` allowlist"**
+
+The cron payload pins a `model` that the gateway doesn't permit, so cron *preflight* rejects every run before it starts. Tell-tale signs: `lastRunStatus: error`, a `lastDurationMs` in the tens of milliseconds, and a `lastError` like:
+
+```text
+cron payload.model '<model>' rejected by agents.defaults.models allowlist: ...
+```
+
+This happens when a cron was created with `--model <model>` for a model that isn't in `agents.defaults.models`. The fix is to **not pin a model on the cron at all** — let it inherit the agent's default model, which is allowlisted by definition. The installer no longer pins a model (`install.sh` omits `--model`). To repair an existing job, delete and re-add it without `--model`, or patch the job to clear its `payload.model`. Inspect the current allowlist with `openclaw config get agents.defaults.models`.
+
 **"Crons show ok but events.jsonl never appears"**
 
-The cron is running but the model is skipping tool calls. This commonly happens with non-Claude models (Gemini Flash, GPT-4o, etc.) that don't reliably follow tool-calling instructions in short cron prompts.
-
-Check which model your crons use:
-```
-openclaw cron get <cron-id>
-```
-
-If the model is a lightweight or "lite" variant (e.g. Gemini Flash Lite), delete and re-add the crons with a full-size model using `--model <model>`. Lightweight models frequently skip tool calls in short cron prompts. Any full-size model with reliable tool-calling support works — Claude Haiku, Gemini Flash (non-lite), GPT-4o-mini, etc. The installer detects known lightweight models automatically on new installs.
+The cron ran but its tool calls didn't land — check the run actually invoked the plugin's tool (e.g. `record_thinking_output`). If the model replied without calling tools, confirm the cron's agent uses a model with reliable tool-calling. Do **not** work around this by pinning an arbitrary model with `--model`: a model outside `agents.defaults.models` makes the cron fail preflight entirely (see the entry above).
 
 **"All 7d trends say '(no history yet)'"**
 
