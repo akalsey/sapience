@@ -86,15 +86,8 @@ header "Checking cron jobs..."
 read -r -p "$(echo -e "  Agent to run sapience crons under [main/all/<name>] (default: main): ")" CRON_AGENT_INPUT
 CRON_AGENT_INPUT="${CRON_AGENT_INPUT:-main}"
 
-# Detect main agent's model and warn if it's a known lightweight model
-AGENT_MODEL=$(openclaw agents list 2>/dev/null | grep -A5 "^- ${CRON_AGENT_INPUT:-main}" | grep "Model:" | awk '{print $2}' | head -1)
-if [[ -n "$AGENT_MODEL" ]] && echo "$AGENT_MODEL" | grep -qiE 'flash$|flash-lite|lite$|mini|nano'; then
-  warn "Agent '${CRON_AGENT_INPUT:-main}' uses model: $AGENT_MODEL"
-  info "Lightweight/flash models are often unreliable at tool calls. Sapience crons need a"
-  info "model that will consistently call tools — consider a full-size model for cron use."
-fi
-read -r -p "$(echo -e "  Model for sapience crons (default: anthropic/claude-haiku-4-5-20251001): ")" CRON_MODEL_INPUT
-CRON_MODEL_INPUT="${CRON_MODEL_INPUT:-anthropic/claude-haiku-4-5-20251001}"
+# No --model: crons inherit the agent's default. A pinned model that isn't in
+# the gateway's agents.defaults.models allowlist fails preflight on every run.
 
 # Resolve agent list
 CRON_AGENTS=()
@@ -167,7 +160,6 @@ if [[ ${#CRONS_TO_ADD[@]} -gt 0 ]]; then
         --cron "$CRON_SCHEDULE" \
         --session isolated \
         --agent "$agent" \
-        --model "$CRON_MODEL_INPUT" \
         --no-deliver \
         --message "$message" \
         --timeout-seconds 120
@@ -189,7 +181,6 @@ if [[ ${#CRONS_TO_ADD[@]} -gt 0 ]]; then
       echo "    --cron \"$CRON_SCHEDULE\" \\"
       echo "    --session isolated \\"
       echo "    --agent \"$agent\" \\"
-      echo "    --model \"$CRON_MODEL_INPUT\" \\"
       echo "    --no-deliver \\"
       echo "    --message \"$message\" \\"
       echo "    --timeout-seconds 120"
