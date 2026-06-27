@@ -129,7 +129,7 @@ The next delivery date is stored per-goal in `goals.json` and rolls forward auto
 **Goal submitted but no decomposition prompt**
 The cron fires every 15 minutes. Wait for the next pass, or trigger manually:
 ```bash
-openclaw cron run sapience-goals-check-pass
+openclaw cron run sapience-goals-check
 ```
 Also confirm the inbox path matches your config and that the file is readable.
 

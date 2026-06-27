@@ -75,7 +75,7 @@ Passes only fire within `activeHours`. Outside that window, the cron fires but s
 **Nothing in the log after install**
 The plugin fires on cron schedule, not immediately. Wait for the next 15-minute boundary, or manually trigger:
 ```bash
-openclaw cron run sapience-thinking-pass
+openclaw cron run sapience-thinking
 ```
 
 **Passes are running but log is empty**
