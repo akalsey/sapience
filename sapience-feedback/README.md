@@ -114,9 +114,18 @@ For corrections, the plugin calls `api.memory.add` to write a behavioral reminde
 
 > "Before working on github / github/action: check feedback log — correction recorded: 'don't push to main without a PR'"
 
-Future sessions surface this pointer automatically through OpenClaw's standard memory system. No separate memory plugin is required — memory writes go through the same API OpenClaw itself uses.
+The *write* goes through `api.memory.add` — the same API OpenClaw itself uses — and succeeds whether or not any extra memory plugin is installed. **But a successful write is not enough for the pointer to come back.** For these corrections to actually resurface in future sessions (and for `sapience-thinking` to pick up memory as context), OpenClaw needs the `memory-wiki` layer installed and configured:
 
-To disable memory writes, set `memoryEnabled: false` in config.
+| Setting | Value | Why |
+|---|---|---|
+| `plugins.memory-core.dreaming.enabled` | `true` | Background consolidation of memories |
+| `plugins.memory-wiki.vaultMode` | `"bridge"` | Wiki operates in bridge mode |
+| `plugins.memory-wiki.bridge.enabled` | `true` | Bridges `memory-core` ↔ wiki so writes become recallable |
+| `plugins.memory-wiki.search.corpus` | `"all"` | Recall searches across the whole corpus |
+
+The suite installer (`install.sh`) checks for `memory-wiki` and offers to install it and apply these settings. Without them, corrections are written but may never persist or resurface across sessions — the calibration profile still updates, but the behavioral reminders won't reliably come back.
+
+To disable memory writes entirely, set `memoryEnabled: false` in config.
 
 ---
 
