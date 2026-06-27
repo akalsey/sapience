@@ -1,7 +1,7 @@
 {
   "id": "sapience-goals",
   "name": "Sapience Goals",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "description": "Persistent fuzzy goal tracking: accepts vague objectives, decomposes them into candidate approaches, tracks incremental progress, and delivers weekly status",
   "contracts": {
     "tools": ["goal_submit", "check_goals"]

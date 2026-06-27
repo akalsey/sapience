@@ -1,7 +1,7 @@
 {
   "id": "sapience",
   "name": "Sapience",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "description": "Autonomy layer: routes sapience-thinking proposals through tier function, calibrates to human preferences, delivers weekly digest",
   "contracts": {
     "tools": ["process_proposals"]
