@@ -118,9 +118,9 @@ MULTI_AGENT=false
 CRON_LIST=$(openclaw cron list --json 2>&1)
 
 declare -A CRON_BASE_NAMES=(
-  [thinking]="sapience-thinking-pass"
-  [routing]="sapience-routing-pass"
-  [goals]="sapience-goals-check-pass"
+  [thinking]="sapience-thinking"
+  [routing]="sapience-routing"
+  [goals]="sapience-goals-check"
 )
 
 declare -A CRON_MESSAGES=(
