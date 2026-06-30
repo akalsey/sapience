@@ -46,7 +46,10 @@ export function registerSapienceDoctorCli(api: any): void {
     (ctx: any) => {
       const program = ctx.program;
       const config = ctx.config ?? api.config;
-      const cmd = program.command("doctor").description("Diagnose the sapience suite (crons, paths, memory config)");
+      // Create a "sapience" group and nest doctor under it — mirrors how
+      // memory-wiki builds `wiki doctor`. Top-level "doctor" collides with openclaw's own.
+      const group = program.command("sapience").description("Sapience suite diagnostics");
+      const cmd = group.command("doctor").description("Diagnose the sapience suite (crons, paths, memory config)");
       cmd.option("--fix", "apply the safe, auto-fixable findings (memory config, missing crons)");
       cmd.option("--json", "output the report as JSON");
       cmd.action(async (opts: { fix?: boolean; json?: boolean }) => {
