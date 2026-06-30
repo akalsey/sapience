@@ -47,6 +47,11 @@ export default definePluginEntry({
   description: "Autonomy layer: routes sapience-thinking proposals through tier function, calibrates to human preferences, delivers weekly digest",
 
   register(api: any) {
+    // Register the CLI before the workspace guard below: OpenClaw collects CLI
+    // registrars by calling register() with an empty runtime, so the guard throws
+    // and bails there. CLI registration needs no workspace.
+    if (typeof api.registerCli === "function") registerSapienceDoctorCli(api);
+
     let workspaceDir: string;
     try {
       workspaceDir = (api.runtime.agent.resolveAgentWorkspaceDir as (cfg: unknown) => string)(api.pluginConfig);
@@ -68,8 +73,6 @@ export default definePluginEntry({
       outputPaths: config.output as unknown as Record<string, string>,
       initAt: new Date().toISOString(),
     }).catch(() => {});
-
-    registerSapienceDoctorCli(api);
 
     api.registerTool({
       name: "process_proposals",
