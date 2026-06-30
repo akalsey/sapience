@@ -1,7 +1,19 @@
 import { homedir } from "os";
 import { join } from "path";
 import { mkdir, writeFile, readFile, readdir } from "fs/promises";
+import { createRequire } from "node:module";
 import type { StatusArtifact } from "./doctor/types.js";
+
+// Reads this plugin's own version from its package.json. api.plugin/api.manifest
+// are not populated at register() time, so this is the reliable source.
+export function resolvePluginVersion(): string {
+  try {
+    const req = createRequire(import.meta.url);
+    return (req("../../package.json") as { version?: string }).version ?? "unknown";
+  } catch {
+    return "unknown";
+  }
+}
 
 // Mirrors openclaw's resolveStateDir for the common case: OPENCLAW_STATE_DIR
 // override, else ~/.openclaw. Both the writer (each suite plugin, at init) and the

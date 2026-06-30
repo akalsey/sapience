@@ -6,7 +6,7 @@ import { loadGoals, saveGoals, addGoal, updateNextDelivery } from "./goal-store.
 import { readNewGoals, savePosition } from "./inbox-reader.js";
 import { deliverDecomposition, deliverWeeklyStatus } from "./delivery.js";
 import { appendEvent } from "./events.js";
-import { writeStatusArtifact } from "./status-artifact.js";
+import { writeStatusArtifact, resolvePluginVersion } from "./status-artifact.js";
 
 function mergeConfig(raw: Record<string, unknown>, workspaceDir: string): GoalsConfig {
   return {
@@ -43,7 +43,7 @@ export default definePluginEntry({
     // Record what this plugin actually resolved, for `openclaw sapience doctor`.
     void writeStatusArtifact({
       pluginId: "sapience-goals",
-      version: (api.plugin?.version ?? api.manifest?.version ?? "unknown") as string,
+      version: resolvePluginVersion(),
       agentId: ((api.config as Record<string, unknown>)?.agent as Record<string, unknown>)?.id as string ?? "default",
       resolvedWorkspaceDir: workspaceDir,
       outputPaths: {

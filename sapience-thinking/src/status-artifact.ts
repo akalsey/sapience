@@ -1,6 +1,18 @@
 import { homedir } from "os";
 import { join } from "path";
 import { mkdir, writeFile } from "fs/promises";
+import { createRequire } from "node:module";
+
+// Reads this plugin's own version from its package.json. api.plugin/api.manifest
+// are not populated at register() time, so this is the reliable source.
+export function resolvePluginVersion(): string {
+  try {
+    const req = createRequire(import.meta.url);
+    return (req("../../package.json") as { version?: string }).version ?? "unknown";
+  } catch {
+    return "unknown";
+  }
+}
 
 // Status artifact written at init so `openclaw sapience doctor` can report what this
 // plugin actually resolved (not a recomputation). The shape must match the sapience

@@ -3,7 +3,7 @@ import { definePluginEntry } from "openclaw/plugin-sdk/plugin-entry";
 import { DEFAULT_CONFIG, type FeedbackConfig, type LlmClient } from "./types.js";
 import { resolveDataPath } from "./utils.js";
 import { classifyMessage, persistSignal } from "./feedback-handler.js";
-import { writeStatusArtifact } from "./status-artifact.js";
+import { writeStatusArtifact, resolvePluginVersion } from "./status-artifact.js";
 
 function mergeConfig(raw: Record<string, unknown>, workspaceDir: string): FeedbackConfig {
   const rawSemantic = (raw as Partial<FeedbackConfig>).semanticDetection ?? {};
@@ -40,7 +40,7 @@ export default definePluginEntry({
     // Record what this plugin actually resolved, for `openclaw sapience doctor`.
     void writeStatusArtifact({
       pluginId: "sapience-feedback",
-      version: (api.plugin?.version ?? api.manifest?.version ?? "unknown") as string,
+      version: resolvePluginVersion(),
       agentId: ((api.config as Record<string, unknown>)?.agent as Record<string, unknown>)?.id as string ?? "default",
       resolvedWorkspaceDir: workspaceDir,
       outputPaths: { logPath: config.logPath, calibrationPath: config.calibrationPath, eventsPath: config.eventsPath },

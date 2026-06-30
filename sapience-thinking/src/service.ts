@@ -13,7 +13,7 @@ import { computeSignal } from "./signal-analyzer.js";
 import { maybeDeliver } from "./delivery.js";
 import { DEFAULT_CONFIG, type PluginConfig } from "./types.js";
 import { resolveDataPath } from "./utils.js";
-import { writeStatusArtifact } from "./status-artifact.js";
+import { writeStatusArtifact, resolvePluginVersion } from "./status-artifact.js";
 
 interface LockData {
   pid: number;
@@ -95,7 +95,7 @@ export default definePluginEntry({
     // Record what this plugin actually resolved, for `openclaw sapience doctor`.
     void writeStatusArtifact({
       pluginId: "sapience-thinking",
-      version: (api.plugin?.version ?? api.manifest?.version ?? "unknown") as string,
+      version: resolvePluginVersion(),
       agentId,
       resolvedWorkspaceDir: workspaceDir,
       outputPaths: config.output as unknown as Record<string, string>,

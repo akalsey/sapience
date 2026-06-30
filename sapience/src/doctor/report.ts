@@ -64,11 +64,7 @@ function cronFinding(c: CronObservation, allowlist: string[]): Finding {
 function pathsSection(i: DoctorInputs): Section {
   const findings: Finding[] = [];
   const w = i.workspace;
-  if (w.resolverExpected && w.resolverExpected !== w.resolved) {
-    findings.push({ id: "paths:workspace", severity: "warn", source: "artifact",
-      message: `workspace dir: ${w.resolved}`,
-      detail: `resolved dir (${w.resolved}) differs from the resolver-expected dir (${w.resolverExpected}) — paths are inconsistent.` });
-  } else if (w.source === "resolver") {
+  if (w.source === "resolver") {
     findings.push({ id: "paths:workspace", severity: "warn", source: "resolver",
       message: `workspace dir: ${w.resolved}`,
       detail: "expected dir (gateway not observed — no status artifact). Run in the same profile/--dev context as the gateway." });

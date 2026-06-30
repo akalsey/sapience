@@ -147,14 +147,6 @@ describe("buildSuiteDoctorReport", () => {
     expect(byId(r, "memory:dreamingEnabled")).toBeDefined();
   });
 
-  it("warns when the resolved workspace differs from the resolver-expected dir", () => {
-    const i = healthy();
-    i.workspace = { resolved: "/ws", source: "artifact", resolverExpected: "/other" };
-    const r = buildSuiteDoctorReport(i);
-    expect(byId(r, "paths:workspace")?.severity).toBe("warn");
-    expect(byId(r, "paths:workspace")?.detail?.toLowerCase()).toContain("differ");
-  });
-
   it("warns when the workspace dir is only a resolver fallback (gateway not observed)", () => {
     const i = healthy();
     i.workspace = { resolved: "/ws", source: "resolver" };

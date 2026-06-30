@@ -72,8 +72,6 @@ export interface FileObservation {
 export interface WorkspaceObservation {
   resolved: string;
   source: "artifact" | "resolver";  // artifact = observed truth; resolver = computed fallback
-  // Set when artifact-recorded and resolver-computed dirs disagree.
-  resolverExpected?: string;
 }
 
 export interface MemoryObservation {

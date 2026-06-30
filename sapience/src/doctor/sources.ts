@@ -1,5 +1,7 @@
 import { stat } from "fs/promises";
 import { join } from "path";
+import { execFile } from "child_process";
+import { promisify } from "util";
 import { readStatusArtifacts } from "../status-artifact.js";
 import { SUITE_PLUGINS, SUITE_CRON_BASES, SUITE_FILES, MEMORY_SETTINGS } from "./inventory.js";
 import type {
@@ -11,6 +13,8 @@ import type {
   MemoryObservation,
   StatusArtifact,
 } from "./types.js";
+
+const exec = promisify(execFile);
 
 // Reads a dotted "plugins.<id>.<rest>" path against the real OpenClawConfig shape
 // (config.plugins.entries.<id>.config.<rest>). Returns undefined if absent.
@@ -40,12 +44,25 @@ function modelAllowlist(config: any): string[] {
   return [];
 }
 
-async function listCronJobs(api: any): Promise<any[]> {
+// `openclaw cron list --json` prints `{ jobs: [...] }` (it queries the running
+// gateway). Accept a bare array too, for resilience.
+export function parseCronListJson(stdout: string): any[] {
   try {
-    const res = await api?.runtime?.cron?.list?.({ includeDisabled: true });
-    if (!res) return [];
-    if (Array.isArray(res)) return res;
-    return res.jobs ?? res.items ?? [];
+    const parsed = JSON.parse(stdout);
+    if (Array.isArray(parsed)) return parsed;
+    return parsed?.jobs ?? [];
+  } catch {
+    return [];
+  }
+}
+
+// The cron *service* (api.runtime.cron) is only wired in the running gateway, not
+// in the standalone CLI process the doctor runs in. Shell out to the CLI command,
+// which talks to the gateway — the same path the user runs by hand.
+async function listCronJobs(): Promise<any[]> {
+  try {
+    const { stdout } = await exec("openclaw", ["cron", "list", "--all", "--json"]);
+    return parseCronListJson(stdout);
   } catch {
     return [];
   }
@@ -69,23 +86,20 @@ function toCronObservation(base: string, jobs: any[]): CronObservation {
 
 function resolveWorkspace(api: any, config: any, artifacts: Record<string, StatusArtifact>): WorkspaceObservation {
   const observed = Object.values(artifacts)[0];
-  const resolverFor = (agentId: string): string | undefined => {
-    try {
-      return api?.runtime?.agent?.resolveAgentWorkspaceDir?.(config, agentId);
-    } catch {
-      return undefined;
-    }
-  };
+  // The artifact records the dir the plugin actually resolved at runtime — that's
+  // ground truth for where files are written, so trust it directly. (We don't
+  // recompute via resolveAgentWorkspaceDir: the runtime resolution is itself a
+  // single-arg call, so there's no consistent agentId to compare against, and a
+  // recomputation produced false "paths inconsistent" warnings.)
   if (observed) {
-    const expected = resolverFor(observed.agentId);
-    return {
-      resolved: observed.resolvedWorkspaceDir,
-      source: "artifact",
-      ...(expected && expected !== observed.resolvedWorkspaceDir ? { resolverExpected: expected } : {}),
-    };
+    return { resolved: observed.resolvedWorkspaceDir, source: "artifact" };
   }
-  const agentId = api?.runtime?.cron?.getDefaultAgentId?.() ?? "default";
-  return { resolved: resolverFor(agentId) ?? "(unknown)", source: "resolver" };
+  let resolved: string | undefined;
+  try {
+    const agentId = api?.runtime?.cron?.getDefaultAgentId?.() ?? "default";
+    resolved = api?.runtime?.agent?.resolveAgentWorkspaceDir?.(config, agentId);
+  } catch { /* resolver unavailable */ }
+  return { resolved: resolved ?? "(unknown)", source: "resolver" };
 }
 
 async function fileObservation(label: string, workspaceDir: string): Promise<FileObservation> {
@@ -111,7 +125,7 @@ function memoryObservation(config: any): MemoryObservation {
 export async function gatherInputs(deps: { api: any; config: any; env?: NodeJS.ProcessEnv; nowMs: number }): Promise<DoctorInputs> {
   const { api, config, env, nowMs } = deps;
   const artifacts = await readStatusArtifacts(env);
-  const jobs = await listCronJobs(api);
+  const jobs = await listCronJobs();
 
   const plugins: PluginObservation[] = SUITE_PLUGINS.map((id) => {
     const artifact = artifacts[id];

@@ -12,7 +12,7 @@ import { deliverItems } from "./delivery.js";
 import { isDigestDay, buildDigestPrompt } from "./weekly-digest.js";
 import { appendEvent } from "./events.js";
 import { generateDashboard } from "./dashboard.js";
-import { writeStatusArtifact } from "./status-artifact.js";
+import { writeStatusArtifact, resolvePluginVersion } from "./status-artifact.js";
 import { registerSapienceDoctorCli } from "./doctor/cli.js";
 
 function mergeConfig(raw: Record<string, unknown>, workspaceDir: string): SapienceConfig {
@@ -67,7 +67,7 @@ export default definePluginEntry({
     // report production reality (not a recomputation). Fire-and-forget.
     void writeStatusArtifact({
       pluginId: "sapience",
-      version: (api.plugin?.version ?? api.manifest?.version ?? "unknown") as string,
+      version: resolvePluginVersion(),
       agentId: ((api.config as Record<string, unknown>)?.agent as Record<string, unknown>)?.id as string ?? "default",
       resolvedWorkspaceDir: workspaceDir,
       outputPaths: config.output as unknown as Record<string, string>,
