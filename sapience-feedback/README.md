@@ -16,7 +16,7 @@ This plugin can be used without Sapience if all you want to do is have the agent
 
 None required. This plugin works standalone.
 
-If `sapience` is also installed, the calibration profile at `~/.openclaw/sapience/calibration.json` feeds directly into autonomy routing. Without sapience, the profile is still written but nothing reads it.
+If `sapience` is also installed, the calibration profile at `<workspace>/sapience/calibration.json` feeds directly into autonomy routing. Without sapience, the profile is still written but nothing reads it.
 
 ### Install
 
@@ -30,8 +30,8 @@ openclaw plugins install npm:@akalsey/sapience-feedback
 {
   "plugins": {
     "sapience-feedback": {
-      "logPath": "~/.openclaw/sapience/feedback.md",
-      "calibrationPath": "~/.openclaw/sapience/calibration.json",
+      "logPath": "sapience/feedback.md",
+      "calibrationPath": "sapience/calibration.json",
       "memoryEnabled": true,
       "semanticDetection": {
         "enabled": true,
@@ -43,11 +43,15 @@ openclaw plugins install npm:@akalsey/sapience-feedback
 }
 ```
 
-All settings are optional — defaults are used if omitted.
+All settings are optional — defaults are used if omitted. Relative paths resolve under the agent workspace dir (`<workspace>/`); absolute and `~/` paths are honored as-is. Full key reference: [docs/configuration.md](../docs/configuration.md).
 
 **`semanticDetection`** controls the LLM-based classifier. When enabled (the default), every user message above `minLength` characters is classified by the agent's default inference provider. Set `enabled: false` to fall back to regex-only matching (useful if you want zero LLM cost on routine chat).
 
 ---
+
+## How capture works
+
+Passive capture rides the gateway's message hook: every incoming user message is classified as it arrives. Whether the hook surface was available is recorded as `captureMode` in the plugin's status artifact — `message-hook` means passive capture is live; `command-only` means the gateway didn't expose the hook and only `/feedback` works. `openclaw sapience doctor` warns when capture is degraded to command-only.
 
 ## What it detects
 
@@ -96,8 +100,10 @@ The LLM extracts a domain slug from the content of your message: `github`, `cred
 ## Reading the feedback log
 
 ```bash
-cat ~/.openclaw/sapience/feedback.md
+cat <workspace>/sapience/feedback.md
 ```
+
+The log rotates at 5 MB (newest 500 lines kept in place, previous contents in `feedback.md.old`).
 
 Each entry shows:
 - Signal type (correction / confirmation / tier_adjustment)
@@ -135,7 +141,7 @@ To disable memory writes entirely, set `memoryEnabled: false` in config.
 The plugin only scans messages you send (role: `user`), not the agent's responses. Make sure you're sending the correction as a chat message, not just thinking it.
 
 **Calibration not updating**
-Check that `calibration.json` exists and has an entry for the domain you're correcting. Feedback only updates *existing* entries — it doesn't create new ones. New domains are created by `sapience` when it first routes a proposal in that domain.
+Feedback on a domain sapience hasn't routed yet is not dropped: the plugin seeds a conservative calibration entry (`propose` tier, confidence 0, `notes: "created from feedback"`) and applies the signal to it. If `calibration.json` isn't changing at all, check that capture is working (`captureMode` in the doctor output) and look for a quarantined `calibration.json.corrupt-<timestamp>` next to it.
 
 **Feedback getting misclassified or missed**
 Raise the bar with `semanticDetection.minConfidence` if the classifier is too noisy; lower it if real feedback is being dropped. To force a recording, use `/feedback <text>` — manual entries bypass the confidence threshold.

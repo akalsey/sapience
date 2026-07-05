@@ -1,6 +1,6 @@
 # Sapience Suite
 
-Five OpenClaw plugins that transform a reactive assistant into a proactive agent that learns how you work, remembers what matters, and acts with calibrated autonomy.
+Four OpenClaw plugins that transform a reactive assistant into a proactive agent that learns how you work, remembers what matters, and acts with calibrated autonomy.
 
 ---
 
@@ -65,7 +65,9 @@ The recommended way is the installer. It checks for and installs the plugins, re
 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/akalsey/sapience/HEAD/install.sh)"
 ```
 
-It's interactive and idempotent: it only adds what's missing, so it's safe to re-run after an upgrade.
+The installer needs **bash >= 4** (it guards this and exits with a message otherwise). macOS ships bash 3.2 — `brew install bash` first, then run the one-liner with the Homebrew bash (e.g. `/opt/homebrew/bin/bash -c "$(curl ...)"`).
+
+It's interactive and idempotent: it only adds what's missing, so it's safe to re-run after an upgrade. It finishes by running `openclaw sapience doctor` to verify the install.
 
 <details>
 <summary>Manual installation</summary>
@@ -79,18 +81,29 @@ openclaw plugins install npm:@akalsey/sapience-feedback
 openclaw plugins install npm:@akalsey/sapience-goals
 ```
 
-To install from source instead:
+To install from source instead (bash):
 
 ```bash
 git clone https://github.com/akalsey/sapience.git
 cd sapience
+for dir in sapience-thinking sapience sapience-feedback sapience-goals; do
+    (cd "$dir" && npm install && npm run build)
+    openclaw plugins install "./$dir"
+done
+```
+
+Or in fish:
+
+```fish
+git clone https://github.com/akalsey/sapience.git
+cd sapience
 for dir in sapience-thinking sapience sapience-feedback sapience-goals
-    cd $dir && npm install && npm run build && cd ..
+    cd $dir; and npm install; and npm run build; and cd ..
     openclaw plugins install ./$dir
 end
 ```
 
-Installing the plugins manually does **not** register the cron jobs or memory configuration — run `install.sh` (or set those up by hand; see the plugin READMEs) for the suite to actually do anything.
+Installing the plugins manually does **not** register the cron jobs or memory configuration — run `install.sh` (or set those up by hand; see [docs/cron-setup.md](docs/cron-setup.md)) for the suite to actually do anything. Restart the gateway after installing or updating plugins — tools don't register until it reloads.
 
 </details>
 
@@ -98,7 +111,7 @@ Each plugin works standalone. When sapience is installed alongside thinking, thi
 
 ### 2. Start a session
 
-Everything runs automatically. The thinking plugin fires every 15 minutes. Within the first hour you'll see your first proposals delivered to your active session.
+Everything runs automatically. The thinking plugin fires every 15 minutes during active hours (08:00–20:00 local by default). The first routing run baselines any existing passes rather than delivering them, so expect the first proposals roughly 30–45 minutes in. Deliveries are **next-turn injections into your main session** — they appear when you next take a turn, not as a push.
 
 The first week is calibration. Proposals will arrive as `[SAPIENCE: CALIBRATE]` questions — the agent is learning what level of initiative you want for each type of action. Answer them and it calibrates. Ignore them and it stays conservative.
 
@@ -129,7 +142,7 @@ All plugins work out of the box with defaults. Override per-plugin in your OpenC
 }
 ```
 
-Full configuration reference in each plugin's README.
+Full configuration reference — every key with its default — in [docs/configuration.md](docs/configuration.md).
 
 ---
 
@@ -158,11 +171,13 @@ The feedback plugin captures your corrections and confirmations automatically. J
 
 **Submitting a goal:**
 
+Just tell the agent — it calls `goal_submit` and the decomposition prompt is delivered immediately. Or append to the inbox file from a script:
+
 ```bash
-echo "Get weekly OKR scoring rates above 80% by end of Q3" >> ~/.openclaw/sapience/goals-inbox.md
+echo "Get weekly OKR scoring rates above 80% by end of Q3" >> <workspace>/goals/inbox.md
 ```
 
-The next thinking pass picks it up and delivers a decomposition prompt to your session.
+The next `check_goals` cron run (within 15 minutes, during active hours) picks it up and delivers a decomposition prompt on your next turn.
 
 ---
 
@@ -173,7 +188,7 @@ The first two weeks are the most important for calibration. Each `[SAPIENCE: CAL
 To see the current calibration state:
 
 ```bash
-cat ~/.openclaw/sapience/calibration.json
+cat <workspace>/sapience/calibration.json
 ```
 
 To reset a domain and start recalibrating:
@@ -184,26 +199,41 @@ To reset a domain and start recalibrating:
 
 ---
 
-## Data files
+## Where files live
 
 Everything is plain files. Nothing is sent anywhere.
 
+All relative paths in plugin config resolve under the **agent workspace directory** (what `api.runtime.agent.resolveAgentWorkspaceDir` returns for your agent) — *not* under `~/.openclaw`. Docs here write that as `<workspace>/`. Absolute paths and `~/` paths in config are honored as-is if you want the data somewhere else. To see the workspace dir a plugin actually resolved, run `openclaw sapience doctor` (PATHS section).
+
 | File | Contents |
 |------|----------|
-| `~/.openclaw/proactive-thinking/log.md` | All thinking pass output, human-readable |
-| `~/.openclaw/proactive-thinking/proposals.jsonl` | Structured proposals for routing |
-| `~/.openclaw/sapience/calibration.json` | Autonomy profile per domain |
-| `~/.openclaw/sapience/action-log.md` | Log of everything acted on |
-| `~/.openclaw/sapience/goals.json` | All goals with status and progress |
-| `~/.openclaw/sapience/goals-inbox.md` | Where you write new goals |
-| `~/.openclaw/sapience/events.jsonl` | Unified event log written by all plugins |
-| `~/.openclaw/sapience/dashboard.md` | Auto-generated dashboard: autonomy progression, heartbeat, recent activity |
+| `<workspace>/proactive-thinking/log.md` | All thinking pass output, human-readable |
+| `<workspace>/proactive-thinking/proposals.jsonl` | Structured proposals for routing |
+| `<workspace>/proactive-thinking/outcomes.json` | Proposal outcome tracking |
+| `<workspace>/sapience/calibration.json` | Autonomy profile per domain |
+| `<workspace>/sapience/action-log.md` | Log of everything acted on |
+| `<workspace>/sapience/processed-passes.json` | Which thinking passes have been routed |
+| `<workspace>/sapience/digest-state.json` | Last weekly-digest delivery date |
+| `<workspace>/sapience/events.jsonl` | Unified event log written by all plugins |
+| `<workspace>/sapience/dashboard.md` | Auto-generated dashboard: autonomy progression, heartbeat, recent activity |
+| `<workspace>/sapience/feedback.md` | Captured feedback signals |
+| `<workspace>/goals/goals.json` | All goals with status and progress |
+| `<workspace>/goals/inbox.md` | Where you (or scripts) write new goals |
+
+Large logs rotate automatically at 5 MB (see [docs/observability.md](docs/observability.md)). If a JSON state file is ever unparseable, it's quarantined to `<name>.corrupt-<timestamp>` and rebuilt — `openclaw sapience doctor` reports quarantined files.
 
 ---
 
-## Plugin READMEs
+## More documentation
 
-Each plugin has its own README with full configuration reference, troubleshooting, and design details:
+- [docs/configuration.md](docs/configuration.md) — complete config reference for all four plugins
+- [docs/cron-setup.md](docs/cron-setup.md) — the three cron jobs and how to register them manually
+- [docs/troubleshooting.md](docs/troubleshooting.md) — `openclaw sapience doctor` and common failure modes
+- [docs/observability.md](docs/observability.md) — the dashboard and event log
+- [docs/memory-configuration.md](docs/memory-configuration.md) — how corrections persist via OpenClaw memory
+- [docs/uninstall.md](docs/uninstall.md) — removing the suite cleanly
+
+Each plugin also has its own README:
 
 - [`sapience-thinking/README.md`](sapience-thinking/README.md)
 - [`sapience/README.md`](sapience/README.md)

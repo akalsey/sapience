@@ -40,7 +40,7 @@ The `domain` tag matches the domain detected from the correction (e.g., `github`
 
 ## OpenClaw memory prerequisites
 
-Sapience calls `api.memory?.add(...)` — the optional chaining means it silently skips if the memory API is unavailable. No errors, no warnings. If corrections aren't surfacing in future sessions, memory is likely not enabled.
+Sapience calls `api.memory?.add(...)` — if the memory API isn't exposed at all, the write is silently skipped. If the API exists but the call fails, a `memory_write_failed` event is recorded in `<workspace>/sapience/events.jsonl`. If corrections aren't surfacing in future sessions, memory is likely not enabled — `openclaw sapience doctor` checks the required settings.
 
 OpenClaw's memory system must be active. In your OpenClaw gateway config (`~/.openclaw/config.json` or equivalent), ensure memory is enabled:
 
@@ -98,7 +98,7 @@ Each result should show the meta-pointer text and the `feedback` source tag.
 
 ## What sapience does NOT use memory for
 
-- **Calibration profile** — stored in `~/.openclaw/sapience/calibration.json`, not in memory
+- **Calibration profile** — stored in `<workspace>/sapience/calibration.json`, not in memory
 - **Thinking proposals** — written to `proposals.jsonl`, not in memory
 - **Goal state** — stored in `goals.json`, not in memory
 - **Action log** — written to `action-log.md`, not in memory

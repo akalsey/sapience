@@ -2,16 +2,18 @@
 
 Sapience writes two files you can read at any time to understand what it has done, what it's currently doing, and whether it's having an effect.
 
+Paths below use `<workspace>/` for the agent workspace directory — see ["Where files live"](../README.md#where-files-live). For a health check rather than a history, run `openclaw sapience doctor` ([docs/troubleshooting.md](troubleshooting.md)).
+
 ---
 
 ## The dashboard
 
-**File:** `~/.openclaw/sapience/dashboard.md`
+**File:** `<workspace>/sapience/dashboard.md`
 
 This is the primary view. It is regenerated at the end of every sapience routing pass — at most 15 minutes stale. Open it in any markdown viewer.
 
 ```
-cat ~/.openclaw/sapience/dashboard.md
+cat <workspace>/sapience/dashboard.md
 ```
 
 The dashboard has three sections:
@@ -28,7 +30,7 @@ A table of every domain/action_class pair sapience has observed, showing:
 | Confirmed | Times you've confirmed sapience was right |
 | Corrected | Times you've corrected sapience |
 
-Below the table: tier promotions in the last 30 days, and count of autonomous actions taken (7d / 30d).
+Below the table: tier changes in the last 30 days, and count of autonomous actions taken (7d / 30d).
 
 New deployments show `(no history yet)` in the trend column until calibration events accumulate.
 
@@ -60,53 +62,68 @@ The last 15 notable events (skips are filtered out here; they're aggregated in H
 
 ## The event log
 
-**File:** `~/.openclaw/sapience/events.jsonl`
+**File:** `<workspace>/sapience/events.jsonl`
 
 Every event from every plugin is appended here as a newline-delimited JSON record. The dashboard is derived from this file. Read it directly for raw history or to debug unexpected behavior.
 
 ```
-tail -50 ~/.openclaw/sapience/events.jsonl | jq .
+tail -50 <workspace>/sapience/events.jsonl | jq .
 ```
 
 Filter by plugin:
 
 ```
-grep '"plugin":"feedback"' ~/.openclaw/sapience/events.jsonl | tail -20 | jq .
+grep '"plugin":"feedback"' <workspace>/sapience/events.jsonl | tail -20 | jq .
 ```
 
 Filter by event type:
 
 ```
-grep '"type":"calibration_change"' ~/.openclaw/sapience/events.jsonl | jq '{ts,domain:(.action_class),old:.old_tier,new:.new_tier}'
+grep '"type":"calibration_change"' <workspace>/sapience/events.jsonl | jq '{ts,domain:(.action_class),old:.old_tier,new:.new_tier}'
 ```
 
 ### Event types
 
-**sapience-thinking:**
+Every event has `ts` (ISO-8601), `plugin` (`thinking` | `sapience` | `feedback` | `goals`), and `type`.
+
+**sapience-thinking** (`plugin: "thinking"`):
 - `pass_completed` — a thinking pass finished; fields: `pass_id`, `observations`, `actions`, `audits`, `questions`, `nothing_to_report`
-- `pass_skipped` — pass did not run; field: `reason` (`outside_hours` or `already_running`)
+- `pass_skipped` — pass did not run; field: `reason` (`outside_hours` or `already_running`). `outside_hours` is logged once on the transition out of hours, not every 15 minutes
+- `delivery_failed` — standalone-mode injection into the main session failed; field: `reason`
+- `config_invalid` — invalid `activeHours` config; running on defaults; fields: `field`, `errors`, `using`
 
-**sapience:**
+**sapience** (`plugin: "sapience"`):
 - `routing_completed` — routing pass processed proposals; fields: `passes`, `items`, `by_tier`
-- `routing_skipped` — routing did nothing; field: `reason` (`outside_hours` or `no_new_passes`)
-- `calibration_change` — a confidence or tier changed; fields: `domain`, `action_class`, `old_confidence`, `new_confidence`, `old_tier`, `new_tier`, `source`
+- `routing_skipped` — routing did nothing; field: `reason` (`outside_hours` [logged once per transition], `no_new_passes`, or `already_running`)
+- `calibration_change` — a calibration entry was created or changed; fields: `domain`, `action_class`, `old_confidence`, `new_confidence`, `old_tier`, `new_tier`, `source` (`new_entry` when routing first sees a domain)
 - `action_logged` — an act-tier action was taken autonomously; fields: `domain`, `action_class`, `confidence`
-- `digest_delivered` — weekly digest was queued
+- `digest_delivered` — weekly digest was queued for the next main-session turn
+- `delivery_failed` — a tier prompt or the digest could not be injected; fields: `reason`, plus `tier`/`domain` or `what: "digest"`
+- `config_invalid` — invalid `activeHours` config; running on defaults
 
-**sapience-feedback:**
-- `signal_detected` — feedback signal captured from conversation; fields: `signal_type`, `domain`, `action_class`, `source`
-- `signal_orphaned` — a signal matched no calibration entry (no domain/action_class in the profile yet)
+**sapience-feedback** (`plugin: "feedback"`):
+- `signal_detected` — feedback signal captured; fields: `signal_type`, `domain`, `action_class`, `source` (`llm`, `regex`, or `manual`)
+- `calibration_change` — the signal was applied to the profile; same fields as sapience's event, with `source` `feedback` (existing entry updated) or `feedback_new_entry` (feedback on an unknown domain seeded a new entry — orphaned signals are no longer dropped). The `plugin` field distinguishes these from sapience's own calibration events
+- `memory_write_failed` — the meta-pointer write via `api.memory.add` failed; fields: `domain`, `reason`
 
-**sapience-goals:**
-- `goal_created` — a goal was created; field: `goal_id`
-- `status_delivered` — weekly status delivered for a goal; field: `goal_id`
-- `check_skipped` — goals check did nothing; field: `reason`
+**sapience-goals** (`plugin: "goals"`):
+- `goal_created` — a goal was created (via `goal_submit` or the inbox); field: `goal_id`
+- `goal_activated` — an approach was selected (`goal_select_approach`); field: `goal_id`
+- `goal_status_changed` — status transition via `goal_update`; fields: `goal_id`, `status`
+- `goal_progress` — progress note recorded; field: `goal_id`
+- `goal_blocked` — blocker recorded; field: `goal_id`
+- `status_delivered` — weekly status queued for a goal; field: `goal_id`
+- `delivery_failed` — a decomposition or weekly-status injection failed; fields: `what` (`decomposition` or `weekly_status`), `goal_id`, `reason`. Failed weekly statuses are retried next run
+- `check_skipped` — goals check did nothing; field: `reason` (`outside_hours` [once per transition] or `nothing_due`)
+- `config_invalid` — invalid `activeHours` config; running on defaults
 
 ---
 
 ## Log rotation
 
-When `events.jsonl` exceeds 5 MB, it is automatically renamed to `events-archive-YYYY-MM-DD-HH-MM-SS.jsonl` in the same directory before the dashboard is regenerated. Archives are never deleted. The active `events.jsonl` restarts empty; the dashboard's 7-day trends self-heal within a week as new calibration events accumulate.
+When `events.jsonl` exceeds 5 MB, it is renamed to `events-archive-YYYY-MM-DD-HH-MM-SS.jsonl` in the same directory before the dashboard is regenerated, and only the **newest two archives are kept** — older ones are pruned. The active `events.jsonl` restarts empty; the dashboard's 7-day trends self-heal within a week as new calibration events accumulate.
+
+The prose/sidecar logs — `proactive-thinking/log.md`, `proactive-thinking/proposals.jsonl`, `sapience/action-log.md`, `sapience/feedback.md` — rotate differently: past 5 MB, the newest 500 lines stay in place and the previous contents move to a single `<file>.old` (replacing the prior `.old`, so disk stays bounded).
 
 ---
 
@@ -132,20 +149,24 @@ This happens when a cron was created with `--model <model>` for a model that isn
 
 **"Crons show ok but events.jsonl never appears"**
 
-The cron ran but its tool calls didn't land — check the run actually invoked the plugin's tool (e.g. `record_thinking_output`). If the model replied without calling tools, confirm the cron's agent uses a model with reliable tool-calling. Do **not** work around this by pinning an arbitrary model with `--model`: a model outside `agents.defaults.models` makes the cron fail preflight entirely (see the entry above).
+The cron ran but its tool calls didn't land. The most common cause: the isolated cron session can't see the plugin tools because the job has no `payload.toolsAllow` grant — run `openclaw sapience doctor`, which detects exactly this, and see [docs/troubleshooting.md](troubleshooting.md). If the tools are granted, confirm the cron's agent uses a model with reliable tool-calling. Do **not** work around this by pinning an arbitrary model with `--model`: a model outside `agents.defaults.models` makes the cron fail preflight entirely (see the entry above).
 
 **"All 7d trends say '(no history yet)'"**
 
 Normal on a new deployment. Trends appear after the first calibration change event. Correct or confirm a suggestion to trigger one immediately.
 
-**"I see signal_orphaned events"**
+**"I gave feedback on a domain sapience doesn't know yet"**
 
-A feedback signal matched no entry in `calibration.json`. This happens when you give feedback on a domain sapience hasn't learned about yet. The signal is still logged; once sapience encounters activity in that domain, a calibration entry will be created and future feedback will stick.
+It's not lost. The feedback plugin seeds a new calibration entry (`propose` tier, confidence 0) and applies the signal, emitting `calibration_change` with `source: "feedback_new_entry"`.
+
+**"I see delivery_failed events"**
+
+The plugin produced output but couldn't inject it into the main session (gateway declined, or the injection API was unavailable). Weekly goal statuses retry on the next run; routed proposals from that pass are not retried. Check the `reason` field.
 
 **"I want to see what sapience decided to do autonomously"**
 
 ```
-grep '"type":"action_logged"' ~/.openclaw/sapience/events.jsonl | jq '{ts,domain,action_class,confidence}'
+grep '"type":"action_logged"' <workspace>/sapience/events.jsonl | jq '{ts,domain,action_class,confidence}'
 ```
 
-Or read `~/.openclaw/sapience/action-log.md` for the full prose log of autonomous actions.
+Or read `<workspace>/sapience/action-log.md` for the full prose log of autonomous actions.

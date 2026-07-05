@@ -24,35 +24,38 @@ Add to your OpenClaw config:
 {
   "plugins": {
     "sapience-thinking": {
-      "schedule": "*/15 * * * *",
       "activeHours": {
         "start": "08:00",
         "end": "20:00",
         "timezone": "America/Los_Angeles"
       },
       "output": {
-        "logPath": "~/.openclaw/proactive-thinking/thinking-log.md"
+        "logPath": "proactive-thinking/log.md"
       }
     }
   }
 }
 ```
 
-All settings are optional — the defaults above are used if omitted.
+All settings are optional — the defaults above are used if omitted. The 15-minute cadence comes from the openclaw cron job (see [docs/cron-setup.md](../docs/cron-setup.md)), not from plugin config. Full key reference: [docs/configuration.md](../docs/configuration.md).
 
 ### Output files
 
+Relative paths resolve under the agent workspace dir (`<workspace>/`), not `~/.openclaw`. Absolute and `~/` overrides in config are honored.
+
 | File | Purpose |
 |------|---------|
-| `~/.openclaw/proactive-thinking/thinking-log.md` | Human-readable log of every pass |
-| `~/.openclaw/proactive-thinking/outcomes.json` | Tracks which proposals you acted on |
-| `~/.openclaw/proactive-thinking/proposals.jsonl` | Structured sidecar read by `sapience` |
+| `<workspace>/proactive-thinking/log.md` | Human-readable log of every pass |
+| `<workspace>/proactive-thinking/outcomes.json` | Tracks which proposals you acted on |
+| `<workspace>/proactive-thinking/proposals.jsonl` | Structured sidecar read by `sapience` |
+
+`log.md` and `proposals.jsonl` rotate at 5 MB: the newest 500 lines stay in place, the previous contents move to a single `<file>.old`.
 
 ---
 
 ## What a pass looks like
 
-Each entry in `thinking-log.md` has:
+Each entry in `log.md` has:
 
 - **Observations** — things noticed with supporting evidence and priority (1–5)
 - **Proposed actions** — concrete things to do, with estimated effort
@@ -66,7 +69,13 @@ A pass that found nothing useful logs `nothing_to_report: true`. Over time, this
 
 ## Active hours
 
-Passes only fire within `activeHours`. Outside that window, the cron fires but silently skips — no log entry. Set the window to match your working hours.
+Passes only fire within `activeHours`. Outside that window, the cron fires but skips; a single `pass_skipped` (`outside_hours`) event is logged on the transition out of hours, not every 15 minutes all night. Overnight windows (start later than end) are supported.
+
+Invalid values (`"8am"`, a bad timezone) don't disable the plugin: it falls back to the default hours and emits a `config_invalid` event.
+
+## Delivery
+
+When `sapience` is installed and active, thinking passes are routed by its autonomy layer — this plugin defers direct delivery. Standalone (or if the router hasn't run in 2 hours), high-priority proposals (`priorityThreshold`, default 4+) are injected into your main session's next turn, capped at `maxProposalsPerHeartbeat` (default 3) per pass. Injection failures record a `delivery_failed` event.
 
 ---
 
@@ -79,14 +88,10 @@ openclaw cron run sapience-thinking
 ```
 
 **Passes are running but log is empty**
-Check that `logPath` is writable and that the path (including `~`) is resolving correctly. Try an absolute path first.
+Run `openclaw sapience doctor`. The most common cause is the cron session not seeing the plugin tools (missing `--tools` grant) — the run reports ok but nothing is written. See [docs/troubleshooting.md](../docs/troubleshooting.md). Otherwise check that `logPath` is writable and resolving where you expect (the doctor's PATHS section shows the resolved paths).
 
 **Too many proposals, too much noise**
-The signal-to-noise data in `outcomes.json` feeds back into future prompts after 14 days. Mark proposals as acted-on or dismissed to train the signal:
-```bash
-openclaw thinking resolve <proposal-id> acted_on
-openclaw thinking resolve <proposal-id> dismissed
-```
+After the 14-day bootstrap period (`learning.bootstrapDays`), the signal-to-noise data in `outcomes.json` feeds back into future prompts. Outcome resolution (marking proposals acted-on/dismissed) is tracked internally but not currently exposed as a command — set `delivery.priorityThreshold` higher to cut noise in the meantime.
 
 **`nothing_to_report` on every pass**
 This usually means the context bundle is too thin — no recent session activity to analyze. The plugin needs active use of OpenClaw to have something to think about.

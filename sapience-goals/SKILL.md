@@ -19,11 +19,17 @@ After submitting, confirm to the user: "I've recorded that as a goal and will co
 
 ## What happens next
 
-Within the next cron pass (up to 15 minutes), a `[GOALS: DECOMPOSE]` prompt will arrive in the session presenting 2–4 concrete approaches. The user picks one and the goal becomes active.
+`goal_submit` delivers a `[GOALS: DECOMPOSE]` prompt immediately — it's injected into the main session's next turn, presenting 2–4 concrete approaches. When the user picks one, call `goal_select_approach(id, approach)` to record it; the goal stays in `decomposing` (no weekly check-ins) until you do. Goals written to the inbox file (`goals/inbox.md`) instead are picked up by the next `check_goals` cron run.
+
+## Ongoing lifecycle
+
+- `goal_progress(id, summary, what_changed)` — call whenever meaningful work toward an active goal happens
+- `goal_blocker(id, description, waiting_on)` — call when something blocks progress
+- `goal_update(id, status)` — status transitions: `active`, `paused`, `completed`, `abandoned`
 
 ## Weekly check-ins
 
-Every Monday (or the configured day), active goals receive a `[GOALS: WEEKLY STATUS]` prompt. You report what happened, what's blocked, and what's planned next. Keep it brief — if nothing happened, say so.
+Every Monday (or the configured day), goals with status `active` receive a `[GOALS: WEEKLY STATUS]` prompt. You report what happened, what's blocked, and what's planned next. Keep it brief — if nothing happened, say so.
 
 ## When NOT to submit
 
