@@ -1,18 +1,14 @@
-import { readFile, writeFile, open, mkdir } from "fs/promises";
-import { dirname } from "path";
+import { open } from "fs/promises";
 import { resolvePath } from "./utils.js";
+import { readJsonSafe, writeJsonAtomic } from "./safe-json.js";
 
 export async function loadPosition(posPath: string): Promise<number> {
-  try {
-    const data = JSON.parse(await readFile(resolvePath(posPath), "utf-8")) as { position: number };
-    return data.position;
-  } catch { return 0; }
+  const data = await readJsonSafe<{ position: number }>(resolvePath(posPath), { position: 0 });
+  return data.position;
 }
 
 export async function savePosition(position: number, posPath: string): Promise<void> {
-  const resolved = resolvePath(posPath);
-  await mkdir(dirname(resolved), { recursive: true });
-  await writeFile(resolved, JSON.stringify({ position }, null, 2), "utf-8");
+  await writeJsonAtomic(resolvePath(posPath), { position });
 }
 
 export async function readNewGoals(

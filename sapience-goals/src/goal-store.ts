@@ -1,18 +1,13 @@
-import { readFile, writeFile, mkdir } from "fs/promises";
-import { dirname } from "path";
 import { resolvePath } from "./utils.js";
+import { readJsonSafe, writeJsonAtomic } from "./safe-json.js";
 import type { Goal, GoalStatus, ProgressNote } from "./types.js";
 
 export async function loadGoals(path: string): Promise<Goal[]> {
-  try {
-    return JSON.parse(await readFile(resolvePath(path), "utf-8")) as Goal[];
-  } catch { return []; }
+  return readJsonSafe<Goal[]>(resolvePath(path), []);
 }
 
 export async function saveGoals(goals: Goal[], path: string): Promise<void> {
-  const resolved = resolvePath(path);
-  await mkdir(dirname(resolved), { recursive: true });
-  await writeFile(resolved, JSON.stringify(goals, null, 2), "utf-8");
+  await writeJsonAtomic(resolvePath(path), goals);
 }
 
 export function addGoal(goals: Goal[], goal: Goal): Goal[] {

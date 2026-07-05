@@ -1,6 +1,5 @@
-import { readFile, writeFile, mkdir } from "fs/promises";
-import { dirname } from "path";
 import { resolvePath } from "./utils.js";
+import { readJsonSafe, writeJsonAtomic } from "./safe-json.js";
 import type { DetectedSignal } from "./types.js";
 
 interface CalibrationEntry {
@@ -15,15 +14,11 @@ interface CalibrationEntry {
 }
 
 async function loadProfile(path: string): Promise<CalibrationEntry[]> {
-  try {
-    return JSON.parse(await readFile(resolvePath(path), "utf-8")) as CalibrationEntry[];
-  } catch { return []; }
+  return readJsonSafe<CalibrationEntry[]>(resolvePath(path), []);
 }
 
 async function saveProfile(profile: CalibrationEntry[], path: string): Promise<void> {
-  const resolved = resolvePath(path);
-  await mkdir(dirname(resolved), { recursive: true });
-  await writeFile(resolved, JSON.stringify(profile, null, 2), "utf-8");
+  await writeJsonAtomic(resolvePath(path), profile);
 }
 
 export type ApplyResult =

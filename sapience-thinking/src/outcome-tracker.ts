@@ -1,18 +1,12 @@
-import { readFile, writeFile, mkdir } from "fs/promises";
-import { dirname } from "path";
 import type { OutcomeMap, OutcomeRecord, ProposalSet, ProposalType } from "./types.js";
+import { readJsonSafe, writeJsonAtomic } from "./safe-json.js";
 
 export async function loadOutcomes(trackerPath: string): Promise<OutcomeMap> {
-  try {
-    return JSON.parse(await readFile(trackerPath, "utf-8")) as OutcomeMap;
-  } catch {
-    return {};
-  }
+  return readJsonSafe<OutcomeMap>(trackerPath, {});
 }
 
 export async function saveOutcomes(outcomes: OutcomeMap, trackerPath: string): Promise<void> {
-  await mkdir(dirname(trackerPath), { recursive: true });
-  await writeFile(trackerPath, JSON.stringify(outcomes, null, 2), "utf-8");
+  await writeJsonAtomic(trackerPath, outcomes);
 }
 
 export function addProposals(outcomes: OutcomeMap, proposals: ProposalSet): OutcomeMap {

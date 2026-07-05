@@ -1,18 +1,13 @@
-import { readFile, writeFile, mkdir } from "fs/promises";
-import { dirname } from "path";
 import { resolvePath } from "./utils.js";
+import { readJsonSafe, writeJsonAtomic } from "./safe-json.js";
 import type { CalibrationEntry, CalibrationProfile } from "./types.js";
 
 export async function loadProfile(path: string): Promise<CalibrationProfile> {
-  try {
-    return JSON.parse(await readFile(resolvePath(path), "utf-8")) as CalibrationProfile;
-  } catch { return []; }
+  return readJsonSafe<CalibrationProfile>(resolvePath(path), []);
 }
 
 export async function saveProfile(profile: CalibrationProfile, path: string): Promise<void> {
-  const resolved = resolvePath(path);
-  await mkdir(dirname(resolved), { recursive: true });
-  await writeFile(resolved, JSON.stringify(profile, null, 2), "utf-8");
+  await writeJsonAtomic(resolvePath(path), profile);
 }
 
 export function getEntry(

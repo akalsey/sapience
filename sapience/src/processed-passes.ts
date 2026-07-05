@@ -1,13 +1,11 @@
 // src/processed-passes.ts
-import { readFile, writeFile, mkdir } from "fs/promises";
-import { dirname } from "path";
+import { readFile } from "fs/promises";
 import { resolvePath } from "./utils.js";
+import { readJsonSafe, writeJsonAtomic } from "./safe-json.js";
 
 export async function loadProcessedPasses(path: string): Promise<Set<string>> {
-  try {
-    const data = JSON.parse(await readFile(resolvePath(path), "utf-8")) as { pass_ids: string[] };
-    return new Set(data.pass_ids);
-  } catch { return new Set(); }
+  const data = await readJsonSafe<{ pass_ids: string[] }>(resolvePath(path), { pass_ids: [] });
+  return new Set(Array.isArray(data.pass_ids) ? data.pass_ids : []);
 }
 
 export async function bootstrapProcessedPasses(
@@ -21,9 +19,7 @@ export async function bootstrapProcessedPasses(
         .map(l => (JSON.parse(l) as { pass_id: string }).pass_id)
     );
     if (ids.size === 0) return ids;
-    const resolved = resolvePath(processedPath);
-    await mkdir(dirname(resolved), { recursive: true });
-    await writeFile(resolved, JSON.stringify({ pass_ids: [...ids] }, null, 2), "utf-8");
+    await writeJsonAtomic(resolvePath(processedPath), { pass_ids: [...ids] });
     return ids;
   } catch { return new Set(); }
 }
@@ -40,8 +36,6 @@ export async function markPassProcessed(
     ids = ids.slice(ids.length - MAX_PROCESSED_ENTRIES);
   }
   const updated = new Set(ids);
-  const resolved = resolvePath(path);
-  await mkdir(dirname(resolved), { recursive: true });
-  await writeFile(resolved, JSON.stringify({ pass_ids: ids }, null, 2), "utf-8");
+  await writeJsonAtomic(resolvePath(path), { pass_ids: ids });
   return updated;
 }
