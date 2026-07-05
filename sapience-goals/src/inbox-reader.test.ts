@@ -36,6 +36,52 @@ describe("readNewGoals", () => {
     const { goals } = await readNewGoals(join(dir, "missing.md"), join(dir, "pos.json"));
     expect(goals).toHaveLength(0);
   });
+
+  it("preserves the saved position when the inbox is missing", async () => {
+    // A transient read failure used to reset the position to 0, replaying the
+    // entire inbox history (duplicate goals) on the next successful read.
+    const posPath = join(dir, "pos.json");
+    await savePosition(42, posPath);
+    const { newPosition } = await readNewGoals(join(dir, "missing.md"), posPath);
+    expect(newPosition).toBe(42);
+  });
+
+  it("clamps a position beyond the file size instead of stalling forever", async () => {
+    const inboxPath = join(dir, "goals-inbox.md");
+    const posPath = join(dir, "position.json");
+    await writeFile(inboxPath, "Only goal\n");
+    await savePosition(9999, posPath);
+    const { goals, newPosition } = await readNewGoals(inboxPath, posPath);
+    expect(goals).toHaveLength(0);
+    expect(newPosition).toBe("Only goal\n".length);
+    // After appending, new content is picked up again.
+    await savePosition(newPosition, posPath);
+    await appendFile(inboxPath, "Next goal\n");
+    const second = await readNewGoals(inboxPath, posPath);
+    expect(second.goals).toEqual(["Next goal"]);
+  });
+
+  it("does not consume a partial trailing line still being written", async () => {
+    const inboxPath = join(dir, "goals-inbox.md");
+    const posPath = join(dir, "position.json");
+    await writeFile(inboxPath, "Complete goal\nhalf a li");
+    const { goals, newPosition } = await readNewGoals(inboxPath, posPath);
+    expect(goals).toEqual(["Complete goal"]);
+    expect(newPosition).toBe("Complete goal\n".length);
+    await savePosition(newPosition, posPath);
+    await appendFile(inboxPath, "ne now finished\n");
+    const second = await readNewGoals(inboxPath, posPath);
+    expect(second.goals).toEqual(["half a line now finished"]);
+  });
+
+  it("treats a non-numeric stored position as 0", async () => {
+    const inboxPath = join(dir, "goals-inbox.md");
+    const posPath = join(dir, "position.json");
+    await writeFile(inboxPath, "A goal\n");
+    await writeFile(posPath, JSON.stringify({ position: "not-a-number" }), "utf-8");
+    const { goals } = await readNewGoals(inboxPath, posPath);
+    expect(goals).toEqual(["A goal"]);
+  });
 });
 
 describe("loadPosition / savePosition round-trip", () => {

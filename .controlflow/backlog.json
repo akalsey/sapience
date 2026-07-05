@@ -47,7 +47,7 @@
       "description": "Passive capture guards on api.session?.onMessage which doesn't exist in the SDK — dead code, the plugin's headline feature never registers. Use api.registerHook(\"message\", handler) (event.action === \"received\", content in event.context.content), validate content is a string, record captureMode in the status artifact, and log loudly when the hook surface is missing. Also: guard memoryAdd with try/catch + memory_write_failed event; upsert calibration entries for orphaned feedback instead of dropping them.",
       "priority": 2,
       "complexity": "high",
-      "status": "in_progress",
+      "status": "completed",
       "createdAt": "2026-07-05T12:41:24-07:00",
       "updatedAt": "2026-07-05T12:41:24-07:00"
     },
@@ -57,7 +57,7 @@
       "description": "Goals can never leave \"decomposing\" — no tool persists approach selection/progress/status, so weekly status never fires. Add goal_select_approach, goal_update, goal_progress tools; decomposition prompt instructs the agent to record the selection. Fix check_goals ordering: save goals before advancing inbox position, per-goal delivery try/catch, validate goal_submit params, validate inbox position file (integer, clamp to size, advance only to last newline). In-process mutex around goals.json read-modify-write.",
       "priority": 2,
       "complexity": "high",
-      "status": "backlog",
+      "status": "in_progress",
       "createdAt": "2026-07-05T12:41:27-07:00",
       "updatedAt": "2026-07-05T12:41:27-07:00"
     },
@@ -112,7 +112,7 @@
       "updatedAt": "2026-07-05T12:42:08-07:00"
     }
   ],
-  "lastUpdated": "2026-07-05T12:57:59-07:00",
+  "lastUpdated": "2026-07-05T13:04:07-07:00",
   "nextStoryId": 12,
   "nextTaskId": 1
 }

@@ -1,12 +1,26 @@
 // src/service.ts
 import { definePluginEntry } from "openclaw/plugin-sdk/plugin-entry";
-import { DEFAULT_CONFIG, type GoalsConfig, type Goal } from "./types.js";
+import { DEFAULT_CONFIG, type GoalsConfig, type Goal, type GoalStatus } from "./types.js";
 import { resolveDataPath, generateId, isWithinActiveHours, nextWeeklyDate } from "./utils.js";
-import { loadGoals, saveGoals, addGoal, updateNextDelivery } from "./goal-store.js";
+import {
+  loadGoals, saveGoals, addGoal, updateNextDelivery,
+  setActiveApproach, updateGoalStatus, addProgressNote, addBlocker,
+} from "./goal-store.js";
 import { readNewGoals, savePosition } from "./inbox-reader.js";
 import { deliverDecomposition, deliverWeeklyStatus } from "./delivery.js";
 import { appendEvent } from "./events.js";
 import { writeStatusArtifact, resolvePluginVersion } from "./status-artifact.js";
+
+const GOAL_STATUSES: readonly GoalStatus[] = ["decomposing", "active", "paused", "completed", "abandoned"];
+const MAX_DESCRIPTION_LENGTH = 2000;
+
+function asTrimmedString(value: unknown): string {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function toolText(text: string) {
+  return { content: [{ type: "text", text }] };
+}
 
 function mergeConfig(raw: Record<string, unknown>, workspaceDir: string): GoalsConfig {
   return {
@@ -55,6 +69,161 @@ export default definePluginEntry({
       initAt: new Date().toISOString(),
     }).catch(() => {});
 
+    // Serialize all goals.json read-modify-write cycles. goal_submit (main
+    // session), the lifecycle tools, and check_goals (cron session) run in the
+    // same gateway process; unserialized overlap loses whichever save lands
+    // first.
+    let goalsChain: Promise<unknown> = Promise.resolve();
+    function withGoalsLock<T>(fn: () => Promise<T>): Promise<T> {
+      const run = goalsChain.then(fn, fn);
+      goalsChain = run.catch(() => undefined);
+      return run;
+    }
+
+    function makeGoal(description: string): Goal {
+      return {
+        id: generateId(),
+        description,
+        decomposed_approaches: [],
+        active_approach: "",
+        status: "decomposing",
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        progress_notes: [],
+        blockers: [],
+        next_status_delivery: nextWeeklyDate(
+          config.weeklyCheckInDay,
+          config.weeklyCheckInTime,
+          config.activeHours.timezone
+        ),
+      };
+    }
+
+    // Load → verify the goal exists → mutate → save, under the lock.
+    // Returns an error string for the LLM, or null on success.
+    async function mutateGoal(id: string, mutate: (goals: Goal[]) => Goal[]): Promise<string | null> {
+      return withGoalsLock(async () => {
+        const goals = await loadGoals(config.output.goalsPath);
+        if (!goals.some(g => g.id === id)) return `No goal with id "${id}". Use check_goals or goals.json to find valid ids.`;
+        await saveGoals(mutate(goals), config.output.goalsPath);
+        return null;
+      });
+    }
+
+    api.registerTool({
+      name: "goal_select_approach",
+      description: "Record the approach the user selected for a goal and mark it active. Call this after the user picks one of the decomposed approaches.",
+      parameters: {
+        type: "object",
+        properties: {
+          id: { type: "string", description: "The goal id from the decomposition prompt" },
+          approach: { type: "string", description: "The approach the user selected" },
+        },
+        required: ["id", "approach"],
+      },
+      async execute(_id: any, params: any) {
+        try {
+          const id = asTrimmedString(params?.id);
+          const approach = asTrimmedString(params?.approach);
+          if (!id || !approach) return toolText("goal_select_approach requires non-empty id and approach strings.");
+          const err = await mutateGoal(id, (goals) => setActiveApproach(goals, id, approach));
+          if (err) return toolText(err);
+          await appendEvent(config.output.eventsPath, { plugin: "goals", type: "goal_activated", goal_id: id });
+          return toolText(JSON.stringify({ id, status: "active" }));
+        } catch (err) {
+          return toolText(`[goals] goal_select_approach error: ${String(err)}`);
+        }
+      },
+    });
+
+    api.registerTool({
+      name: "goal_update",
+      description: "Update a goal's status (active, paused, completed, abandoned).",
+      parameters: {
+        type: "object",
+        properties: {
+          id: { type: "string", description: "The goal id" },
+          status: { type: "string", enum: [...GOAL_STATUSES], description: "The new status" },
+        },
+        required: ["id", "status"],
+      },
+      async execute(_id: any, params: any) {
+        try {
+          const id = asTrimmedString(params?.id);
+          const status = asTrimmedString(params?.status) as GoalStatus;
+          if (!id) return toolText("goal_update requires a goal id.");
+          if (!GOAL_STATUSES.includes(status)) return toolText(`Invalid status "${status}". Valid statuses: ${GOAL_STATUSES.join(", ")}.`);
+          const err = await mutateGoal(id, (goals) => updateGoalStatus(goals, id, status));
+          if (err) return toolText(err);
+          await appendEvent(config.output.eventsPath, { plugin: "goals", type: "goal_status_changed", goal_id: id, status });
+          return toolText(JSON.stringify({ id, status }));
+        } catch (err) {
+          return toolText(`[goals] goal_update error: ${String(err)}`);
+        }
+      },
+    });
+
+    api.registerTool({
+      name: "goal_progress",
+      description: "Record progress made toward a goal. Call this whenever meaningful work toward an active goal happens.",
+      parameters: {
+        type: "object",
+        properties: {
+          id: { type: "string", description: "The goal id" },
+          summary: { type: "string", description: "One-line summary of the progress" },
+          what_changed: { type: "string", description: "What is different now compared to before" },
+        },
+        required: ["id", "summary"],
+      },
+      async execute(_id: any, params: any) {
+        try {
+          const id = asTrimmedString(params?.id);
+          const summary = asTrimmedString(params?.summary);
+          if (!id || !summary) return toolText("goal_progress requires non-empty id and summary strings.");
+          const note = {
+            timestamp: new Date().toISOString(),
+            summary,
+            actions_taken: [],
+            what_changed: asTrimmedString(params?.what_changed),
+          };
+          const err = await mutateGoal(id, (goals) => addProgressNote(goals, id, note));
+          if (err) return toolText(err);
+          await appendEvent(config.output.eventsPath, { plugin: "goals", type: "goal_progress", goal_id: id });
+          return toolText(JSON.stringify({ id, recorded: true }));
+        } catch (err) {
+          return toolText(`[goals] goal_progress error: ${String(err)}`);
+        }
+      },
+    });
+
+    api.registerTool({
+      name: "goal_blocker",
+      description: "Record something blocking progress on a goal and what it's waiting on.",
+      parameters: {
+        type: "object",
+        properties: {
+          id: { type: "string", description: "The goal id" },
+          description: { type: "string", description: "What is blocking progress" },
+          waiting_on: { type: "string", description: "Who or what the goal is waiting on" },
+        },
+        required: ["id", "description"],
+      },
+      async execute(_id: any, params: any) {
+        try {
+          const id = asTrimmedString(params?.id);
+          const description = asTrimmedString(params?.description);
+          if (!id || !description) return toolText("goal_blocker requires non-empty id and description strings.");
+          const blocker = { description, waiting_on: asTrimmedString(params?.waiting_on) };
+          const err = await mutateGoal(id, (goals) => addBlocker(goals, id, blocker));
+          if (err) return toolText(err);
+          await appendEvent(config.output.eventsPath, { plugin: "goals", type: "goal_blocked", goal_id: id });
+          return toolText(JSON.stringify({ id, recorded: true }));
+        } catch (err) {
+          return toolText(`[goals] goal_blocker error: ${String(err)}`);
+        }
+      },
+    });
+
     api.registerTool({
       name: "goal_submit",
       description: "Submit a new long-running goal. Call this when the user expresses a fuzzy objective that spans multiple sessions. Returns the new goal's id.",
@@ -67,34 +236,22 @@ export default definePluginEntry({
       },
       async execute(_id: any, params: any) {
         try {
-          const { description } = params as { description: string };
-          let goals = await loadGoals(config.output.goalsPath);
-          const goal: Goal = {
-            id: generateId(),
-            description,
-            decomposed_approaches: [],
-            active_approach: "",
-            status: "decomposing",
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-            progress_notes: [],
-            blockers: [],
-            next_status_delivery: nextWeeklyDate(
-              config.weeklyCheckInDay,
-              config.weeklyCheckInTime,
-              config.activeHours.timezone
-            ),
-          };
-          goals = addGoal(goals, goal);
-          await saveGoals(goals, config.output.goalsPath);
-          const delivery = await deliverDecomposition(description, api);
+          const description = asTrimmedString(params?.description);
+          if (!description) return toolText("goal_submit requires a non-empty description string.");
+          if (description.length > MAX_DESCRIPTION_LENGTH) return toolText(`Goal description too long (max ${MAX_DESCRIPTION_LENGTH} characters).`);
+          const goal = makeGoal(description);
+          await withGoalsLock(async () => {
+            const goals = await loadGoals(config.output.goalsPath);
+            await saveGoals(addGoal(goals, goal), config.output.goalsPath);
+          });
+          const delivery = await deliverDecomposition(goal, api);
           if (!delivery.enqueued) {
             await appendEvent(config.output.eventsPath, { plugin: "goals", type: "delivery_failed", what: "decomposition", goal_id: goal.id, reason: delivery.reason });
           }
           await appendEvent(config.output.eventsPath, { plugin: "goals", type: "goal_created", goal_id: goal.id });
-          return { content: [{ type: "text", text: JSON.stringify({ id: goal.id }) }] };
+          return toolText(JSON.stringify({ id: goal.id }));
         } catch (err) {
-          return { content: [{ type: "text", text: `[goals] goal_submit error: ${String(err)}` }] };
+          return toolText(`[goals] goal_submit error: ${String(err)}`);
         }
       },
     });
@@ -107,72 +264,63 @@ export default definePluginEntry({
         try {
           if (!isWithinActiveHours(config)) {
             await appendEvent(config.output.eventsPath, { plugin: "goals", type: "check_skipped", reason: "outside_hours" });
-            return { content: [{ type: "text", text: "SILENT_REPLY_TOKEN" }] };
+            return toolText("SILENT_REPLY_TOKEN");
           }
-
-          let goals = await loadGoals(config.output.goalsPath);
 
           const { goals: newDescriptions, newPosition } = await readNewGoals(
             config.inboxPath,
             config.inboxPositionPath
           );
 
-          for (const description of newDescriptions) {
-            const goal: Goal = {
-              id: generateId(),
-              description,
-              decomposed_approaches: [],
-              active_approach: "",
-              status: "decomposing",
-              created_at: new Date().toISOString(),
-              updated_at: new Date().toISOString(),
-              progress_notes: [],
-              blockers: [],
-              next_status_delivery: nextWeeklyDate(
-                config.weeklyCheckInDay,
-                config.weeklyCheckInTime,
-                config.activeHours.timezone
-              ),
-            };
-            goals = addGoal(goals, goal);
-            const delivery = await deliverDecomposition(description, api);
+          // Persist new goals BEFORE advancing the inbox position: a crash
+          // between the two re-reads the same inbox lines next run (harmless
+          // duplicates) instead of permanently losing the goals.
+          const newGoals = newDescriptions.map(makeGoal);
+          if (newGoals.length > 0) {
+            await withGoalsLock(async () => {
+              const goals = await loadGoals(config.output.goalsPath);
+              await saveGoals(newGoals.reduce(addGoal, goals), config.output.goalsPath);
+            });
+            await savePosition(newPosition, config.inboxPositionPath);
+          }
+
+          for (const goal of newGoals) {
+            const delivery = await deliverDecomposition(goal, api);
             if (!delivery.enqueued) {
               await appendEvent(config.output.eventsPath, { plugin: "goals", type: "delivery_failed", what: "decomposition", goal_id: goal.id, reason: delivery.reason });
             }
             await appendEvent(config.output.eventsPath, { plugin: "goals", type: "goal_created", goal_id: goal.id });
           }
 
-          if (newDescriptions.length > 0) {
-            await savePosition(newPosition, config.inboxPositionPath);
-          }
-
           let delivered = 0;
-          for (const goal of goals) {
-            if (isWeeklyCheckInDue(goal)) {
-              const delivery = await deliverWeeklyStatus(goal, api);
-              if (!delivery.enqueued) {
-                // Leave next_status_delivery untouched so the status is retried
-                // next run instead of silently skipping a week.
-                await appendEvent(config.output.eventsPath, { plugin: "goals", type: "delivery_failed", what: "weekly_status", goal_id: goal.id, reason: delivery.reason });
-                continue;
-              }
-              delivered++;
-              await appendEvent(config.output.eventsPath, { plugin: "goals", type: "status_delivered", goal_id: goal.id });
-              goals = updateNextDelivery(
-                goals,
-                goal.id,
-                nextWeeklyDate(config.weeklyCheckInDay, config.weeklyCheckInTime, config.activeHours.timezone)
-              );
+          const due = (await loadGoals(config.output.goalsPath)).filter(isWeeklyCheckInDue);
+          for (const goal of due) {
+            const delivery = await deliverWeeklyStatus(goal, api);
+            if (!delivery.enqueued) {
+              // Leave next_status_delivery untouched so the status is retried
+              // next run instead of silently skipping a week.
+              await appendEvent(config.output.eventsPath, { plugin: "goals", type: "delivery_failed", what: "weekly_status", goal_id: goal.id, reason: delivery.reason });
+              continue;
             }
+            delivered++;
+            await appendEvent(config.output.eventsPath, { plugin: "goals", type: "status_delivered", goal_id: goal.id });
+            // Reschedule immediately per goal so a later failure can't
+            // re-deliver statuses that already went out.
+            await withGoalsLock(async () => {
+              const goals = await loadGoals(config.output.goalsPath);
+              await saveGoals(
+                updateNextDelivery(goals, goal.id, nextWeeklyDate(config.weeklyCheckInDay, config.weeklyCheckInTime, config.activeHours.timezone)),
+                config.output.goalsPath
+              );
+            });
           }
 
-          await saveGoals(goals, config.output.goalsPath);
           if (newDescriptions.length === 0 && delivered === 0) {
             await appendEvent(config.output.eventsPath, { plugin: "goals", type: "check_skipped", reason: "nothing_due" });
           }
-          return { content: [{ type: "text", text: "SILENT_REPLY_TOKEN" }] };
+          return toolText("SILENT_REPLY_TOKEN");
         } catch (err) {
-          return { content: [{ type: "text", text: `[goals] check_goals error: ${String(err)}` }] };
+          return toolText(`[goals] check_goals error: ${String(err)}`);
         }
       },
     });

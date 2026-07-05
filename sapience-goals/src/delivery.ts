@@ -1,15 +1,16 @@
 import type { Goal } from "./types.js";
 import { enqueueMainSessionInjection, type InjectionResult } from "./main-session.js";
 
-export function buildDecompositionPrompt(description: string): string {
+export function buildDecompositionPrompt(description: string, goalId: string): string {
   return `[GOALS: DECOMPOSE] A new goal was submitted. Decompose it into candidate approaches and present them to the user for selection.
 
-Goal: "${description}"
+Goal (id: ${goalId}): "${description}"
 
 Your job:
 1. Think about what you could realistically do toward this goal given your available tools and access.
 2. Identify 2–4 concrete approaches. For each: describe what you'd do, what tools you'd use, what you could accomplish without human input, and what you'd need from the human to make progress.
 3. Present the approaches to the user and ask them to pick one (or say "none of these").
+4. When the user picks an approach, record it by calling goal_select_approach({ id: "${goalId}", approach: "<their pick>" }) — the goal stays inactive until you do.
 
 Keep it practical. Only propose approaches you can actually execute with your current tools. Don't promise what you can't deliver.`;
 }
@@ -45,8 +46,8 @@ Deliver a brief status update to the user covering:
 Be concise. If there's nothing new to report, say so briefly.`;
 }
 
-export async function deliverDecomposition(description: string, api: any): Promise<InjectionResult> {
-  return enqueueMainSessionInjection(api, buildDecompositionPrompt(description));
+export async function deliverDecomposition(goal: Pick<Goal, "id" | "description">, api: any): Promise<InjectionResult> {
+  return enqueueMainSessionInjection(api, buildDecompositionPrompt(goal.description, goal.id));
 }
 
 export async function deliverWeeklyStatus(goal: Goal, api: any): Promise<InjectionResult> {

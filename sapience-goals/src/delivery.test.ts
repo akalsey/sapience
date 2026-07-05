@@ -18,10 +18,12 @@ const activeGoal: Goal = {
 };
 
 describe("buildDecompositionPrompt", () => {
-  it("contains goal description and GOALS: DECOMPOSE marker", () => {
-    const prompt = buildDecompositionPrompt("Improve OKR rates");
+  it("contains goal description, id, and GOALS: DECOMPOSE marker", () => {
+    const prompt = buildDecompositionPrompt("Improve OKR rates", "goal-abc123");
     expect(prompt).toContain("[GOALS: DECOMPOSE]");
     expect(prompt).toContain("Improve OKR rates");
+    expect(prompt).toContain("goal-abc123");
+    expect(prompt).toContain("goal_select_approach");
   });
 });
 
