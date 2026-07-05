@@ -2,7 +2,7 @@ import { join } from "path";
 import { definePluginEntry } from "openclaw/plugin-sdk/plugin-entry";
 import { Type } from "@sinclair/typebox";
 
-import { buildContext, getLastThreePasses } from "./context-builder.js";
+import { buildContext, resolveContextDirs, getLastThreePasses } from "./context-builder.js";
 import { buildPrompt } from "./prompt-builder.js";
 import { parseProposals, ParseError } from "./output-parser.js";
 import { appendPass, appendError, appendSkipped, appendStructuredProposals } from "./log-writer.js";
@@ -68,12 +68,19 @@ export default definePluginEntry({
     void clearLock(lockFile).catch(() => {});
 
     // Record what this plugin actually resolved, for `openclaw sapience doctor`.
+    // Context dirs included: passes that read from the wrong places ran blind
+    // for weeks with nothing observable — now the doctor can see the inputs.
+    const contextDirs = resolveContextDirs(api, agentId);
     void writeStatusArtifact({
       pluginId: "sapience-thinking",
       version: resolvePluginVersion(),
       agentId,
       resolvedWorkspaceDir: workspaceDir,
-      outputPaths: config.output as unknown as Record<string, string>,
+      outputPaths: {
+        ...(config.output as unknown as Record<string, string>),
+        contextSessionsDir: contextDirs.sessionsDir,
+        contextMemoryDirs: contextDirs.memoryDirs.join(", "),
+      },
       initAt: new Date().toISOString(),
     }).catch(() => {});
 
@@ -95,7 +102,7 @@ export default definePluginEntry({
         }
         try {
           const [bundle, recentPasses, outcomes] = await Promise.all([
-            buildContext(config, agentId),
+            buildContext(config, api, agentId),
             getLastThreePasses(config.output.logPath),
             loadOutcomes(config.output.trackerPath),
           ]);

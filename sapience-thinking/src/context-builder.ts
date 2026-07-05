@@ -4,21 +4,46 @@ import { homedir } from "os";
 import type { ContextBundle, PluginConfig } from "./types.js";
 import { estimateTokens, resolvePath } from "./utils.js";
 
-interface SessionEntry {
+// OpenClaw session transcript line: role/content nested under `message`, with
+// content as a string or an array of {type:"text", text} blocks. Legacy
+// top-level {role, content} is accepted too. Everything else (session,
+// model_change, custom, trajectory records) is ignored.
+interface TranscriptLine {
+  type?: string;
   role?: string;
-  content?: string | Array<{ type: string; text?: string }>;
+  content?: unknown;
+  message?: { role?: string; content?: unknown };
 }
 
-function extractText(entry: SessionEntry): string {
-  if (!entry.content) return "";
-  if (typeof entry.content === "string") return entry.content;
-  return entry.content.filter((c) => c.type === "text").map((c) => c.text ?? "").join(" ");
+function extractContent(content: unknown): string {
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) {
+    return content
+      .filter((c) => c && typeof c === "object" && (c as { type?: string }).type === "text")
+      .map((c) => (c as { text?: string }).text ?? "")
+      .join(" ");
+  }
+  return "";
+}
+
+function extractMessage(line: TranscriptLine): { role: string; text: string } | null {
+  const src = line.message && typeof line.message === "object" ? line.message : line;
+  const role = src.role;
+  if (role !== "user" && role !== "assistant") return null;
+  const text = extractContent(src.content);
+  return text ? { role, text } : null;
+}
+
+// A session transcript is `<sessionId>.jsonl`; `<sessionId>.trajectory.jsonl`
+// sidecars share the extension but hold trace records, not messages.
+function isTranscriptFile(name: string): boolean {
+  return name.endsWith(".jsonl") && !name.includes(".trajectory.");
 }
 
 export async function buildContextFromDirs(
   config: PluginConfig,
   sessionDir: string,
-  memoryDir: string
+  memoryDirs: string[]
 ): Promise<ContextBundle> {
   const cutoff = Date.now() - config.context.lookbackHours * 60 * 60 * 1000;
   const transcriptBudget = Math.floor(config.context.maxContextTokens * 0.7);
@@ -28,23 +53,26 @@ export async function buildContextFromDirs(
   let usedTokens = 0;
 
   try {
-    const files = (await readdir(sessionDir)).filter((f) => f.endsWith(".jsonl")).sort().reverse();
+    const names = (await readdir(sessionDir)).filter(isTranscriptFile);
+    // Order by recency (mtime), not by filename — session ids are UUIDs.
+    const files: Array<{ name: string; mtimeMs: number }> = [];
+    for (const name of names) {
+      try {
+        const s = await stat(join(sessionDir, name));
+        if (s.mtimeMs >= cutoff) files.push({ name, mtimeMs: s.mtimeMs });
+      } catch { /* raced deletion */ }
+    }
+    files.sort((a, b) => b.mtimeMs - a.mtimeMs);
+
     for (const file of files) {
       if (usedTokens >= transcriptBudget) break;
-      const filePath = join(sessionDir, file);
-      const fileStat = await stat(filePath);
-      if (fileStat.mtimeMs < cutoff) continue;
-
-      const lines = (await readFile(filePath, "utf-8")).trim().split("\n").filter(Boolean);
-      const entries: SessionEntry[] = lines
-        .map((l) => { try { return JSON.parse(l) as SessionEntry; } catch { return null; } })
-        .filter((e): e is SessionEntry => e !== null);
-
-      for (const entry of entries.slice(-50).reverse()) {
-        if (!entry.role || !["user", "assistant"].includes(entry.role)) continue;
-        const text = extractText(entry).slice(0, 500);
-        if (!text) continue;
-        const chunk = `[${entry.role}]: ${text}`;
+      const lines = (await readFile(join(sessionDir, file.name), "utf-8")).trim().split("\n").filter(Boolean);
+      for (const raw of lines.slice(-50).reverse()) {
+        let parsed: TranscriptLine;
+        try { parsed = JSON.parse(raw) as TranscriptLine; } catch { continue; }
+        const msg = extractMessage(parsed);
+        if (!msg) continue;
+        const chunk = `[${msg.role}]: ${msg.text.slice(0, 500)}`;
         const tokens = estimateTokens(chunk);
         if (usedTokens + tokens > transcriptBudget) break;
         chunks.push(chunk);
@@ -53,20 +81,34 @@ export async function buildContextFromDirs(
     }
   } catch { /* session dir absent — proceed with empty */ }
 
+  // Memory: wiki vault first (structured claims memory-wiki renders to disk),
+  // then the legacy per-agent memory dir. Newest files first — memory recall
+  // here is recency-based; there is no plugin-facing semantic search API in
+  // the current SDK.
   let memoryText = "";
-  try {
-    const files = (await readdir(memoryDir)).filter((f) => f.endsWith(".md")).slice(0, 20);
-    const memChunks: string[] = [];
-    let memTokens = 0;
-    for (const file of files) {
-      const content = (await readFile(join(memoryDir, file), "utf-8")).slice(0, 1000);
-      const t = estimateTokens(content);
-      if (memTokens + t > memoryBudget) break;
-      memChunks.push(content);
-      memTokens += t;
-    }
-    if (memChunks.length > 0) memoryText = `\n\n## Recent Memory\n\n${memChunks.join("\n---\n")}`;
-  } catch { /* memory dir absent — skip */ }
+  const memFiles: Array<{ path: string; mtimeMs: number }> = [];
+  for (const dir of memoryDirs) {
+    try {
+      for (const name of (await readdir(dir)).filter((f) => f.endsWith(".md"))) {
+        try {
+          const s = await stat(join(dir, name));
+          memFiles.push({ path: join(dir, name), mtimeMs: s.mtimeMs });
+        } catch { /* raced deletion */ }
+      }
+    } catch { /* dir absent — skip */ }
+  }
+  memFiles.sort((a, b) => b.mtimeMs - a.mtimeMs);
+  const memChunks: string[] = [];
+  let memTokens = 0;
+  for (const file of memFiles.slice(0, 40)) {
+    let content: string;
+    try { content = (await readFile(file.path, "utf-8")).slice(0, 1000); } catch { continue; }
+    const t = estimateTokens(content);
+    if (memTokens + t > memoryBudget) break;
+    memChunks.push(content);
+    memTokens += t;
+  }
+  if (memChunks.length > 0) memoryText = `\n\n## Recent Memory\n\n${memChunks.join("\n---\n")}`;
 
   // chunks were pushed newest-first (files desc, entries reversed); restore chronological order
   const activity = chunks.length > 0 ? chunks.reverse().join("\n") : "No recent session activity found.";
@@ -75,9 +117,40 @@ export async function buildContextFromDirs(
   return { recentActivity: full, recentPasses: "", tokenEstimate: estimateTokens(full) };
 }
 
-export async function buildContext(config: PluginConfig, agentId: string): Promise<ContextBundle> {
-  const base = join(homedir(), ".openclaw", "agents", agentId);
-  return buildContextFromDirs(config, join(base, "sessions"), join(base, "memory"));
+export interface ContextDirs {
+  sessionsDir: string;
+  memoryDirs: string[];
+}
+
+// Resolve where sessions and memory actually live, via the runtime when
+// available. The previous implementation hardcoded ~/.openclaw/agents/<id>/
+// {sessions,memory} — the memory dir doesn't exist on real installs (memory
+// lives in the memory-core store and the wiki vault), so passes ran blind.
+export function resolveContextDirs(api: any, agentId: string): ContextDirs {
+  let stateDir: string;
+  try {
+    stateDir = api?.runtime?.state?.resolveStateDir?.() ?? join(homedir(), ".openclaw");
+  } catch {
+    stateDir = join(homedir(), ".openclaw");
+  }
+  let agentDir: string;
+  try {
+    agentDir = api?.runtime?.agent?.resolveAgentDir?.(api?.config, agentId) ?? join(stateDir, "agents", agentId);
+  } catch {
+    agentDir = join(stateDir, "agents", agentId);
+  }
+  const wikiPath: string =
+    api?.config?.plugins?.entries?.["memory-wiki"]?.config?.vault?.path ?? join(stateDir, "wiki", "main");
+
+  return {
+    sessionsDir: join(agentDir, "sessions"),
+    memoryDirs: [wikiPath, join(agentDir, "memory")],
+  };
+}
+
+export async function buildContext(config: PluginConfig, api: any, agentId: string): Promise<ContextBundle> {
+  const dirs = resolveContextDirs(api, agentId);
+  return buildContextFromDirs(config, dirs.sessionsDir, dirs.memoryDirs);
 }
 
 export async function getLastThreePasses(logPath: string): Promise<string> {
