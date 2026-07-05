@@ -38,12 +38,16 @@ export const SUITE_CRONS: ReadonlyArray<{ base: string; tools: readonly string[]
 export const SUITE_CRON_BASES = SUITE_CRONS.map((c) => c.base);
 
 // Output files written under the resolved workspace dir (relative paths), with the
-// plugin that owns each. Used for the PATHS section.
-export const SUITE_FILES: ReadonlyArray<{ label: string; owner: string }> = [
-  { label: "proactive-thinking/log.md", owner: "sapience-thinking" },
-  { label: "proactive-thinking/proposals.jsonl", owner: "sapience-thinking" },
+// plugin that owns each. Used for the PATHS section. Files with `staleAfterMs`
+// are written on every (15-minute) cron cycle when the pipeline is healthy —
+// an old mtime under green crons means the tool handlers aren't executing,
+// which is exactly how the toolsAllow regression stayed invisible on an
+// established install (old files existed, so nothing was "missing").
+export const SUITE_FILES: ReadonlyArray<{ label: string; owner: string; staleAfterMs?: number }> = [
+  { label: "proactive-thinking/log.md", owner: "sapience-thinking", staleAfterMs: 24 * 60 * 60 * 1000 },
+  { label: "proactive-thinking/proposals.jsonl", owner: "sapience-thinking", staleAfterMs: 24 * 60 * 60 * 1000 },
   { label: "proactive-thinking/outcomes.json", owner: "sapience-thinking" },
-  { label: "sapience/events.jsonl", owner: "sapience" },
+  { label: "sapience/events.jsonl", owner: "sapience", staleAfterMs: 24 * 60 * 60 * 1000 },
   { label: "sapience/dashboard.md", owner: "sapience" },
   { label: "sapience/calibration.json", owner: "sapience" },
   { label: "sapience/action-log.md", owner: "sapience" },

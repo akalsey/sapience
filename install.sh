@@ -25,9 +25,23 @@ confirm() {
   [[ "$answer" =~ ^[Yy]$ ]]
 }
 
-# ── sanity check ────────────────────────────────────────────────────────────
+# ── sanity checks ───────────────────────────────────────────────────────────
+# macOS ships bash 3.2, which rejects the associative arrays below — with
+# set -e the script would die right after the first header. Fail with a clear
+# message (and a hint) instead.
+if (( BASH_VERSINFO[0] < 4 )); then
+  echo "Error: this script needs bash >= 4 (you have ${BASH_VERSION})."
+  echo "On macOS: brew install bash, then run: $(command -v bash 2>/dev/null || echo /opt/homebrew/bin/bash) $0"
+  exit 1
+fi
+
 if ! command -v openclaw &>/dev/null; then
   echo -e "${RED}Error:${RESET} 'openclaw' command not found. Install OpenClaw first."
+  exit 1
+fi
+
+if ! command -v node &>/dev/null; then
+  echo -e "${RED}Error:${RESET} 'node' not found (needed to parse openclaw's JSON output)."
   exit 1
 fi
 
@@ -37,7 +51,28 @@ echo "Checks plugins and cron jobs, installs anything missing."
 # ── plugins ─────────────────────────────────────────────────────────────────
 header "Checking plugins..."
 
+# Prefer JSON: the human table wraps long ids across lines, and a substring
+# grep ("sapience" matches "sapience-thinking") reports absent plugins as
+# installed. Fall back to an anchored grep if --json is unsupported.
+PLUGIN_LIST_JSON=$(openclaw plugins list --json 2>/dev/null || true)
 PLUGIN_LIST=$(openclaw plugins list 2>&1)
+
+plugin_installed() {
+  local plugin_id="$1"
+  if [[ -n "$PLUGIN_LIST_JSON" ]]; then
+    echo "$PLUGIN_LIST_JSON" | node -e '
+      let raw = "";
+      process.stdin.on("data", (d) => raw += d);
+      process.stdin.on("end", () => {
+        let parsed; try { parsed = JSON.parse(raw); } catch { process.exit(2); }
+        const list = Array.isArray(parsed) ? parsed : parsed.plugins ?? [];
+        process.exit(list.some((p) => p?.id === process.argv[1]) ? 0 : 1);
+      });
+    ' "$plugin_id"
+  else
+    echo "$PLUGIN_LIST" | grep -qE "(^|[^a-z0-9-])${plugin_id}([^a-z0-9-]|$)"
+  fi
+}
 
 declare -A PLUGIN_PACKAGES=(
   [sapience-thinking]="npm:@akalsey/sapience-thinking"
@@ -49,7 +84,7 @@ declare -A PLUGIN_PACKAGES=(
 PLUGINS_TO_INSTALL=()
 
 for plugin_id in sapience-thinking sapience sapience-feedback sapience-goals; do
-  if echo "$PLUGIN_LIST" | grep -q "$plugin_id"; then
+  if plugin_installed "$plugin_id"; then
     ok "Plugin $plugin_id is installed"
   else
     warn "Plugin $plugin_id is NOT installed"
@@ -76,8 +111,12 @@ fi
 
 if [[ $INSTALLED_COUNT -gt 0 ]]; then
   echo ""
-  warn "Plugins were installed. You may need to restart the OpenClaw gateway for them to activate."
-  confirm "Continue setting up cron jobs now (gateway restart not required for cron)?" y || exit 0
+  warn "Plugins were installed, but they won't register tools until the gateway restarts."
+  if confirm "Restart the gateway now?" y; then
+    openclaw gateway restart || warn "Gateway restart failed — restart it manually before expecting the plugins to work."
+  else
+    warn "Skipping restart. The crons below will run against a gateway that can't serve the plugin tools until you restart."
+  fi
 fi
 
 # ── cron jobs ────────────────────────────────────────────────────────────────
@@ -109,6 +148,28 @@ MULTI_AGENT=false
 [[ ${#CRON_AGENTS[@]} -gt 1 ]] && MULTI_AGENT=true
 
 CRON_LIST=$(openclaw cron list --json 2>&1)
+
+# "missing" | "ok" | "invalid <reason>". Existence alone isn't health: a job
+# with the right name but no payload.toolsAllow runs "ok" while the agent
+# can't call the tool — the exact regression that silently disabled the suite.
+cron_state() {
+  local name="$1" tools="$2"
+  echo "$CRON_LIST" | node -e '
+    let raw = "";
+    process.stdin.on("data", (d) => raw += d);
+    process.stdin.on("end", () => {
+      let parsed; try { parsed = JSON.parse(raw); } catch { console.log("missing"); return; }
+      const jobs = Array.isArray(parsed) ? parsed : parsed.jobs ?? [];
+      const job = jobs.find((j) => j?.name === process.argv[1]);
+      if (!job) { console.log("missing"); return; }
+      if (job.enabled === false) { console.log("invalid disabled"); return; }
+      const granted = Array.isArray(job.payload?.toolsAllow) ? job.payload.toolsAllow : [];
+      const missing = process.argv[2].split(",").filter((t) => !granted.includes(t));
+      if (missing.length > 0) { console.log(`invalid tools grant missing: ${missing.join(",")}`); return; }
+      console.log("ok");
+    });
+  ' "$name" "$tools"
+}
 
 declare -A CRON_BASE_NAMES=(
   [thinking]="sapience-thinking"
@@ -146,12 +207,24 @@ CRONS_TO_ADD=()
 for agent in "${CRON_AGENTS[@]}"; do
   for key in thinking routing goals; do
     name=$(cron_name "${CRON_BASE_NAMES[$key]}" "$agent")
-    if echo "$CRON_LIST" | grep -q "\"$name\""; then
-      ok "Cron job '$name' exists"
-    else
-      warn "Cron job '$name' is NOT registered"
-      CRONS_TO_ADD+=("${key}:${agent}")
-    fi
+    state=$(cron_state "$name" "${CRON_TOOLS[$key]}")
+    case "$state" in
+      ok)
+        ok "Cron job '$name' exists and grants its tools"
+        ;;
+      missing)
+        warn "Cron job '$name' is NOT registered"
+        CRONS_TO_ADD+=("${key}:${agent}")
+        ;;
+      invalid*)
+        warn "Cron job '$name' exists but is broken (${state#invalid })"
+        if confirm "Delete and re-register '$name' with the correct tools grant?" y; then
+          openclaw cron delete --name "$name" 2>/dev/null || openclaw cron remove --name "$name" 2>/dev/null \
+            || warn "Could not delete '$name' automatically — delete it manually, then re-run this script."
+          CRONS_TO_ADD+=("${key}:${agent}")
+        fi
+        ;;
+    esac
   done
 done
 
@@ -280,10 +353,21 @@ if [[ ${#CONFIGS_TO_FIX[@]} -gt 0 ]]; then
   fi
 fi
 
+# ── verification ─────────────────────────────────────────────────────────────
+header "Verifying with 'openclaw sapience doctor'..."
+if openclaw sapience doctor; then
+  ok "Doctor reports healthy."
+else
+  warn "The doctor found problems (see above). Fix them — 'openclaw sapience doctor --fix'"
+  warn "handles the auto-fixable ones — or the suite will not function."
+fi
+
 # ── done ─────────────────────────────────────────────────────────────────────
 header "Done."
 echo ""
-echo "Sapience suite runs on a 15-minute cron. Within the first hour you'll see"
-echo "your first thinking proposals delivered to your active session."
+echo "The suite runs on a 15-minute cron during active hours (default 08:00-20:00"
+echo "local). The first routing run baselines existing proposals, so expect the"
+echo "first proposals in your MAIN session's next turn roughly 30-45 minutes in —"
+echo "they arrive when you next interact, not as a push."
 echo ""
 echo "For configuration options, see each plugin's README."

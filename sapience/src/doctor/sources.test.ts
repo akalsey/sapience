@@ -1,5 +1,11 @@
-import { describe, it, expect } from "vitest";
-import { parseCronListJson, toCronObservation, pluginToolsAllowedGlobally } from "./sources.js";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { mkdtemp, mkdir, writeFile, rm } from "fs/promises";
+import { join } from "path";
+import { tmpdir } from "os";
+import {
+  parseCronListJson, toCronObservation, pluginToolsAllowedGlobally,
+  scanInstalledVersions, readLegacyRootPins, findCorruptFiles,
+} from "./sources.js";
 
 describe("parseCronListJson", () => {
   it("extracts the jobs array from `openclaw cron list --json` output", () => {
@@ -39,6 +45,56 @@ describe("toCronObservation", () => {
       { name: "sapience-routing", enabled: true, payload: {}, state: {} },
     ]);
     expect(obs.job?.toolsAllow).toBeUndefined();
+  });
+
+  // A legacy "sapience-thinking-pass" job used to match the prefix and could
+  // be picked over the real job, so the doctor reported the wrong job's state.
+  it("prefers the exact-name job and records legacy duplicates", () => {
+    const obs = toCronObservation("sapience-thinking", [
+      { name: "sapience-thinking-pass", enabled: false, payload: {}, state: {} },
+      { name: "sapience-thinking", enabled: true, payload: {}, state: {} },
+    ]);
+    expect(obs.job?.name).toBe("sapience-thinking");
+    expect(obs.job?.enabled).toBe(true);
+    expect(obs.extraMatches).toEqual(["sapience-thinking-pass"]);
+  });
+});
+
+describe("filesystem version/corruption scans", () => {
+  let dir: string;
+  beforeEach(async () => { dir = await mkdtemp(join(tmpdir(), "doctor-scan-")); });
+  afterEach(async () => { await rm(dir, { recursive: true, force: true }); });
+
+  it("finds installed plugin versions under npm/projects", async () => {
+    const pkgDir = join(dir, "npm", "projects", "akalsey-sapience-abc123", "node_modules", "@akalsey", "sapience");
+    await mkdir(pkgDir, { recursive: true });
+    await writeFile(join(pkgDir, "package.json"), JSON.stringify({ name: "@akalsey/sapience", version: "0.2.7" }));
+    const versions = await scanInstalledVersions(dir, ["sapience", "sapience-goals"]);
+    expect(versions).toEqual({ sapience: "0.2.7" });
+  });
+
+  it("reads legacy pins from the top-level npm package.json", async () => {
+    await mkdir(join(dir, "npm"), { recursive: true });
+    await writeFile(join(dir, "npm", "package.json"), JSON.stringify({
+      dependencies: { "@akalsey/sapience": "0.1.3", "@openclaw/slack": "1.0.0" },
+    }));
+    expect(await readLegacyRootPins(dir, ["sapience", "sapience-goals"])).toEqual({ sapience: "0.1.3" });
+  });
+
+  it("finds quarantined corrupt state files in the workspace", async () => {
+    await mkdir(join(dir, "goals"), { recursive: true });
+    await mkdir(join(dir, "sapience"), { recursive: true });
+    await writeFile(join(dir, "goals", "goals.json.corrupt-2026-07-01T00-00-00Z"), "{broken");
+    await writeFile(join(dir, "goals", "goals.json"), "[]");
+    const found = await findCorruptFiles(dir);
+    expect(found).toHaveLength(1);
+    expect(found[0]).toContain("goals.json.corrupt-");
+  });
+
+  it("scans tolerate missing directories", async () => {
+    expect(await scanInstalledVersions(join(dir, "nope"), ["sapience"])).toEqual({});
+    expect(await readLegacyRootPins(join(dir, "nope"), ["sapience"])).toEqual({});
+    expect(await findCorruptFiles(join(dir, "nope"))).toEqual([]);
   });
 });
 

@@ -64,6 +64,10 @@ export interface CronObservation {
     consecutiveErrors?: number;
     toolsAllow?: string[];          // payload.toolsAllow — the session's plugin-tool grant
   };
+  // Other jobs whose names also matched this base (e.g. a legacy
+  // "sapience-thinking-pass" left behind by an old installer). These can
+  // shadow the real job in ad-hoc checks and confuse debugging.
+  extraMatches?: string[];
 }
 
 export interface FileObservation {
@@ -71,6 +75,16 @@ export interface FileObservation {
   path: string;                     // absolute, as the plugin actually resolves it
   exists: boolean;
   mtimeMs?: number;
+  staleAfterMs?: number;            // from inventory: fresh writes expected each cron cycle
+}
+
+// Version reality per plugin, for skew detection.
+export interface VersionObservation {
+  pluginId: string;
+  running?: string;                 // from the status artifact (what the gateway loaded)
+  onDisk?: string;                  // from the installed package under <state>/npm/projects
+  registryLatest?: string;          // from the npm registry (best-effort, may be absent)
+  legacyRootPin?: string;           // stale pin in the legacy top-level <state>/npm/package.json
 }
 
 export interface WorkspaceObservation {
@@ -93,6 +107,10 @@ export interface DoctorInputs {
   // True when the gateway config exposes plugin tools to every session (no
   // restrictive tools.profile, or group:plugins in tools.allow/alsoAllow).
   pluginToolsAllowedGlobally: boolean;
+  versions: VersionObservation[];
+  // Quarantined state files (*.corrupt-*) found in the workspace — evidence
+  // that a state file was corrupted and reset.
+  corruptFiles: string[];
   workspace: WorkspaceObservation;
   files: FileObservation[];
   memory: MemoryObservation;

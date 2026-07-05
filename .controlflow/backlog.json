@@ -87,7 +87,7 @@
       "description": "Bound unbounded growth: rotate log.md/action-log.md/feedback.md at size threshold; compact proposals.jsonl when passes are processed; purge expired outcome-tracker entries after N days; make events.jsonl rotation work when sapience isn't installed (thinking rotates its own); prune rotated archives; stop writing outside-hours skip events every 15 min overnight (once per skip transition is enough).",
       "priority": 3,
       "complexity": "medium",
-      "status": "in_progress",
+      "status": "completed",
       "createdAt": "2026-07-05T12:41:53-07:00",
       "updatedAt": "2026-07-05T12:41:53-07:00"
     },
@@ -97,7 +97,7 @@
       "description": "install.sh: bash\u003e=4 guard with clear error; anchored plugin/cron matching (no substring false positives: \"sapience\" currently matches \"sapience-thinking\"); validate existing crons' toolsAllow/schedule not just name; offer gateway restart when plugins installed; run `openclaw sapience doctor` as final verification. Doctor: exact-base cron match + legacy-duplicate warn (sapience-thinking-pass shadowing); toolsAllow superset check vs SUITE_CRONS; mtime-freshness no-output detection (works on established installs); artifact touch on every tool run + saner stale threshold; version-skew checks (artifact vs on-disk package, legacy npm-root shadow detection, intra-suite spread).",
       "priority": 2,
       "complexity": "high",
-      "status": "backlog",
+      "status": "in_progress",
       "createdAt": "2026-07-05T12:41:57-07:00",
       "updatedAt": "2026-07-05T12:41:57-07:00"
     },
@@ -112,7 +112,7 @@
       "updatedAt": "2026-07-05T12:42:08-07:00"
     }
   ],
-  "lastUpdated": "2026-07-05T13:24:57-07:00",
+  "lastUpdated": "2026-07-05T15:38:52-07:00",
   "nextStoryId": 12,
   "nextTaskId": 1
 }

@@ -21,11 +21,14 @@ function healthy(): DoctorInputs {
         initAt: new Date(NOW - 1000).toISOString(),
       },
     })),
-    crons: ["sapience-thinking", "sapience-routing", "sapience-goals-check"].map((base) => ({
-      base,
-      job: { name: base, enabled: true, lastStatus: "ok", consecutiveErrors: 0, toolsAllow: ["some_tool"] },
-    })),
+    crons: [
+      { base: "sapience-thinking", job: { name: "sapience-thinking", enabled: true, lastStatus: "ok", consecutiveErrors: 0, toolsAllow: ["get_thinking_context", "record_thinking_output"] } },
+      { base: "sapience-routing", job: { name: "sapience-routing", enabled: true, lastStatus: "ok", consecutiveErrors: 0, toolsAllow: ["process_proposals"] } },
+      { base: "sapience-goals-check", job: { name: "sapience-goals-check", enabled: true, lastStatus: "ok", consecutiveErrors: 0, toolsAllow: ["check_goals"] } },
+    ],
     pluginToolsAllowedGlobally: false,
+    versions: [],
+    corruptFiles: [],
     files: [
       "proactive-thinking/log.md",
       "proactive-thinking/proposals.jsonl",
@@ -203,6 +206,97 @@ describe("buildSuiteDoctorReport", () => {
     i.files = i.files.map((f, idx) => (idx === 0 ? f : { label: f.label, path: f.path, exists: false }));
     const r = buildSuiteDoctorReport(i);
     expect(byId(r, "paths:no-output")).toBeUndefined();
+  });
+
+  it("warns about legacy duplicate cron jobs that can shadow the real one", () => {
+    const i = healthy();
+    i.crons[0]!.extraMatches = ["sapience-thinking-pass"];
+    const r = buildSuiteDoctorReport(i);
+    const f = byId(r, "cron:sapience-thinking");
+    expect(f?.severity).toBe("warn");
+    expect(f?.message).toContain("sapience-thinking-pass");
+  });
+
+  it("errors when a cron's tools grant does not cover the tools its prompt calls", () => {
+    const i = healthy();
+    i.crons[0]!.job!.toolsAllow = ["get_thinking_context"]; // missing record_thinking_output
+    const r = buildSuiteDoctorReport(i);
+    const f = byId(r, "cron:sapience-thinking");
+    expect(f?.severity).toBe("error");
+    expect(f?.message).toContain("record_thinking_output");
+  });
+
+  it("errors when a pipeline file exists but is stale while all crons are green", () => {
+    const i = healthy();
+    const DAY = 24 * 60 * 60 * 1000;
+    i.files[1] = { label: "proactive-thinking/proposals.jsonl", path: "/ws/proactive-thinking/proposals.jsonl", exists: true, mtimeMs: NOW - 3 * DAY, staleAfterMs: DAY };
+    const r = buildSuiteDoctorReport(i);
+    const f = byId(r, "file:proactive-thinking/proposals.jsonl");
+    expect(f?.severity).toBe("error");
+    expect(f?.message.toLowerCase()).toContain("stale");
+  });
+
+  it("does not raise staleness when a cron is already failing (the cron error explains it)", () => {
+    const i = healthy();
+    const DAY = 24 * 60 * 60 * 1000;
+    i.files[1] = { label: "proactive-thinking/proposals.jsonl", path: "/ws/p.jsonl", exists: true, mtimeMs: NOW - 3 * DAY, staleAfterMs: DAY };
+    i.crons[0]!.job!.lastStatus = "error";
+    i.crons[0]!.job!.consecutiveErrors = 3;
+    const r = buildSuiteDoctorReport(i);
+    expect(byId(r, "file:proactive-thinking/proposals.jsonl")?.severity).toBe("ok");
+  });
+
+  it("warns when feedback capture is degraded to command-only", () => {
+    const i = healthy();
+    const feedback = i.plugins.find((p) => p.id === "sapience-feedback")!;
+    feedback.artifact!.captureMode = "command-only";
+    const r = buildSuiteDoctorReport(i);
+    const f = byId(r, "plugin:sapience-feedback");
+    expect(f?.severity).toBe("warn");
+    expect(f?.message).toContain("command-only");
+  });
+
+  it("errors when the on-disk package is newer than what the gateway is running (restart needed)", () => {
+    const i = healthy();
+    i.versions = [{ pluginId: "sapience", running: "0.2.6", onDisk: "0.2.7" }];
+    const r = buildSuiteDoctorReport(i);
+    const f = byId(r, "version:sapience");
+    expect(f?.severity).toBe("error");
+    expect(f?.message.toLowerCase()).toContain("restart");
+  });
+
+  it("warns when the registry has a newer version than the one installed", () => {
+    const i = healthy();
+    i.versions = [{ pluginId: "sapience", running: "0.2.7", onDisk: "0.2.7", registryLatest: "0.3.0" }];
+    const r = buildSuiteDoctorReport(i);
+    const f = byId(r, "version:sapience");
+    expect(f?.severity).toBe("warn");
+    expect(f?.message).toContain("0.3.0");
+  });
+
+  it("warns about a stale legacy pin in the top-level npm package.json", () => {
+    const i = healthy();
+    i.versions = [{ pluginId: "sapience", running: "0.2.7", onDisk: "0.2.7", legacyRootPin: "0.1.3" }];
+    const r = buildSuiteDoctorReport(i);
+    const f = byId(r, "version:sapience");
+    expect(f?.severity).toBe("warn");
+    expect(f?.message.toLowerCase()).toContain("legacy");
+  });
+
+  it("reports matching versions as ok", () => {
+    const i = healthy();
+    i.versions = [{ pluginId: "sapience", running: "0.2.7", onDisk: "0.2.7", registryLatest: "0.2.7" }];
+    const r = buildSuiteDoctorReport(i);
+    expect(byId(r, "version:sapience")?.severity).toBe("ok");
+  });
+
+  it("warns about quarantined corrupt state files", () => {
+    const i = healthy();
+    i.corruptFiles = ["/ws/goals/goals.json.corrupt-2026-07-01T00-00-00Z"];
+    const r = buildSuiteDoctorReport(i);
+    const f = byId(r, "paths:corrupt-files");
+    expect(f?.severity).toBe("warn");
+    expect(f?.detail).toContain("goals.json.corrupt");
   });
 
   it("warns on a missing output file but shows its absolute path", () => {

@@ -1,5 +1,6 @@
-import { stat } from "fs/promises";
+import { stat, readdir, readFile } from "fs/promises";
 import { join } from "path";
+import { homedir } from "os";
 import { execFile } from "child_process";
 import { promisify } from "util";
 import { readStatusArtifacts } from "../status-artifact.js";
@@ -12,6 +13,7 @@ import type {
   WorkspaceObservation,
   MemoryObservation,
   StatusArtifact,
+  VersionObservation,
 } from "./types.js";
 
 const exec = promisify(execFile);
@@ -69,8 +71,13 @@ async function listCronJobs(): Promise<any[]> {
 }
 
 export function toCronObservation(base: string, jobs: any[]): CronObservation {
-  const job = jobs.find((j) => j?.name === base || (typeof j?.name === "string" && j.name.startsWith(`${base}-`)));
+  // Exact name wins; prefix matches (multi-agent "-<agent>" suffixes, but also
+  // legacy jobs like "sapience-thinking-pass") are fallbacks. Extra matches are
+  // surfaced so leftover legacy jobs can't silently shadow the real one.
+  const matches = jobs.filter((j) => j?.name === base || (typeof j?.name === "string" && j.name.startsWith(`${base}-`)));
+  const job = matches.find((j) => j.name === base) ?? matches[0];
   if (!job) return { base };
+  const extraMatches = matches.filter((j) => j !== job).map((j) => j.name as string);
   const st = job.state ?? {};
   return {
     base,
@@ -82,7 +89,85 @@ export function toCronObservation(base: string, jobs: any[]): CronObservation {
       consecutiveErrors: st.consecutiveErrors ?? 0,
       toolsAllow: Array.isArray(job.payload?.toolsAllow) ? job.payload.toolsAllow : undefined,
     },
+    ...(extraMatches.length > 0 ? { extraMatches } : {}),
   };
+}
+
+// ── filesystem scans for version skew and quarantined state ────────────────
+
+// Mirrors the state-dir resolution in status-artifact.ts.
+export function resolveStateBase(env: NodeJS.ProcessEnv = process.env): string {
+  const override = env.OPENCLAW_STATE_DIR?.trim();
+  if (override && override.length > 0) {
+    return override.startsWith("~/") ? join(homedir(), override.slice(2)) : override;
+  }
+  return join(homedir(), ".openclaw");
+}
+
+// OpenClaw installs each plugin into <state>/npm/projects/<pkg>-<hash>/node_modules/…
+// That copy is what loads on the next gateway restart.
+export async function scanInstalledVersions(stateBase: string, pluginIds: readonly string[]): Promise<Record<string, string>> {
+  const out: Record<string, string> = {};
+  try {
+    const projects = await readdir(join(stateBase, "npm", "projects"));
+    for (const id of pluginIds) {
+      const dir = projects.find((d) => d.startsWith(`akalsey-${id}-`));
+      if (!dir) continue;
+      try {
+        const pkg = JSON.parse(await readFile(
+          join(stateBase, "npm", "projects", dir, "node_modules", "@akalsey", id, "package.json"), "utf-8"));
+        if (typeof pkg.version === "string") out[id] = pkg.version;
+      } catch { /* unreadable install */ }
+    }
+  } catch { /* no npm/projects dir */ }
+  return out;
+}
+
+// A stale legacy install at <state>/npm/package.json pins old versions that
+// the gateway does NOT load — harmless at runtime, poisonous while debugging.
+export async function readLegacyRootPins(stateBase: string, pluginIds: readonly string[]): Promise<Record<string, string>> {
+  const out: Record<string, string> = {};
+  try {
+    const pkg = JSON.parse(await readFile(join(stateBase, "npm", "package.json"), "utf-8"));
+    const deps = { ...(pkg.dependencies ?? {}), ...(pkg.devDependencies ?? {}) };
+    for (const id of pluginIds) {
+      const pin = deps[`@akalsey/${id}`];
+      if (typeof pin === "string") out[id] = pin;
+    }
+  } catch { /* no legacy root install */ }
+  return out;
+}
+
+// safe-json quarantines unparseable state files as <name>.corrupt-<ts> —
+// durable evidence a state file was corrupted and reset.
+export async function findCorruptFiles(workspaceDir: string): Promise<string[]> {
+  const found: string[] = [];
+  for (const sub of ["sapience", "proactive-thinking", "goals"]) {
+    try {
+      const entries = await readdir(join(workspaceDir, sub));
+      for (const e of entries) {
+        if (e.includes(".corrupt-")) found.push(join(workspaceDir, sub, e));
+      }
+    } catch { /* dir absent */ }
+  }
+  return found;
+}
+
+// Best-effort registry check; failures (offline, slow) return {}.
+export async function fetchRegistryVersions(pluginIds: readonly string[], timeoutMs = 2500): Promise<Record<string, string>> {
+  const out: Record<string, string> = {};
+  await Promise.all(pluginIds.map(async (id) => {
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
+      const res = await fetch(`https://registry.npmjs.org/@akalsey%2f${id}/latest`, { signal: controller.signal });
+      clearTimeout(timer);
+      if (!res.ok) return;
+      const body = await res.json() as { version?: string };
+      if (typeof body.version === "string") out[id] = body.version;
+    } catch { /* offline or slow: skip */ }
+  }));
+  return out;
 }
 
 // Whether the gateway config exposes plugin tools to every session. A tools
@@ -114,11 +199,11 @@ function resolveWorkspace(api: any, config: any, artifacts: Record<string, Statu
   return { resolved: resolved ?? "(unknown)", source: "resolver" };
 }
 
-async function fileObservation(label: string, workspaceDir: string): Promise<FileObservation> {
+async function fileObservation(label: string, workspaceDir: string, staleAfterMs?: number): Promise<FileObservation> {
   const path = join(workspaceDir, label);
   try {
     const s = await stat(path);
-    return { label, path, exists: true, mtimeMs: s.mtimeMs };
+    return { label, path, exists: true, mtimeMs: s.mtimeMs, ...(staleAfterMs !== undefined ? { staleAfterMs } : {}) };
   } catch {
     return { label, path, exists: false };
   }
@@ -145,7 +230,23 @@ export async function gatherInputs(deps: { api: any; config: any; env?: NodeJS.P
   });
 
   const workspace = resolveWorkspace(api, config, artifacts);
-  const files = await Promise.all(SUITE_FILES.map((f) => fileObservation(f.label, workspace.resolved)));
+  const files = await Promise.all(SUITE_FILES.map((f) => fileObservation(f.label, workspace.resolved, f.staleAfterMs)));
+
+  const stateBase = resolveStateBase(env);
+  const [onDisk, legacyPins, registry, corruptFiles] = await Promise.all([
+    scanInstalledVersions(stateBase, SUITE_PLUGINS),
+    readLegacyRootPins(stateBase, SUITE_PLUGINS),
+    fetchRegistryVersions(SUITE_PLUGINS),
+    findCorruptFiles(workspace.resolved),
+  ]);
+  const versions: VersionObservation[] = SUITE_PLUGINS.map((id) => ({
+    pluginId: id,
+    running: artifacts[id]?.version && artifacts[id]!.version !== "unknown" ? artifacts[id]!.version : undefined,
+    onDisk: onDisk[id],
+    registryLatest: registry[id],
+    // Only flag the legacy pin when it disagrees with the real install.
+    legacyRootPin: legacyPins[id] && legacyPins[id] !== onDisk[id] ? legacyPins[id] : undefined,
+  }));
 
   return {
     nowMs,
@@ -153,6 +254,8 @@ export async function gatherInputs(deps: { api: any; config: any; env?: NodeJS.P
     crons: SUITE_CRON_BASES.map((base) => toCronObservation(base, jobs)),
     modelAllowlist: modelAllowlist(config),
     pluginToolsAllowedGlobally: pluginToolsAllowedGlobally(config),
+    versions,
+    corruptFiles,
     workspace,
     files,
     memory: memoryObservation(config),

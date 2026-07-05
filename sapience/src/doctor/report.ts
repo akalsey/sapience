@@ -5,8 +5,9 @@ import type {
   Section,
   CronObservation,
   PluginObservation,
+  VersionObservation,
 } from "./types.js";
-import { MEMORY_SETTINGS, ARTIFACT_STALE_MS } from "./inventory.js";
+import { MEMORY_SETTINGS, ARTIFACT_STALE_MS, SUITE_CRONS } from "./inventory.js";
 
 function ageStr(nowMs: number, mtimeMs?: number): string {
   if (mtimeMs === undefined) return "unknown";
@@ -34,6 +35,11 @@ function pluginFinding(p: PluginObservation, nowMs: number): Finding {
       message: `${p.id} v${p.artifact.version} — status artifact is stale (${ageStr(nowMs, initMs)})`,
       detail: "The gateway may not have reloaded this plugin recently." };
   }
+  if (p.artifact.captureMode === "command-only") {
+    return { id, severity: "warn", source: "artifact",
+      message: `${p.id} v${p.artifact.version} — passive capture degraded to command-only`,
+      detail: "The gateway did not expose the message-hook surface; only /feedback works. Check the gateway version." };
+  }
   return { id, severity: "ok", source: "artifact", message: `${p.id} v${p.artifact.version} initialized` };
 }
 
@@ -60,8 +66,24 @@ function cronFinding(c: CronObservation, allowlist: string[], pluginToolsGlobal:
       message: `cron ${j.name} has no plugin-tool grant — its session cannot call the suite's tools`,
       detail: "The run reports ok while the agent can't see the tool (and may improvise with whatever is available). Delete the job and re-register it with --tools (re-run install.sh or `openclaw sapience doctor --fix` after deleting), or set tools.alsoAllow to include group:plugins." };
   }
+  // A grant that exists but misses a tool the prompt calls fails just as
+  // silently as no grant at all.
+  if (!pluginToolsGlobal && j.toolsAllow?.length) {
+    const expectedTools = SUITE_CRONS.find((sc) => j.name === sc.base || j.name.startsWith(`${sc.base}-`))?.tools ?? [];
+    const missing = expectedTools.filter((t) => !j.toolsAllow!.includes(t));
+    if (missing.length > 0) {
+      return { id, severity: "error", source: "cron",
+        message: `cron ${j.name} tools grant is missing ${missing.join(", ")}`,
+        detail: "The prompt instructs the agent to call tools the session can't see. Re-register with the full --tools list (see install.sh)." };
+    }
+  }
   if (!j.enabled) {
     return { id, severity: "warn", source: "cron", message: `cron ${j.name} is disabled` };
+  }
+  if (c.extraMatches?.length) {
+    return { id, severity: "warn", source: "cron",
+      message: `cron ${j.name} ok, but legacy duplicate job(s) exist: ${c.extraMatches.join(", ")}`,
+      detail: "Old jobs from a previous installer can shadow the real one in ad-hoc checks. Delete them with `openclaw cron delete`." };
   }
   return { id, severity: "ok", source: "cron", message: `cron ${j.name} ok` };
 }
@@ -93,17 +115,69 @@ function pathsSection(i: DoctorInputs): Section {
   const contradiction = noOutputContradiction(i);
   if (contradiction) findings.push(contradiction);
 
+  const cronsAllGreen = i.crons.length > 0 &&
+    i.crons.every((c) => c.job && c.job.enabled && c.job.lastStatus === "ok");
+
   for (const f of i.files) {
     if (f.exists) {
-      findings.push({ id: `file:${f.label}`, severity: "ok", source: "fs",
-        message: `${f.label} (found, ${ageStr(i.nowMs, f.mtimeMs)})` });
+      // An existing-but-stale pipeline file under green crons is the
+      // established-install signature of tools not reaching cron sessions —
+      // the file class the all-missing contradiction can't catch.
+      const stale = f.staleAfterMs !== undefined && f.mtimeMs !== undefined
+        && i.nowMs - f.mtimeMs > f.staleAfterMs;
+      if (stale && cronsAllGreen) {
+        findings.push({ id: `file:${f.label}`, severity: "error", source: "fs",
+          message: `${f.label} is stale (${ageStr(i.nowMs, f.mtimeMs)}) while its cron reports ok`,
+          detail: `${f.path} — the cron runs but the tool handlers never write. Check tool exposure (payload.toolsAllow / tools.alsoAllow).` });
+      } else {
+        findings.push({ id: `file:${f.label}`, severity: "ok", source: "fs",
+          message: `${f.label} (found, ${ageStr(i.nowMs, f.mtimeMs)})` });
+      }
     } else {
       findings.push({ id: `file:${f.label}`, severity: "warn", source: "fs",
         message: `${f.label} not found`,
         detail: `${f.path} — may be normal if there has been no activity yet.` });
     }
   }
+
+  if (i.corruptFiles.length > 0) {
+    findings.push({ id: "paths:corrupt-files", severity: "warn", source: "fs",
+      message: `${i.corruptFiles.length} quarantined state file(s) found`,
+      detail: `A state file failed to parse and was reset; the original data is preserved at: ${i.corruptFiles.join(", ")}` });
+  }
   return { title: "PATHS", findings };
+}
+
+// Lexicographic-numeric semver comparison, good enough for x.y.z strings.
+function versionLess(a: string, b: string): boolean {
+  const pa = a.split(".").map(Number);
+  const pb = b.split(".").map(Number);
+  for (let k = 0; k < Math.max(pa.length, pb.length); k++) {
+    const da = pa[k] ?? 0, db = pb[k] ?? 0;
+    if (da !== db) return da < db;
+  }
+  return false;
+}
+
+function versionFinding(v: VersionObservation): Finding {
+  const id = `version:${v.pluginId}`;
+  if (v.running && v.onDisk && v.running !== v.onDisk) {
+    return { id, severity: "error", source: "fs",
+      message: `${v.pluginId}: gateway runs v${v.running} but v${v.onDisk} is installed on disk — restart the gateway`,
+      detail: "The update won't load until the gateway restarts; until then old code runs with a fresh-looking install." };
+  }
+  if (v.legacyRootPin) {
+    return { id, severity: "warn", source: "fs",
+      message: `${v.pluginId}: legacy top-level npm package.json pins v${v.legacyRootPin}`,
+      detail: "The stale root install is not what the gateway loads, but it misleads debugging. Remove the entry from <state>/npm/package.json." };
+  }
+  const current = v.onDisk ?? v.running;
+  if (current && v.registryLatest && versionLess(current, v.registryLatest)) {
+    return { id, severity: "warn", source: "fs",
+      message: `${v.pluginId}: v${current} installed, v${v.registryLatest} published`,
+      detail: "Update the plugin and restart the gateway, then re-run the doctor." };
+  }
+  return { id, severity: "ok", source: "fs", message: `${v.pluginId} v${current ?? "unknown"} current` };
 }
 
 function memorySection(i: DoctorInputs): Section {
@@ -142,6 +216,9 @@ export function buildSuiteDoctorReport(i: DoctorInputs): DoctorReport {
     pathsSection(i),
     memorySection(i),
   ];
+  if (i.versions.length > 0) {
+    sections.push({ title: "VERSIONS", findings: i.versions.map(versionFinding) });
+  }
 
   const summary = { ok: 0, warn: 0, error: 0 };
   for (const s of sections) for (const f of s.findings) summary[f.severity]++;
