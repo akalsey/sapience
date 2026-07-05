@@ -1,4 +1,4 @@
-import { readFile, writeFile, unlink, mkdir, access } from "fs/promises";
+import { access } from "fs/promises";
 import { join } from "path";
 import { definePluginEntry } from "openclaw/plugin-sdk/plugin-entry";
 import { Type } from "@sinclair/typebox";
@@ -14,38 +14,7 @@ import { maybeDeliver } from "./delivery.js";
 import { DEFAULT_CONFIG, type PluginConfig } from "./types.js";
 import { resolveDataPath } from "./utils.js";
 import { writeStatusArtifact, resolvePluginVersion } from "./status-artifact.js";
-
-interface LockData {
-  pid: number;
-  started_at: string;
-}
-
-function isProcessAlive(pid: number): boolean {
-  try { process.kill(pid, 0); return true; } catch { return false; }
-}
-
-async function acquireLock(lockDir: string, lockFile: string): Promise<boolean> {
-  await mkdir(lockDir, { recursive: true });
-  try {
-    const lock = JSON.parse(await readFile(lockFile, "utf-8")) as LockData;
-    const ageHours = (Date.now() - new Date(lock.started_at).getTime()) / (1000 * 60 * 60);
-
-    if (isProcessAlive(lock.pid)) {
-      if (ageHours < 2) return false;
-      // > 2 hours old with live PID: stuck process; kill and take the lock
-      try { process.kill(lock.pid, "SIGTERM"); } catch {}
-      await new Promise((r) => setTimeout(r, 1000));
-      if (isProcessAlive(lock.pid)) { try { process.kill(lock.pid, "SIGKILL"); } catch {} }
-    }
-  } catch { /* no lock file */ }
-
-  await writeFile(lockFile, JSON.stringify({ pid: process.pid, started_at: new Date().toISOString() }), "utf-8");
-  return true;
-}
-
-async function releaseLock(lockFile: string): Promise<void> {
-  try { await unlink(lockFile); } catch {}
-}
+import { acquireLock, releaseLock, clearLock } from "./lock.js";
 
 function isWithinActiveHours(config: PluginConfig): boolean {
   const formatter = new Intl.DateTimeFormat("en-US", {
@@ -89,9 +58,11 @@ export default definePluginEntry({
       workspaceDir = (api.runtime.agent.resolveAgentWorkspaceDir as (cfg: unknown) => string)(api.pluginConfig);
     } catch { return; }
     const config = mergeConfig(api.pluginConfig as Record<string, unknown>, workspaceDir);
-    const lockDir = join(workspaceDir, "proactive-thinking");
-    const lockFile = join(lockDir, ".pass.lock");
+    const lockFile = join(workspaceDir, "proactive-thinking", ".pass.lock");
     const agentId: string = ((api.config as Record<string, unknown>)?.agent as Record<string, unknown>)?.id as string ?? "default";
+
+    // A gateway restart means no pass can be running; drop any leftover lock.
+    void clearLock(lockFile).catch(() => {});
 
     // Record what this plugin actually resolved, for `openclaw sapience doctor`.
     void writeStatusArtifact({
@@ -112,7 +83,7 @@ export default definePluginEntry({
           await appendEvent(config.output.eventsPath, { plugin: "thinking", type: "pass_skipped", reason: "outside_hours" });
           return { content: [{ type: "text", text: JSON.stringify({ status: "skip", reason: "outside_active_hours" }) }] };
         }
-        const acquired = await acquireLock(lockDir, lockFile);
+        const acquired = await acquireLock(lockFile);
         if (!acquired) {
           await appendSkipped("pass_already_running", config.output.logPath);
           await appendEvent(config.output.eventsPath, { plugin: "thinking", type: "pass_skipped", reason: "already_running" });
