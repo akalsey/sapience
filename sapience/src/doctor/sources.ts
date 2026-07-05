@@ -68,7 +68,7 @@ async function listCronJobs(): Promise<any[]> {
   }
 }
 
-function toCronObservation(base: string, jobs: any[]): CronObservation {
+export function toCronObservation(base: string, jobs: any[]): CronObservation {
   const job = jobs.find((j) => j?.name === base || (typeof j?.name === "string" && j.name.startsWith(`${base}-`)));
   if (!job) return { base };
   const st = job.state ?? {};
@@ -80,8 +80,20 @@ function toCronObservation(base: string, jobs: any[]): CronObservation {
       payloadModel: job.payload?.model,
       lastStatus: st.lastRunStatus ?? st.lastStatus,
       consecutiveErrors: st.consecutiveErrors ?? 0,
+      toolsAllow: Array.isArray(job.payload?.toolsAllow) ? job.payload.toolsAllow : undefined,
     },
   };
+}
+
+// Whether the gateway config exposes plugin tools to every session. A tools
+// profile (other than "full") filters out plugin-registered tools unless
+// tools.allow/alsoAllow grants them back — group:plugins covers all of them.
+export function pluginToolsAllowedGlobally(config: any): boolean {
+  const tools = config?.tools;
+  const profile = tools?.profile;
+  if (!profile || profile === "full") return true;
+  const grants = [...(Array.isArray(tools?.allow) ? tools.allow : []), ...(Array.isArray(tools?.alsoAllow) ? tools.alsoAllow : [])];
+  return grants.includes("group:plugins");
 }
 
 function resolveWorkspace(api: any, config: any, artifacts: Record<string, StatusArtifact>): WorkspaceObservation {
@@ -140,6 +152,7 @@ export async function gatherInputs(deps: { api: any; config: any; env?: NodeJS.P
     plugins,
     crons: SUITE_CRON_BASES.map((base) => toCronObservation(base, jobs)),
     modelAllowlist: modelAllowlist(config),
+    pluginToolsAllowedGlobally: pluginToolsAllowedGlobally(config),
     workspace,
     files,
     memory: memoryObservation(config),

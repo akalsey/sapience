@@ -37,7 +37,7 @@ function pluginFinding(p: PluginObservation, nowMs: number): Finding {
   return { id, severity: "ok", source: "artifact", message: `${p.id} v${p.artifact.version} initialized` };
 }
 
-function cronFinding(c: CronObservation, allowlist: string[]): Finding {
+function cronFinding(c: CronObservation, allowlist: string[], pluginToolsGlobal: boolean): Finding {
   const id = `cron:${c.base}`;
   if (!c.job) {
     return { id, severity: "error", source: "cron", message: `cron ${c.base} is not registered`,
@@ -55,10 +55,28 @@ function cronFinding(c: CronObservation, allowlist: string[]): Finding {
       message: `cron ${j.name} last run failed (${j.consecutiveErrors ?? 0} consecutive errors)`,
       detail: "Inspect with `openclaw cron get`." };
   }
+  if (!pluginToolsGlobal && !j.toolsAllow?.length) {
+    return { id, severity: "error", source: "cron",
+      message: `cron ${j.name} has no plugin-tool grant — its session cannot call the suite's tools`,
+      detail: "The run reports ok while the agent can't see the tool (and may improvise with whatever is available). Delete the job and re-register it with --tools (re-run install.sh or `openclaw sapience doctor --fix` after deleting), or set tools.alsoAllow to include group:plugins." };
+  }
   if (!j.enabled) {
     return { id, severity: "warn", source: "cron", message: `cron ${j.name} is disabled` };
   }
   return { id, severity: "ok", source: "cron", message: `cron ${j.name} ok` };
+}
+
+// Every cron reports green yet not one output file exists — the runs complete
+// without the tool handlers ever executing. This is the signature of plugin
+// tools not reaching the cron sessions, whatever the cause.
+function noOutputContradiction(i: DoctorInputs): Finding | undefined {
+  const cronsAllGreen = i.crons.length > 0 &&
+    i.crons.every((c) => c.job && c.job.enabled && c.job.lastStatus === "ok");
+  const nothingWritten = i.files.length > 0 && i.files.every((f) => !f.exists);
+  if (!cronsAllGreen || !nothingWritten) return undefined;
+  return { id: "paths:no-output", severity: "error", source: "fs",
+    message: "crons run green but no output files exist — the plugin tools are never executing",
+    detail: "The cron agents likely can't see the suite's tools. Check each job's payload.toolsAllow and the tools.profile/alsoAllow config (see the CRONS section)." };
 }
 
 function pathsSection(i: DoctorInputs): Section {
@@ -71,6 +89,9 @@ function pathsSection(i: DoctorInputs): Section {
   } else {
     findings.push({ id: "paths:workspace", severity: "ok", source: "artifact", message: `workspace dir: ${w.resolved}` });
   }
+
+  const contradiction = noOutputContradiction(i);
+  if (contradiction) findings.push(contradiction);
 
   for (const f of i.files) {
     if (f.exists) {
@@ -117,7 +138,7 @@ function memorySection(i: DoctorInputs): Section {
 export function buildSuiteDoctorReport(i: DoctorInputs): DoctorReport {
   const sections: Section[] = [
     { title: "PLUGINS", findings: i.plugins.map((p) => pluginFinding(p, i.nowMs)) },
-    { title: "CRONS", findings: i.crons.map((c) => cronFinding(c, i.modelAllowlist)) },
+    { title: "CRONS", findings: i.crons.map((c) => cronFinding(c, i.modelAllowlist, i.pluginToolsAllowedGlobally)) },
     pathsSection(i),
     memorySection(i),
   ];

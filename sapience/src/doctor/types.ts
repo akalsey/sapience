@@ -59,6 +59,7 @@ export interface CronObservation {
     payloadModel?: string;
     lastStatus?: string;
     consecutiveErrors?: number;
+    toolsAllow?: string[];          // payload.toolsAllow — the session's plugin-tool grant
   };
 }
 
@@ -86,6 +87,9 @@ export interface DoctorInputs {
   plugins: PluginObservation[];
   crons: CronObservation[];
   modelAllowlist: string[];
+  // True when the gateway config exposes plugin tools to every session (no
+  // restrictive tools.profile, or group:plugins in tools.allow/alsoAllow).
+  pluginToolsAllowedGlobally: boolean;
   workspace: WorkspaceObservation;
   files: FileObservation[];
   memory: MemoryObservation;

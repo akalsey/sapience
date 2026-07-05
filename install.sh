@@ -116,10 +116,21 @@ declare -A CRON_BASE_NAMES=(
   [goals]="sapience-goals-check"
 )
 
+# --tools becomes the job's payload.toolsAllow. Isolated cron sessions only see
+# plugin tools granted here (or via a global tools.allow/alsoAllow) — without
+# the grant every run completes "ok" while the agent can't call the tool.
+# Keep names, tools, and messages in sync with SUITE_CRONS in
+# sapience/src/doctor/inventory.ts.
+declare -A CRON_TOOLS=(
+  [thinking]="get_thinking_context,record_thinking_output"
+  [routing]="process_proposals"
+  [goals]="check_goals"
+)
+
 declare -A CRON_MESSAGES=(
-  [thinking]="You are running a scheduled thinking pass. Call get_thinking_context() to receive your context and instructions. If it returns {status:skip}, reply with SILENT_REPLY_TOKEN and stop. Otherwise review the context carefully, then call record_thinking_output() with your proposals. Do not produce any other output."
-  [routing]="You are the sapience routing agent. Call process_proposals() to route new thinking pass proposals. Reply SILENT_REPLY_TOKEN after the tool call."
-  [goals]="You are the goals tracking agent. Call check_goals() to process new goals and deliver weekly status updates. Reply SILENT_REPLY_TOKEN after the tool call."
+  [thinking]="You are running a scheduled thinking pass. Call get_thinking_context() to receive your context and instructions. If it returns {status:skip}, reply with SILENT_REPLY_TOKEN and stop. Otherwise review the context carefully, then call record_thinking_output() with your proposals. Do not produce any other output. If the tool is not available, reply SILENT_REPLY_TOKEN and stop."
+  [routing]="You are the sapience routing agent. Call process_proposals() to route new thinking pass proposals. Reply SILENT_REPLY_TOKEN after the tool call. If the tool is not available, reply SILENT_REPLY_TOKEN and stop."
+  [goals]="You are the goals tracking agent. Call check_goals() to process new goals and deliver weekly status updates. Reply SILENT_REPLY_TOKEN after the tool call. If the tool is not available, reply SILENT_REPLY_TOKEN and stop."
 )
 
 cron_name() {
@@ -154,6 +165,7 @@ if [[ ${#CRONS_TO_ADD[@]} -gt 0 ]]; then
       name=$(cron_name "${CRON_BASE_NAMES[$key]}" "$agent")
 
       message="${CRON_MESSAGES[$key]}"
+      tools="${CRON_TOOLS[$key]}"
       echo "  Registering $name (agent: $agent)..."
       openclaw cron add \
         --name "$name" \
@@ -161,6 +173,7 @@ if [[ ${#CRONS_TO_ADD[@]} -gt 0 ]]; then
         --session isolated \
         --agent "$agent" \
         --no-deliver \
+        --tools "$tools" \
         --message "$message" \
         --timeout-seconds 120
       ok "Registered $name"
@@ -175,6 +188,7 @@ if [[ ${#CRONS_TO_ADD[@]} -gt 0 ]]; then
       name=$(cron_name "${CRON_BASE_NAMES[$key]}" "$agent")
 
       message="${CRON_MESSAGES[$key]}"
+      tools="${CRON_TOOLS[$key]}"
       echo ""
       echo "  openclaw cron add \\"
       echo "    --name \"$name\" \\"
@@ -182,6 +196,7 @@ if [[ ${#CRONS_TO_ADD[@]} -gt 0 ]]; then
       echo "    --session isolated \\"
       echo "    --agent \"$agent\" \\"
       echo "    --no-deliver \\"
+      echo "    --tools \"$tools\" \\"
       echo "    --message \"$message\" \\"
       echo "    --timeout-seconds 120"
     done

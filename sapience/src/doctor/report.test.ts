@@ -23,8 +23,9 @@ function healthy(): DoctorInputs {
     })),
     crons: ["sapience-thinking", "sapience-routing", "sapience-goals-check"].map((base) => ({
       base,
-      job: { name: base, enabled: true, lastStatus: "ok", consecutiveErrors: 0 },
+      job: { name: base, enabled: true, lastStatus: "ok", consecutiveErrors: 0, toolsAllow: ["some_tool"] },
     })),
+    pluginToolsAllowedGlobally: false,
     files: [
       "proactive-thinking/log.md",
       "proactive-thinking/proposals.jsonl",
@@ -152,6 +153,56 @@ describe("buildSuiteDoctorReport", () => {
     i.workspace = { resolved: "/ws", source: "resolver" };
     const r = buildSuiteDoctorReport(i);
     expect(byId(r, "paths:workspace")?.severity).toBe("warn");
+  });
+
+  it("errors when a cron has no tools grant and plugin tools are not globally allowed", () => {
+    const i = healthy();
+    i.crons[1]!.job!.toolsAllow = undefined;
+    const r = buildSuiteDoctorReport(i);
+    const f = byId(r, "cron:sapience-routing");
+    expect(f?.severity).toBe("error");
+    expect(f?.message.toLowerCase()).toContain("tool");
+    expect(r.exitCode).toBe(1);
+  });
+
+  it("accepts a cron without a tools grant when plugin tools are globally allowed", () => {
+    const i = healthy();
+    i.crons[1]!.job!.toolsAllow = undefined;
+    i.pluginToolsAllowedGlobally = true;
+    const r = buildSuiteDoctorReport(i);
+    expect(byId(r, "cron:sapience-routing")?.severity).toBe("ok");
+  });
+
+  it("errors when an empty toolsAllow list has no global fallback", () => {
+    const i = healthy();
+    i.crons[0]!.job!.toolsAllow = [];
+    const r = buildSuiteDoctorReport(i);
+    expect(byId(r, "cron:sapience-thinking")?.severity).toBe("error");
+  });
+
+  it("errors when all crons run green but no output file exists (tools not reaching sessions)", () => {
+    const i = healthy();
+    i.files = i.files.map((f) => ({ label: f.label, path: f.path, exists: false }));
+    const r = buildSuiteDoctorReport(i);
+    const f = byId(r, "paths:no-output");
+    expect(f?.severity).toBe("error");
+    expect(f?.message.toLowerCase()).toContain("no output");
+    expect(r.exitCode).toBe(1);
+  });
+
+  it("does not raise the no-output contradiction when a cron is missing (absence is explained)", () => {
+    const i = healthy();
+    i.files = i.files.map((f) => ({ label: f.label, path: f.path, exists: false }));
+    i.crons[1]!.job = undefined;
+    const r = buildSuiteDoctorReport(i);
+    expect(byId(r, "paths:no-output")).toBeUndefined();
+  });
+
+  it("does not raise the no-output contradiction when any output file exists", () => {
+    const i = healthy();
+    i.files = i.files.map((f, idx) => (idx === 0 ? f : { label: f.label, path: f.path, exists: false }));
+    const r = buildSuiteDoctorReport(i);
+    expect(byId(r, "paths:no-output")).toBeUndefined();
   });
 
   it("warns on a missing output file but shows its absolute path", () => {

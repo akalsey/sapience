@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { registerSapienceDoctorCli } from "./cli.js";
+import { registerSapienceDoctorCli, cronRegisterArgs } from "./cli.js";
+import { SUITE_CRONS } from "./inventory.js";
 
 // Minimal chainable Commander stub. Records the command tree so we can assert
 // structure without a real CLI.
@@ -44,5 +45,33 @@ describe("registerSapienceDoctorCli command tree", () => {
     const program = runRegistrar();
     const topLevelDoctors = program.children.filter((c: any) => c.name === "doctor");
     expect(topLevelDoctors.length).toBe(1); // only openclaw's built-in one
+  });
+});
+
+describe("cronRegisterArgs", () => {
+  it("grants the plugin tools to the isolated session via --tools", () => {
+    const args = cronRegisterArgs("sapience-thinking", "main");
+    const i = args.indexOf("--tools");
+    expect(i).toBeGreaterThan(-1);
+    expect(args[i + 1]).toBe("get_thinking_context,record_thinking_output");
+  });
+
+  it("registers every suite cron with its own tool grant", () => {
+    for (const c of SUITE_CRONS) {
+      const args = cronRegisterArgs(c.base, "main");
+      expect(args[args.indexOf("--tools") + 1]).toBe(c.tools.join(","));
+    }
+  });
+
+  it("throws on an unknown cron base", () => {
+    expect(() => cronRegisterArgs("nonsense", "main")).toThrow();
+  });
+});
+
+describe("SUITE_CRONS messages", () => {
+  it("tell the agent to bail silently when its tool is unavailable, instead of improvising", () => {
+    for (const c of SUITE_CRONS) {
+      expect(c.message).toContain("If the tool is not available, reply SILENT_REPLY_TOKEN and stop.");
+    }
   });
 });

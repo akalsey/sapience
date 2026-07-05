@@ -4,20 +4,30 @@ import { gatherInputs } from "./sources.js";
 import { buildSuiteDoctorReport } from "./report.js";
 import { renderReport, renderJson } from "./render.js";
 import { planFixes, applyFixes, type FixEffectors } from "./fix.js";
+import { SUITE_CRONS } from "./inventory.js";
 
 const exec = promisify(execFile);
 
-// Cron messages mirror install.sh so --fix registers identical jobs. No --model:
-// crons inherit the agent default (a pinned model outside the allowlist fails
-// preflight — the very thing the doctor reports).
-const CRON_MESSAGES: Record<string, string> = {
-  "sapience-thinking":
-    "You are running a scheduled thinking pass. Call get_thinking_context() to receive your context and instructions. If it returns {status:skip}, reply with SILENT_REPLY_TOKEN and stop. Otherwise review the context carefully, then call record_thinking_output() with your proposals. Do not produce any other output.",
-  "sapience-routing":
-    "You are the sapience routing agent. Call process_proposals() to route new thinking pass proposals. Reply SILENT_REPLY_TOKEN after the tool call.",
-  "sapience-goals-check":
-    "You are the goals tracking agent. Call check_goals() to process new goals and deliver weekly status updates. Reply SILENT_REPLY_TOKEN after the tool call.",
-};
+// Registration args mirror install.sh so --fix registers identical jobs. No
+// --model: crons inherit the agent default (a pinned model outside the allowlist
+// fails preflight — the very thing the doctor reports). --tools grants the
+// plugin tools to the isolated session; without it the profile filters them out
+// and every run completes "ok" without the tool ever executing.
+export function cronRegisterArgs(base: string, agentId: string): string[] {
+  const spec = SUITE_CRONS.find((c) => c.base === base);
+  if (!spec) throw new Error(`no registration template for cron ${base}`);
+  return [
+    "cron", "add",
+    "--name", spec.base,
+    "--cron", "*/15 * * * *",
+    "--session", "isolated",
+    "--agent", agentId,
+    "--no-deliver",
+    "--tools", spec.tools.join(","),
+    "--message", spec.message,
+    "--timeout-seconds", "120",
+  ];
+}
 
 function makeEffectors(agentId: string): FixEffectors {
   return {
@@ -25,18 +35,7 @@ function makeEffectors(agentId: string): FixEffectors {
       await exec("openclaw", ["config", "set", path, JSON.stringify(value), "--strict-json"]);
     },
     async registerCron(base) {
-      const message = CRON_MESSAGES[base];
-      if (!message) throw new Error(`no registration template for cron ${base}`);
-      await exec("openclaw", [
-        "cron", "add",
-        "--name", base,
-        "--cron", "*/15 * * * *",
-        "--session", "isolated",
-        "--agent", agentId,
-        "--no-deliver",
-        "--message", message,
-        "--timeout-seconds", "120",
-      ]);
+      await exec("openclaw", cronRegisterArgs(base, agentId));
     },
   };
 }
