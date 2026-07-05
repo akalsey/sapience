@@ -3,7 +3,7 @@ import { mkdtemp, readFile, rm } from "fs/promises";
 import { join } from "path";
 import { tmpdir } from "os";
 import { appendPass, appendError, appendSkipped, appendStructuredProposals } from "./log-writer.js";
-import type { ProposalSet } from "./types.js";
+import { DEFAULT_CONFIG, type ProposalSet } from "./types.js";
 
 const proposals: ProposalSet = {
   pass_id: "test-pass-1",
@@ -91,20 +91,29 @@ describe("appendSkipped", () => {
   });
 });
 
+describe("default proposals path", () => {
+  it("matches the path the sapience router reads (proactive-thinking/proposals.jsonl)", () => {
+    expect(DEFAULT_CONFIG.output.proposalsPath).toBe("proactive-thinking/proposals.jsonl");
+  });
+});
+
 describe("appendStructuredProposals", () => {
-  it("writes proposals as a JSONL line to .jsonl sidecar path", async () => {
-    await appendStructuredProposals(proposals, logPath);
-    const jsonlPath = join(tmpDir, "log.jsonl");
-    const content = await readFile(jsonlPath, "utf-8");
+  // The path is explicit, not derived from logPath: the derived default
+  // ("log.jsonl") silently diverged from the "proposals.jsonl" path the
+  // sapience router reads, breaking the pipeline at default config.
+  it("writes proposals as a JSONL line to the given proposals path", async () => {
+    const proposalsPath = join(tmpDir, "proposals.jsonl");
+    await appendStructuredProposals(proposals, proposalsPath);
+    const content = await readFile(proposalsPath, "utf-8");
     const parsed = JSON.parse(content.trim());
     expect(parsed.pass_id).toBe("test-pass-1");
   });
 
   it("appends multiple passes as separate lines", async () => {
-    await appendStructuredProposals(proposals, logPath);
-    await appendStructuredProposals({ ...proposals, pass_id: "test-pass-2" }, logPath);
-    const jsonlPath = join(tmpDir, "log.jsonl");
-    const lines = (await readFile(jsonlPath, "utf-8")).trim().split("\n");
+    const proposalsPath = join(tmpDir, "proposals.jsonl");
+    await appendStructuredProposals(proposals, proposalsPath);
+    await appendStructuredProposals({ ...proposals, pass_id: "test-pass-2" }, proposalsPath);
+    const lines = (await readFile(proposalsPath, "utf-8")).trim().split("\n");
     expect(lines).toHaveLength(2);
     expect(JSON.parse(lines[1]!).pass_id).toBe("test-pass-2");
   });

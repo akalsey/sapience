@@ -69,6 +69,7 @@ function mergeConfig(raw: Record<string, unknown>, workspaceDir: string): Plugin
       ...DEFAULT_CONFIG.output,
       ...((raw.output as object) ?? {}),
       logPath: resolveDataPath((raw as any).output?.logPath, workspaceDir, DEFAULT_CONFIG.output.logPath),
+      proposalsPath: resolveDataPath((raw as any).output?.proposalsPath, workspaceDir, DEFAULT_CONFIG.output.proposalsPath),
       trackerPath: resolveDataPath((raw as any).output?.trackerPath, workspaceDir, DEFAULT_CONFIG.output.trackerPath),
       eventsPath: resolveDataPath((raw as any).output?.eventsPath, workspaceDir, DEFAULT_CONFIG.output.eventsPath),
     },
@@ -142,7 +143,7 @@ export default definePluginEntry({
         try {
           const proposals = parseProposals(params.proposals);
           await appendPass(proposals, config.output.logPath);
-          await appendStructuredProposals(proposals, config.output.logPath);
+          await appendStructuredProposals(proposals, config.output.proposalsPath);
           if (config.learning.trackOutcomes) {
             let outcomes = await loadOutcomes(config.output.trackerPath);
             outcomes = addProposals(outcomes, proposals);

@@ -49,8 +49,7 @@ export async function appendSkipped(reason: string, logPath: string): Promise<vo
   await appendFile(logPath, `## ${ts} — Skipped: ${reason}\n\n---\n\n`);
 }
 
-export async function appendStructuredProposals(proposals: ProposalSet, logPath: string): Promise<void> {
-  const jsonlPath = logPath.replace(/\.md$/, ".jsonl");
-  await mkdir(dirname(jsonlPath), { recursive: true });
-  await appendFile(jsonlPath, JSON.stringify(proposals) + "\n", "utf-8");
+export async function appendStructuredProposals(proposals: ProposalSet, proposalsPath: string): Promise<void> {
+  await mkdir(dirname(proposalsPath), { recursive: true });
+  await appendFile(proposalsPath, JSON.stringify(proposals) + "\n", "utf-8");
 }

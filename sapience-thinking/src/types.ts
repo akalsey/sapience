@@ -81,7 +81,7 @@ export interface PluginConfig {
   schedule: string;
   activeHours: { start: string; end: string; timezone: string };
   context: { lookbackHours: number; maxContextTokens: number };
-  output: { logPath: string; trackerPath: string; eventsPath: string };
+  output: { logPath: string; proposalsPath: string; trackerPath: string; eventsPath: string };
   delivery: { heartbeatTrigger: boolean; priorityThreshold: number; maxProposalsPerHeartbeat: number };
   learning: { trackOutcomes: boolean; adjustPromptBasedOnSignal: boolean; bootstrapDays: number };
 }
@@ -92,6 +92,8 @@ export const DEFAULT_CONFIG: PluginConfig = {
   context: { lookbackHours: 2, maxContextTokens: 8000 },
   output: {
     logPath: "proactive-thinking/log.md",
+    // Must match the sapience router's proactiveThinking.proposalsPath default.
+    proposalsPath: "proactive-thinking/proposals.jsonl",
     trackerPath: "proactive-thinking/outcomes.json",
     eventsPath: "sapience/events.jsonl",
   },

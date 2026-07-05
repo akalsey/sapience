@@ -1,9 +1,5 @@
-import { readFile } from "fs/promises";
-import { join, dirname } from "path";
-import { fileURLToPath } from "url";
 import type { ContextBundle, SignalReport } from "./types.js";
-
-const __dirname = dirname(fileURLToPath(import.meta.url));
+import { THINKING_PROMPT, HEARTBEAT_PROMPT } from "./prompts.js";
 
 function pct(n: number, total: number): string {
   return total === 0 ? "0%" : `${Math.round((n / total) * 100)}%`;
@@ -23,9 +19,7 @@ function formatSignal(signal: SignalReport): string {
 }
 
 export async function buildPrompt(bundle: ContextBundle, signal: SignalReport | null): Promise<string> {
-  const template = await readFile(join(__dirname, "prompts", "thinking-prompt.md"), "utf-8");
-
-  const sections: string[] = [template];
+  const sections: string[] = [THINKING_PROMPT];
 
   sections.push(["## Recent Activity Context", "", bundle.recentActivity].join("\n"));
 
@@ -39,6 +33,5 @@ export async function buildPrompt(bundle: ContextBundle, signal: SignalReport | 
 }
 
 export async function buildHeartbeatPrompt(proposalsList: string): Promise<string> {
-  const template = await readFile(join(__dirname, "prompts", "heartbeat-prompt.md"), "utf-8");
-  return template.replace("[PROPOSALS LIST]", proposalsList);
+  return HEARTBEAT_PROMPT.replace("[PROPOSALS LIST]", proposalsList);
 }

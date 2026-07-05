@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildPrompt } from "./prompt-builder.js";
+import { buildPrompt, buildHeartbeatPrompt } from "./prompt-builder.js";
 import type { ContextBundle, SignalReport } from "./types.js";
 
 const bundle: ContextBundle = {
@@ -42,5 +42,26 @@ describe("buildPrompt", () => {
     const noPassesBundle = { ...bundle, recentPasses: "" };
     const prompt = await buildPrompt(noPassesBundle, null);
     expect(prompt).not.toContain("Recent Proposals");
+  });
+
+  // The templates must be compiled-in constants, not files read relative to the
+  // module: `tsc` doesn't copy .md assets into dist, so installed builds ENOENT'd
+  // on every pass. This pins the template content to the module itself.
+  it("builds the template without touching the filesystem", async () => {
+    const { readFile } = await import("fs/promises");
+    const originalSrc = await readFile(new URL("./prompt-builder.ts", import.meta.url), "utf-8");
+    expect(originalSrc).not.toContain("readFile");
+    const prompt = await buildPrompt(bundle, null);
+    expect(prompt).toContain("scheduled thinking pass");
+    expect(prompt).toContain("record_thinking_output()");
+  });
+});
+
+describe("buildHeartbeatPrompt", () => {
+  it("substitutes the proposals list into the compiled-in template", async () => {
+    const prompt = await buildHeartbeatPrompt("- fix the flux capacitor");
+    expect(prompt).toContain("- fix the flux capacitor");
+    expect(prompt).not.toContain("[PROPOSALS LIST]");
+    expect(prompt).toContain("SILENT_REPLY_TOKEN");
   });
 });
