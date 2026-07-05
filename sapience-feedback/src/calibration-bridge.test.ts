@@ -42,9 +42,14 @@ describe("applyFeedbackToProfile", () => {
     expect(updated[0].tier).toBe("act");
   });
 
-  it("does nothing if profile file does not exist", async () => {
+  it("creates the profile and entry when the file does not exist", async () => {
+    const path = join(dir, "nonexistent.json");
     const signal: DetectedSignal = { type: "confirmation", domain: "github", action_class: "pr_merge", message: "good", raw_text: "good" };
-    await expect(applyFeedbackToProfile(signal, join(dir, "nonexistent.json"))).resolves.not.toThrow();
+    const result = await applyFeedbackToProfile(signal, path);
+    expect(result.status).toBe("created");
+    const profile = JSON.parse(await readFile(path, "utf-8"));
+    expect(profile).toHaveLength(1);
+    expect(profile[0].domain).toBe("github");
   });
 
   it("returns the applied change details", async () => {
@@ -64,16 +69,41 @@ describe("applyFeedbackToProfile", () => {
     }
   });
 
-  it("returns orphaned when no entry matches", async () => {
+  // Feedback about a domain sapience hasn't routed yet used to be dropped as
+  // "orphaned" — the correction never affected behavior. Now it seeds a new
+  // calibration entry (conservative propose tier, zero confidence) and applies
+  // the signal to it, so early feedback isn't lost.
+  it("creates a new entry when no entry matches a correction", async () => {
     const path = join(dir, "calibration.json");
     await writeFile(path, JSON.stringify(existingProfile), "utf-8");
     const signal: DetectedSignal = { type: "correction", domain: "unknown", action_class: "x", message: "m", raw_text: "m" };
-    expect(await applyFeedbackToProfile(signal, path)).toEqual({ status: "orphaned" });
+    const result = await applyFeedbackToProfile(signal, path);
+    expect(result).toEqual(expect.objectContaining({ status: "created", old_tier: "propose", old_confidence: 0 }));
+    const profile = JSON.parse(await readFile(path, "utf-8"));
+    expect(profile).toHaveLength(2);
+    const created = profile.find((e: any) => e.domain === "unknown");
+    expect(created.corrected_count).toBe(1);
+    expect(created.confidence).toBe(0);
+    expect(created.tier).toBe("propose");
   });
 
-  it("returns orphaned when the profile is missing entirely", async () => {
-    const signal: DetectedSignal = { type: "correction", domain: "github", action_class: "pr_merge", message: "m", raw_text: "m" };
-    expect(await applyFeedbackToProfile(signal, join(dir, "nope.json"))).toEqual({ status: "orphaned" });
+  it("creates a new entry with the suggested tier on tier_adjustment", async () => {
+    const path = join(dir, "calibration.json");
+    await writeFile(path, JSON.stringify(existingProfile), "utf-8");
+    const signal: DetectedSignal = { type: "tier_adjustment", domain: "slack", action_class: "send", message: "m", raw_text: "m", suggested_tier: "ask" };
+    const result = await applyFeedbackToProfile(signal, path);
+    expect(result.status).toBe("created");
+    const profile = JSON.parse(await readFile(path, "utf-8"));
+    expect(profile.find((e: any) => e.domain === "slack").tier).toBe("ask");
+  });
+
+  it("does not create an entry for a noop signal", async () => {
+    const path = join(dir, "calibration.json");
+    await writeFile(path, JSON.stringify(existingProfile), "utf-8");
+    const signal: DetectedSignal = { type: "tier_adjustment", domain: "unknown", action_class: "x", message: "m", raw_text: "m" };
+    expect(await applyFeedbackToProfile(signal, path)).toEqual({ status: "noop" });
+    const profile = JSON.parse(await readFile(path, "utf-8"));
+    expect(profile).toHaveLength(1);
   });
 
   it("returns noop for a tier_adjustment without a suggested tier", async () => {

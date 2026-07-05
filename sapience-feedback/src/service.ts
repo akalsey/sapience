@@ -37,29 +37,39 @@ export default definePluginEntry({
     const llm = getLlmClient(api);
     const memoryAdd = api.memory?.add ? (params: any) => api.memory.add(params) : undefined;
 
+    // Passive capture rides the gateway's internal message hooks — the only
+    // per-message surface the plugin API exposes. (An earlier version guarded
+    // on api.session.onMessage, which does not exist, so capture silently
+    // never registered.)
+    const hookCapture = typeof api.registerHook === "function";
+    if (hookCapture) {
+      api.registerHook("message", async (event: { action?: string; context?: Record<string, unknown> }) => {
+        if (event?.action !== "received") return;
+        const content = event?.context?.content;
+        if (typeof content !== "string" || !content.trim()) return;
+        try {
+          const signals = await classifyMessage(content, config, llm);
+          for (const signal of signals) {
+            await persistSignal(signal, { config, memoryAdd });
+          }
+        } catch {
+          // don't let feedback processing errors disrupt message handling
+        }
+      });
+    }
+
     // Record what this plugin actually resolved, for `openclaw sapience doctor`.
+    // captureMode makes a degraded install (no hook surface → /feedback only)
+    // visible instead of silent.
     void writeStatusArtifact({
       pluginId: "sapience-feedback",
       version: resolvePluginVersion(),
       agentId: ((api.config as Record<string, unknown>)?.agent as Record<string, unknown>)?.id as string ?? "default",
       resolvedWorkspaceDir: workspaceDir,
       outputPaths: { logPath: config.logPath, calibrationPath: config.calibrationPath, eventsPath: config.eventsPath },
+      captureMode: hookCapture ? "message-hook" : "command-only",
       initAt: new Date().toISOString(),
     }).catch(() => {});
-
-    if (api.session?.onMessage) {
-      api.session.onMessage(async (message: { role: string; content: string }) => {
-        if (message.role !== "user") return;
-        try {
-          const signals = await classifyMessage(message.content, config, llm);
-          for (const signal of signals) {
-            await persistSignal(signal, { config, memoryAdd });
-          }
-        } catch {
-          // don't let feedback processing errors disrupt the session
-        }
-      });
-    }
 
     if (typeof api.registerCommand === "function") {
       api.registerCommand({

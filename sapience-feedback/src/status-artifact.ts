@@ -25,6 +25,9 @@ export interface StatusArtifact {
   agentId: string;
   resolvedWorkspaceDir: string;
   outputPaths: Record<string, string>;
+  // How passive feedback capture registered: "message-hook" when the gateway
+  // exposes registerHook, "command-only" when only /feedback works.
+  captureMode?: "message-hook" | "command-only";
   initAt: string;
 }
 

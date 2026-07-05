@@ -53,10 +53,21 @@ export async function persistSignal(signal: DetectedSignal, ctx: PersistContext)
   const result = await applyFeedbackToProfile(signal, ctx.config.calibrationPath);
 
   if (metaPointer && ctx.config.memoryEnabled && ctx.memoryAdd) {
-    await ctx.memoryAdd({
-      content: metaPointer,
-      metadata: { tags: ["feedback", "behavioral-correction", signal.domain], source: "feedback" },
-    });
+    // The memory slot is optional infrastructure: a failure there must not
+    // void the log append and calibration change that already succeeded.
+    try {
+      await ctx.memoryAdd({
+        content: metaPointer,
+        metadata: { tags: ["feedback", "behavioral-correction", signal.domain], source: "feedback" },
+      });
+    } catch (err) {
+      await appendEvent(ctx.config.eventsPath, {
+        plugin: "feedback",
+        type: "memory_write_failed",
+        domain: signal.domain,
+        reason: String(err),
+      });
+    }
   }
 
   await appendEvent(ctx.config.eventsPath, {
@@ -67,15 +78,7 @@ export async function persistSignal(signal: DetectedSignal, ctx: PersistContext)
     action_class: signal.action_class,
     source: signal.source ?? "regex",
   });
-  if (result.status === "orphaned") {
-    await appendEvent(ctx.config.eventsPath, {
-      plugin: "feedback",
-      type: "signal_orphaned",
-      signal_type: signal.type,
-      domain: signal.domain,
-      action_class: signal.action_class,
-    });
-  } else if (result.status === "applied") {
+  if (result.status === "applied" || result.status === "created") {
     await appendEvent(ctx.config.eventsPath, {
       plugin: "feedback",
       type: "calibration_change",
@@ -85,7 +88,7 @@ export async function persistSignal(signal: DetectedSignal, ctx: PersistContext)
       new_confidence: result.new_confidence,
       old_tier: result.old_tier,
       new_tier: result.new_tier,
-      source: "feedback",
+      source: result.status === "created" ? "feedback_new_entry" : "feedback",
     });
   }
 

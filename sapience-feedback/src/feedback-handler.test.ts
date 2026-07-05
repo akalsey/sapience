@@ -172,13 +172,28 @@ describe("persistSignal event emission", () => {
     expect(events[1].old_confidence).toBe(0.6);
   });
 
-  it("emits signal_orphaned when no calibration entry matches", async () => {
+  it("creates a calibration entry (with feedback_new_entry source) when none matches", async () => {
     const eventsPath = join(dir, "events.jsonl");
     const config: FeedbackConfig = { ...baseConfig, eventsPath, calibrationPath: join(dir, "missing.json"), logPath: join(dir, "feedback.md") };
     const signal: DetectedSignal = { type: "correction", domain: "nowhere", action_class: "general", message: "don't", raw_text: "don't", source: "regex" };
     await persistSignal(signal, { config });
     const events = (await readFile(eventsPath, "utf-8")).trim().split("\n").map(l => JSON.parse(l));
-    expect(events.map((e: any) => e.type)).toEqual(["signal_detected", "signal_orphaned"]);
+    expect(events.map((e: any) => e.type)).toEqual(["signal_detected", "calibration_change"]);
+    expect(events[1].source).toBe("feedback_new_entry");
+  });
+
+  it("survives a failing memoryAdd: calibration still changes, memory_write_failed is recorded", async () => {
+    const eventsPath = join(dir, "events.jsonl");
+    await writeFile(join(dir, "calibration.json"), JSON.stringify([
+      { domain: "github", action_class: "general", tier: "propose", confidence: 0.6, confirmed_count: 0, corrected_count: 0, last_calibrated: "2026-01-01T00:00:00Z", notes: "" },
+    ]), "utf-8");
+    const config: FeedbackConfig = { ...baseConfig, memoryEnabled: true, eventsPath, calibrationPath: join(dir, "calibration.json"), logPath: join(dir, "feedback.md") };
+    const signal: DetectedSignal = { type: "correction", domain: "github", action_class: "general", message: "don't", raw_text: "don't", source: "regex" };
+    const memoryAdd = async () => { throw new Error("memory slot offline"); };
+    await expect(persistSignal(signal, { config, memoryAdd })).resolves.toBeDefined();
+    const events = (await readFile(eventsPath, "utf-8")).trim().split("\n").map(l => JSON.parse(l));
+    expect(events.map((e: any) => e.type)).toContain("memory_write_failed");
+    expect(events.map((e: any) => e.type)).toContain("calibration_change");
   });
 
   it("emits only signal_detected for a noop tier_adjustment", async () => {

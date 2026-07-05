@@ -41,6 +41,9 @@ export interface StatusArtifact {
   agentId: string;
   resolvedWorkspaceDir: string;
   outputPaths: Record<string, string>;
+  // sapience-feedback only: "message-hook" when passive capture registered,
+  // "command-only" when the gateway lacks the hook surface.
+  captureMode?: "message-hook" | "command-only";
   initAt: string;
 }
 
