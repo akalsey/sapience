@@ -1,10 +1,13 @@
 {
   "id": "sapience-thinking",
   "name": "Sapience Thinking",
-  "version": "0.2.5",
+  "version": "0.3.0",
   "description": "Periodic isolated thinking passes that produce structured proposals",
   "contracts": {
-    "tools": ["get_thinking_context", "record_thinking_output"]
+    "tools": [
+      "get_thinking_context",
+      "record_thinking_output"
+    ]
   },
   "activation": {
     "onStartup": true

@@ -1,12 +1,18 @@
 {
   "id": "sapience",
   "name": "Sapience",
-  "version": "0.2.7",
+  "version": "0.3.0",
   "description": "Autonomy layer: routes sapience-thinking proposals through tier function, calibrates to human preferences, delivers weekly digest",
   "contracts": {
-    "tools": ["process_proposals"]
+    "tools": [
+      "process_proposals"
+    ]
   },
-  "commandAliases": [{ "name": "sapience" }],
+  "commandAliases": [
+    {
+      "name": "sapience"
+    }
+  ],
   "activation": {
     "onStartup": true
   },
