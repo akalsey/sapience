@@ -13,6 +13,7 @@ import { isDigestDay, buildDigestPrompt } from "./weekly-digest.js";
 import { appendEvent } from "./events.js";
 import { generateDashboard } from "./dashboard.js";
 import { writeStatusArtifact, resolvePluginVersion } from "./status-artifact.js";
+import { enqueueMainSessionInjection } from "./main-session.js";
 import { registerSapienceDoctorCli } from "./doctor/cli.js";
 
 function mergeConfig(raw: Record<string, unknown>, workspaceDir: string): SapienceConfig {
@@ -154,8 +155,10 @@ export default definePluginEntry({
 
           if (config.digest.enabled && isDigestDay(config)) {
             const prompt = await buildDigestPrompt(config);
-            await api.session.workflow.enqueueNextTurnInjection({ sessionTarget: "main", text: prompt });
-            await appendEvent(config.output.eventsPath, { plugin: "sapience", type: "digest_delivered" });
+            const digestResult = await enqueueMainSessionInjection(api, prompt);
+            await appendEvent(config.output.eventsPath, digestResult.enqueued
+              ? { plugin: "sapience", type: "digest_delivered" }
+              : { plugin: "sapience", type: "delivery_failed", what: "digest", reason: digestResult.reason });
           }
 
           await generateDashboard(config).catch(() => {});

@@ -1,4 +1,5 @@
 import type { Goal } from "./types.js";
+import { enqueueMainSessionInjection, type InjectionResult } from "./main-session.js";
 
 export function buildDecompositionPrompt(description: string): string {
   return `[GOALS: DECOMPOSE] A new goal was submitted. Decompose it into candidate approaches and present them to the user for selection.
@@ -44,16 +45,10 @@ Deliver a brief status update to the user covering:
 Be concise. If there's nothing new to report, say so briefly.`;
 }
 
-export async function deliverDecomposition(description: string, api: any): Promise<void> {
-  await api.session.workflow.enqueueNextTurnInjection({
-    sessionTarget: "main",
-    text: buildDecompositionPrompt(description),
-  });
+export async function deliverDecomposition(description: string, api: any): Promise<InjectionResult> {
+  return enqueueMainSessionInjection(api, buildDecompositionPrompt(description));
 }
 
-export async function deliverWeeklyStatus(goal: Goal, api: any): Promise<void> {
-  await api.session.workflow.enqueueNextTurnInjection({
-    sessionTarget: "main",
-    text: buildWeeklyStatusPrompt(goal),
-  });
+export async function deliverWeeklyStatus(goal: Goal, api: any): Promise<InjectionResult> {
+  return enqueueMainSessionInjection(api, buildWeeklyStatusPrompt(goal));
 }

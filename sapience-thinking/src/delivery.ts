@@ -1,5 +1,7 @@
 import type { ProposalSet, PluginConfig } from "./types.js";
 import { buildHeartbeatPrompt } from "./prompt-builder.js";
+import { appendEvent } from "./events.js";
+import { enqueueMainSessionInjection } from "./main-session.js";
 
 export interface HighPriorityItem {
   id: string;
@@ -49,10 +51,13 @@ export async function maybeDeliver(
 
   const heartbeatContent = await buildHeartbeatPrompt(proposalsList);
 
-  // Inject into main session's next turn.
-  // NOTE: exact API shape may need adjustment based on installed SDK version.
-  await api.session.workflow.enqueueNextTurnInjection({
-    content: heartbeatContent,
-    sessionTarget: "main",
-  });
+  const result = await enqueueMainSessionInjection(api, heartbeatContent);
+  if (!result.enqueued) {
+    await appendEvent(config.output.eventsPath, {
+      plugin: "thinking",
+      type: "delivery_failed",
+      proposals: high.length,
+      reason: result.reason,
+    });
+  }
 }

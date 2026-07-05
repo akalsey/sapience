@@ -18,10 +18,22 @@ const base: RoutedItem = {
   tier: "act", confidence: 0.9,
 };
 
+// Mirrors the real gateway contract: enqueueNextTurnInjection resolves
+// { enqueued, id, sessionKey } and requires a sessionKey in the injection.
 const fakeApi = {
+  config: {},
   session: {
     workflow: {
-      enqueueNextTurnInjection: async () => {},
+      enqueueNextTurnInjection: async (inj: { sessionKey: string }) => ({ enqueued: true, id: "1", sessionKey: inj.sessionKey }),
+    },
+  },
+};
+
+const decliningApi = {
+  config: {},
+  session: {
+    workflow: {
+      enqueueNextTurnInjection: async (inj: { sessionKey: string }) => ({ enqueued: false, id: "", sessionKey: inj.sessionKey }),
     },
   },
 };
@@ -87,5 +99,22 @@ describe("deliverItems", () => {
     const item = { ...base, tier: "propose" as const, confidence: 0.5 };
     await deliverItems([item], fakeApi, config);
     await expect(readFile(eventsPath, "utf-8")).rejects.toThrow();
+  });
+
+  it("emits a delivery_failed event when the gateway declines the injection", async () => {
+    const eventsPath = join(dir, "events.jsonl");
+    const config = {
+      ...DEFAULT_CONFIG,
+      output: {
+        ...DEFAULT_CONFIG.output,
+        actionLogPath: join(dir, "action-log.md"),
+        eventsPath,
+      },
+    };
+    const item = { ...base, tier: "propose" as const, confidence: 0.5 };
+    await deliverItems([item], decliningApi, config);
+    const ev = JSON.parse((await readFile(eventsPath, "utf-8")).trim());
+    expect(ev.type).toBe("delivery_failed");
+    expect(ev.reason).toBeDefined();
   });
 });

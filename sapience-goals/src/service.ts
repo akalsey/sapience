@@ -87,7 +87,10 @@ export default definePluginEntry({
           };
           goals = addGoal(goals, goal);
           await saveGoals(goals, config.output.goalsPath);
-          await deliverDecomposition(description, api);
+          const delivery = await deliverDecomposition(description, api);
+          if (!delivery.enqueued) {
+            await appendEvent(config.output.eventsPath, { plugin: "goals", type: "delivery_failed", what: "decomposition", goal_id: goal.id, reason: delivery.reason });
+          }
           await appendEvent(config.output.eventsPath, { plugin: "goals", type: "goal_created", goal_id: goal.id });
           return { content: [{ type: "text", text: JSON.stringify({ id: goal.id }) }] };
         } catch (err) {
@@ -132,7 +135,10 @@ export default definePluginEntry({
               ),
             };
             goals = addGoal(goals, goal);
-            await deliverDecomposition(description, api);
+            const delivery = await deliverDecomposition(description, api);
+            if (!delivery.enqueued) {
+              await appendEvent(config.output.eventsPath, { plugin: "goals", type: "delivery_failed", what: "decomposition", goal_id: goal.id, reason: delivery.reason });
+            }
             await appendEvent(config.output.eventsPath, { plugin: "goals", type: "goal_created", goal_id: goal.id });
           }
 
@@ -143,7 +149,13 @@ export default definePluginEntry({
           let delivered = 0;
           for (const goal of goals) {
             if (isWeeklyCheckInDue(goal)) {
-              await deliverWeeklyStatus(goal, api);
+              const delivery = await deliverWeeklyStatus(goal, api);
+              if (!delivery.enqueued) {
+                // Leave next_status_delivery untouched so the status is retried
+                // next run instead of silently skipping a week.
+                await appendEvent(config.output.eventsPath, { plugin: "goals", type: "delivery_failed", what: "weekly_status", goal_id: goal.id, reason: delivery.reason });
+                continue;
+              }
               delivered++;
               await appendEvent(config.output.eventsPath, { plugin: "goals", type: "status_delivered", goal_id: goal.id });
               goals = updateNextDelivery(

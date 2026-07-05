@@ -1,6 +1,7 @@
 import type { RoutedItem, SapienceConfig } from "./types.js";
 import { appendAction } from "./action-log.js";
 import { appendEvent } from "./events.js";
+import { enqueueMainSessionInjection } from "./main-session.js";
 
 export function buildTierPrompt(item: RoutedItem): string {
   switch (item.tier) {
@@ -68,9 +69,15 @@ export async function deliverItems(
         confidence: item.confidence,
       });
     }
-    await api.session.workflow.enqueueNextTurnInjection({
-      sessionTarget: "main",
-      text: buildTierPrompt(item),
-    });
+    const result = await enqueueMainSessionInjection(api, buildTierPrompt(item));
+    if (!result.enqueued) {
+      await appendEvent(config.output.eventsPath, {
+        plugin: "sapience",
+        type: "delivery_failed",
+        tier: item.tier,
+        domain: item.domain,
+        reason: result.reason,
+      });
+    }
   }
 }

@@ -27,7 +27,7 @@
       "description": "All JSON state files (calibration.json, goals.json, outcomes.json, processed-passes.json, inbox-position.json) are written truncate-in-place and loaders swallow parse errors as empty — a crash can permanently wipe state (goals worst case: corrupt file loads as [] then gets saved). Add a safe-json helper per plugin: writeJsonAtomic (temp+rename) and readJsonSafe (ENOENT → empty; corrupt → quarantine to .corrupt-\u003cts\u003e + event).",
       "priority": 1,
       "complexity": "medium",
-      "status": "in_progress",
+      "status": "completed",
       "createdAt": "2026-07-05T12:41:12-07:00",
       "updatedAt": "2026-07-05T12:41:12-07:00"
     },
@@ -37,7 +37,7 @@
       "description": "Verified against the SDK: enqueueNextTurnInjection requires {sessionKey, text}; missing sessionKey silently returns {enqueued:false}. All four plugins pass {sessionTarget:\"main\"} — every delivery in the suite has never worked. Add a shared resolveMainSessionKey(config) helper (agent:\u003cid\u003e:\u003cmainKey\u003e, scope global → \"global\"), pass sessionKey, check the enqueued flag, and emit a delivery_failed event when false.",
       "priority": 1,
       "complexity": "high",
-      "status": "backlog",
+      "status": "in_progress",
       "createdAt": "2026-07-05T12:41:15-07:00",
       "updatedAt": "2026-07-05T12:41:15-07:00"
     },
@@ -112,7 +112,7 @@
       "updatedAt": "2026-07-05T12:42:08-07:00"
     }
   ],
-  "lastUpdated": "2026-07-05T12:48:45-07:00",
+  "lastUpdated": "2026-07-05T12:53:06-07:00",
   "nextStoryId": 12,
   "nextTaskId": 1
 }
