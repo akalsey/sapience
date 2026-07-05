@@ -7,7 +7,7 @@ import { buildPrompt } from "./prompt-builder.js";
 import { parseProposals, ParseError } from "./output-parser.js";
 import { appendPass, appendError, appendSkipped, appendStructuredProposals } from "./log-writer.js";
 import { appendEvent } from "./events.js";
-import { loadOutcomes, saveOutcomes, addProposals, expireOldProposals } from "./outcome-tracker.js";
+import { loadOutcomes, saveOutcomes, addProposals, expireOldProposals, purgeResolvedOutcomes } from "./outcome-tracker.js";
 import { computeSignal } from "./signal-analyzer.js";
 import { maybeDeliver } from "./delivery.js";
 import { DEFAULT_CONFIG, type PluginConfig } from "./types.js";
@@ -16,6 +16,8 @@ import { writeStatusArtifact, resolvePluginVersion } from "./status-artifact.js"
 import { acquireLock, releaseLock, clearLock } from "./lock.js";
 import { isSapienceActive } from "./presence.js";
 import { validateActiveHours, isWithinActiveHours } from "./active-hours.js";
+import { rotateKeepingTail } from "./rotate.js";
+import { logSkipOnce, clearSkipState } from "./skip-log.js";
 
 function mergeConfig(raw: Record<string, unknown>, workspaceDir: string): PluginConfig {
   return {
@@ -59,6 +61,7 @@ export default definePluginEntry({
     }
 
     const lockFile = join(workspaceDir, "proactive-thinking", ".pass.lock");
+    const skipStatePath = join(workspaceDir, "proactive-thinking", ".skip-state.json");
     const agentId: string = ((api.config as Record<string, unknown>)?.agent as Record<string, unknown>)?.id as string ?? "default";
 
     // A gateway restart means no pass can be running; drop any leftover lock.
@@ -80,7 +83,8 @@ export default definePluginEntry({
       parameters: Type.Object({}),
       async execute(_id: any, _params: any) {
         if (!isWithinActiveHours(config.activeHours)) {
-          await appendEvent(config.output.eventsPath, { plugin: "thinking", type: "pass_skipped", reason: "outside_hours" });
+          await logSkipOnce(skipStatePath, "outside_hours", () =>
+            appendEvent(config.output.eventsPath, { plugin: "thinking", type: "pass_skipped", reason: "outside_hours" }));
           return { content: [{ type: "text", text: JSON.stringify({ status: "skip", reason: "outside_active_hours" }) }] };
         }
         const acquired = await acquireLock(lockFile);
@@ -119,6 +123,7 @@ export default definePluginEntry({
             let outcomes = await loadOutcomes(config.output.trackerPath);
             outcomes = addProposals(outcomes, proposals);
             outcomes = expireOldProposals(outcomes);
+            outcomes = purgeResolvedOutcomes(outcomes);
             await saveOutcomes(outcomes, config.output.trackerPath);
           }
           await appendEvent(config.output.eventsPath, {
@@ -133,12 +138,21 @@ export default definePluginEntry({
           });
           // Delivery problems are not parse errors — keep them out of the
           // pass log's "parse error" bucket and in the event stream instead.
+          let sapienceActive = false;
           try {
-            const sapienceActive = await isSapienceActive(workspaceDir);
+            sapienceActive = await isSapienceActive(workspaceDir);
             if (!sapienceActive) await maybeDeliver(proposals, api, config);
           } catch (err) {
             await appendEvent(config.output.eventsPath, { plugin: "thinking", type: "delivery_failed", reason: String(err) }).catch(() => {});
           }
+
+          // Bound the append-only files. Safe here: we hold the pass lock and
+          // are the only writer of the log and sidecar. Events are normally
+          // rotated by sapience's dashboard; standalone installs rotate here.
+          await clearSkipState(skipStatePath).catch(() => {});
+          await rotateKeepingTail(config.output.logPath).catch(() => {});
+          await rotateKeepingTail(config.output.proposalsPath).catch(() => {});
+          if (!sapienceActive) await rotateKeepingTail(config.output.eventsPath).catch(() => {});
         } catch (err) {
           const passId = (params.proposals as Record<string, unknown>)?.pass_id as string ?? "unknown";
           await appendError(passId, err instanceof ParseError ? err.message : String(err), config.output.logPath);

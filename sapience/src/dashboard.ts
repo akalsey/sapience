@@ -1,4 +1,4 @@
-import { readFile, writeFile, mkdir, stat, rename } from "fs/promises";
+import { readFile, writeFile, mkdir, stat, rename, readdir, unlink } from "fs/promises";
 import { dirname, join } from "path";
 import { resolvePath } from "./utils.js";
 import { loadProfile } from "./calibration.js";
@@ -207,6 +207,14 @@ export async function rotateIfNeeded(
     if (s.size > maxBytes) {
       const stamp = now.toISOString().slice(0, 19).replace(/[T:]/g, "-");
       await rename(eventsPath, join(dirname(eventsPath), `events-archive-${stamp}.jsonl`));
+      // Archives used to accumulate forever; keep only the newest two.
+      const dir = dirname(eventsPath);
+      const archives = (await readdir(dir))
+        .filter((f) => /^events-archive-.*\.jsonl$/.test(f))
+        .sort();
+      for (const old of archives.slice(0, -2)) {
+        await unlink(join(dir, old)).catch(() => {});
+      }
     }
   } catch {
     // missing file: nothing to rotate

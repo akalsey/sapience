@@ -38,6 +38,18 @@ export function expireOldProposals(outcomes: OutcomeMap, expiryDays = 7): Outcom
   return updated;
 }
 
+// expireOldProposals only marks entries; without a purge the map grew forever
+// and was rewritten in full every pass. Pending entries are never purged —
+// they still expire first.
+export function purgeResolvedOutcomes(outcomes: OutcomeMap, retentionDays = 30): OutcomeMap {
+  const cutoff = Date.now() - retentionDays * 24 * 60 * 60 * 1000;
+  const kept: OutcomeMap = {};
+  for (const [id, r] of Object.entries(outcomes)) {
+    if (r.state === "pending" || new Date(r.created_at).getTime() >= cutoff) kept[id] = r;
+  }
+  return kept;
+}
+
 export function resolveProposal(
   outcomes: OutcomeMap,
   id: string,

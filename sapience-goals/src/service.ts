@@ -11,6 +11,7 @@ import { readNewGoals, savePosition } from "./inbox-reader.js";
 import { deliverDecomposition, deliverWeeklyStatus } from "./delivery.js";
 import { appendEvent } from "./events.js";
 import { writeStatusArtifact, resolvePluginVersion } from "./status-artifact.js";
+import { logSkipOnce, clearSkipState } from "./skip-log.js";
 
 const GOAL_STATUSES: readonly GoalStatus[] = ["decomposing", "active", "paused", "completed", "abandoned"];
 const MAX_DESCRIPTION_LENGTH = 2000;
@@ -79,6 +80,8 @@ export default definePluginEntry({
       },
       initAt: new Date().toISOString(),
     }).catch(() => {});
+
+    const skipStatePath = resolveDataPath(undefined, workspaceDir, "goals/.skip-state.json");
 
     // Serialize all goals.json read-modify-write cycles. goal_submit (main
     // session), the lifecycle tools, and check_goals (cron session) run in the
@@ -274,9 +277,11 @@ export default definePluginEntry({
       async execute(_id: any, _params: any) {
         try {
           if (!isWithinActiveHours(config.activeHours)) {
-            await appendEvent(config.output.eventsPath, { plugin: "goals", type: "check_skipped", reason: "outside_hours" });
+            await logSkipOnce(skipStatePath, "outside_hours", () =>
+              appendEvent(config.output.eventsPath, { plugin: "goals", type: "check_skipped", reason: "outside_hours" }));
             return toolText("SILENT_REPLY_TOKEN");
           }
+          await clearSkipState(skipStatePath).catch(() => {});
 
           const { goals: newDescriptions, newPosition } = await readNewGoals(
             config.inboxPath,

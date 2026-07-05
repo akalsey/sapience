@@ -77,7 +77,7 @@
       "description": "Validate activeHours (HH:MM format, valid IANA timezone, support overnight windows) at register with loud fallback to defaults — invalid config currently disables plugins forever silently. Fix h24 midnight quirk (hourCycle h23). Proper empty-object tool parameter schemas (Type.Object({}) instead of {} as any). Categorize delivery errors separately from parse errors in thinking's record path. Delimit inbox goal text as untrusted data in the decomposition prompt.",
       "priority": 3,
       "complexity": "medium",
-      "status": "in_progress",
+      "status": "completed",
       "createdAt": "2026-07-05T12:41:41-07:00",
       "updatedAt": "2026-07-05T12:41:41-07:00"
     },
@@ -87,7 +87,7 @@
       "description": "Bound unbounded growth: rotate log.md/action-log.md/feedback.md at size threshold; compact proposals.jsonl when passes are processed; purge expired outcome-tracker entries after N days; make events.jsonl rotation work when sapience isn't installed (thinking rotates its own); prune rotated archives; stop writing outside-hours skip events every 15 min overnight (once per skip transition is enough).",
       "priority": 3,
       "complexity": "medium",
-      "status": "backlog",
+      "status": "in_progress",
       "createdAt": "2026-07-05T12:41:53-07:00",
       "updatedAt": "2026-07-05T12:41:53-07:00"
     },
@@ -112,7 +112,7 @@
       "updatedAt": "2026-07-05T12:42:08-07:00"
     }
   ],
-  "lastUpdated": "2026-07-05T13:17:45-07:00",
+  "lastUpdated": "2026-07-05T13:24:57-07:00",
   "nextStoryId": 12,
   "nextTaskId": 1
 }

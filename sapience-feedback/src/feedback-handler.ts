@@ -5,6 +5,7 @@ import { appendFeedback } from "./log-writer.js";
 import { applyFeedbackToProfile } from "./calibration-bridge.js";
 import { appendEvent } from "./events.js";
 import { generateId } from "./utils.js";
+import { rotateKeepingTail } from "./rotate.js";
 
 export function shouldClassify(text: string, config: FeedbackConfig): boolean {
   const trimmed = text.trim();
@@ -50,6 +51,7 @@ export async function persistSignal(signal: DetectedSignal, ctx: PersistContext)
   };
 
   await appendFeedback(entry, ctx.config.logPath);
+  await rotateKeepingTail(ctx.config.logPath).catch(() => {});
   const result = await applyFeedbackToProfile(signal, ctx.config.calibrationPath);
 
   if (metaPointer && ctx.config.memoryEnabled && ctx.memoryAdd) {

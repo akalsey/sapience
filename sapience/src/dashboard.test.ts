@@ -179,6 +179,20 @@ describe("rotateIfNeeded", () => {
     expect(second).toHaveLength(100);
   });
 
+  it("prunes archives beyond the newest two (bounded disk)", async () => {
+    const path = join(dir, "events.jsonl");
+    for (let i = 0; i < 4; i++) {
+      await writeFile(path, "x".repeat(100), "utf-8");
+      await rotateIfNeeded(path, new Date(NOW.getTime() + i * 1000), 50);
+    }
+    const { readdir } = await import("fs/promises");
+    const archives = (await readdir(dir)).filter((f) => f.startsWith("events-archive-")).sort();
+    expect(archives).toEqual([
+      "events-archive-2026-06-09-18-00-02.jsonl",
+      "events-archive-2026-06-09-18-00-03.jsonl",
+    ]);
+  });
+
   it("leaves a small file alone and tolerates a missing file", async () => {
     const path = join(dir, "events.jsonl");
     await writeFile(path, "small", "utf-8");

@@ -13,6 +13,8 @@ import { deliverItems } from "./delivery.js";
 import { digestDue, buildDigestPrompt } from "./weekly-digest.js";
 import { readJsonSafe, writeJsonAtomic } from "./safe-json.js";
 import { acquireLock, releaseLock, clearLock } from "./lock.js";
+import { rotateKeepingTail } from "./rotate.js";
+import { logSkipOnce, clearSkipState } from "./skip-log.js";
 import { appendEvent } from "./events.js";
 import { generateDashboard } from "./dashboard.js";
 import { writeStatusArtifact, resolvePluginVersion } from "./status-artifact.js";
@@ -79,6 +81,7 @@ export default definePluginEntry({
     writeFileSync(join(markerDir, ".present"), "", "utf-8");
     const lockFile = join(markerDir, ".routing.lock");
     const digestStatePath = join(markerDir, "digest-state.json");
+    const skipStatePath = join(markerDir, ".skip-state.json");
     void clearLock(lockFile).catch(() => {});
 
     // Record what this plugin actually resolved, so `openclaw sapience doctor` can
@@ -99,7 +102,8 @@ export default definePluginEntry({
       async execute(_id: any, _params: any) {
         try {
           if (!isWithinActiveHours(config.activeHours)) {
-            await appendEvent(config.output.eventsPath, { plugin: "sapience", type: "routing_skipped", reason: "outside_hours" });
+            await logSkipOnce(skipStatePath, "outside_hours", () =>
+              appendEvent(config.output.eventsPath, { plugin: "sapience", type: "routing_skipped", reason: "outside_hours" }));
             await generateDashboard(config).catch(() => {});
             return { content: [{ type: "text", text: "SILENT_REPLY_TOKEN" }] };
           }
@@ -208,6 +212,9 @@ export default definePluginEntry({
             }
 
             await generateDashboard(config).catch(() => {});
+            await clearSkipState(skipStatePath).catch(() => {});
+            // Bound the action log; events.jsonl is rotated by generateDashboard.
+            await rotateKeepingTail(config.output.actionLogPath).catch(() => {});
           } finally {
             await releaseLock(lockFile);
           }

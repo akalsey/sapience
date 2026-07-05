@@ -3,7 +3,7 @@ import { mkdtemp, rm } from "fs/promises";
 import { join } from "path";
 import { tmpdir } from "os";
 import {
-  loadOutcomes, saveOutcomes, addProposals, expireOldProposals, resolveProposal,
+  loadOutcomes, saveOutcomes, addProposals, expireOldProposals, resolveProposal, purgeResolvedOutcomes,
 } from "./outcome-tracker.js";
 import type { ProposalSet, OutcomeMap } from "./types.js";
 
@@ -117,5 +117,22 @@ describe("resolveProposal", () => {
 
   it("throws when proposal ID not found", () => {
     expect(() => resolveProposal({}, "nonexistent", "accepted")).toThrow();
+  });
+});
+
+describe("purgeResolvedOutcomes", () => {
+  // expireOldProposals marks entries expired but nothing ever deleted them:
+  // the map grew forever and was rewritten in full every pass.
+  it("drops non-pending records older than the retention window", () => {
+    const old = new Date(Date.now() - 40 * 24 * 60 * 60 * 1000).toISOString();
+    const recent = new Date().toISOString();
+    const outcomes = {
+      "old-expired": { proposal_id: "old-expired", proposal_type: "action" as const, pass_id: "p1", created_at: old, state: "expired" as const },
+      "old-acted": { proposal_id: "old-acted", proposal_type: "action" as const, pass_id: "p1", created_at: old, state: "acted_on" as const },
+      "old-pending": { proposal_id: "old-pending", proposal_type: "action" as const, pass_id: "p1", created_at: old, state: "pending" as const },
+      "new-expired": { proposal_id: "new-expired", proposal_type: "action" as const, pass_id: "p2", created_at: recent, state: "expired" as const },
+    };
+    const purged = purgeResolvedOutcomes(outcomes, 30);
+    expect(Object.keys(purged).sort()).toEqual(["new-expired", "old-pending"]);
   });
 });
