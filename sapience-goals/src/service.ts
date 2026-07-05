@@ -1,7 +1,8 @@
 // src/service.ts
 import { definePluginEntry } from "openclaw/plugin-sdk/plugin-entry";
 import { DEFAULT_CONFIG, type GoalsConfig, type Goal, type GoalStatus } from "./types.js";
-import { resolveDataPath, generateId, isWithinActiveHours, nextWeeklyDate } from "./utils.js";
+import { resolveDataPath, generateId, nextWeeklyDate } from "./utils.js";
+import { validateActiveHours, isWithinActiveHours } from "./active-hours.js";
 import {
   loadGoals, saveGoals, addGoal, updateNextDelivery,
   setActiveApproach, updateGoalStatus, addProgressNote, addBlocker,
@@ -53,6 +54,16 @@ export default definePluginEntry({
       workspaceDir = (api.runtime.agent.resolveAgentWorkspaceDir as (cfg: unknown) => string)(api.pluginConfig);
     } catch { return; }
     const config = mergeConfig(api.pluginConfig as Record<string, unknown>, workspaceDir);
+
+    // Invalid activeHours used to disable the plugin silently (NaN comparisons)
+    // or throw on every run (bad timezone). Fall back to defaults, loudly.
+    const hoursCheck = validateActiveHours(config.activeHours, DEFAULT_CONFIG.activeHours);
+    config.activeHours = hoursCheck.hours;
+    if (hoursCheck.errors.length > 0) {
+      void appendEvent(config.output.eventsPath, {
+        plugin: "goals", type: "config_invalid", field: "activeHours", errors: hoursCheck.errors, using: "defaults",
+      }).catch(() => {});
+    }
 
     // Record what this plugin actually resolved, for `openclaw sapience doctor`.
     void writeStatusArtifact({
@@ -259,10 +270,10 @@ export default definePluginEntry({
     api.registerTool({
       name: "check_goals",
       description: "Check inbox for new goals and deliver weekly status for active goals. Called by the goals cron.",
-      parameters: {} as any,
+      parameters: { type: "object", properties: {} },
       async execute(_id: any, _params: any) {
         try {
-          if (!isWithinActiveHours(config)) {
+          if (!isWithinActiveHours(config.activeHours)) {
             await appendEvent(config.output.eventsPath, { plugin: "goals", type: "check_skipped", reason: "outside_hours" });
             return toolText("SILENT_REPLY_TOKEN");
           }

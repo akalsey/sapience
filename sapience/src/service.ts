@@ -3,7 +3,8 @@ import { mkdirSync, writeFileSync } from "fs";
 import { join } from "path";
 import { definePluginEntry } from "openclaw/plugin-sdk/plugin-entry";
 import { DEFAULT_CONFIG, type SapienceConfig } from "./types.js";
-import { resolveDataPath, isWithinActiveHours } from "./utils.js";
+import { resolveDataPath } from "./utils.js";
+import { validateActiveHours, isWithinActiveHours } from "./active-hours.js";
 import { loadProfile, saveProfile, upsertEntry, addMissingEntries } from "./calibration.js";
 import { routeItem } from "./autonomy.js";
 import { readUnprocessedPasses, proposalSetToItems } from "./proposal-adapter.js";
@@ -61,6 +62,16 @@ export default definePluginEntry({
     } catch { return; }
     const config = mergeConfig(api.pluginConfig as Record<string, unknown>, workspaceDir);
 
+    // Invalid activeHours used to disable the plugin silently (NaN comparisons)
+    // or throw on every run (bad timezone). Fall back to defaults, loudly.
+    const hoursCheck = validateActiveHours(config.activeHours, DEFAULT_CONFIG.activeHours);
+    config.activeHours = hoursCheck.hours;
+    if (hoursCheck.errors.length > 0) {
+      void appendEvent(config.output.eventsPath, {
+        plugin: "sapience", type: "config_invalid", field: "activeHours", errors: hoursCheck.errors, using: "defaults",
+      }).catch(() => {});
+    }
+
     // Write presence marker synchronously so sapience-thinking's .present check is race-free.
     // It is refreshed on every routing run; thinking treats a stale marker as "router gone".
     const markerDir = join(workspaceDir, "sapience");
@@ -84,10 +95,10 @@ export default definePluginEntry({
     api.registerTool({
       name: "process_proposals",
       description: "Process new proposals from the sapience-thinking log and route them through the autonomy tier function. Called by the sapience cron.",
-      parameters: {} as any,
+      parameters: { type: "object", properties: {} },
       async execute(_id: any, _params: any) {
         try {
-          if (!isWithinActiveHours(config)) {
+          if (!isWithinActiveHours(config.activeHours)) {
             await appendEvent(config.output.eventsPath, { plugin: "sapience", type: "routing_skipped", reason: "outside_hours" });
             await generateDashboard(config).catch(() => {});
             return { content: [{ type: "text", text: "SILENT_REPLY_TOKEN" }] };

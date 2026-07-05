@@ -15,18 +15,7 @@ import { resolveDataPath } from "./utils.js";
 import { writeStatusArtifact, resolvePluginVersion } from "./status-artifact.js";
 import { acquireLock, releaseLock, clearLock } from "./lock.js";
 import { isSapienceActive } from "./presence.js";
-
-function isWithinActiveHours(config: PluginConfig): boolean {
-  const formatter = new Intl.DateTimeFormat("en-US", {
-    timeZone: config.activeHours.timezone,
-    hour: "2-digit", minute: "2-digit", hour12: false,
-  });
-  const [hours, minutes] = formatter.format(new Date()).split(":").map(Number);
-  const now = (hours ?? 0) * 60 + (minutes ?? 0);
-  const [sh, sm] = config.activeHours.start.split(":").map(Number);
-  const [eh, em] = config.activeHours.end.split(":").map(Number);
-  return now >= (sh ?? 0) * 60 + (sm ?? 0) && now <= (eh ?? 0) * 60 + (em ?? 0);
-}
+import { validateActiveHours, isWithinActiveHours } from "./active-hours.js";
 
 function mergeConfig(raw: Record<string, unknown>, workspaceDir: string): PluginConfig {
   return {
@@ -58,6 +47,17 @@ export default definePluginEntry({
       workspaceDir = (api.runtime.agent.resolveAgentWorkspaceDir as (cfg: unknown) => string)(api.pluginConfig);
     } catch { return; }
     const config = mergeConfig(api.pluginConfig as Record<string, unknown>, workspaceDir);
+
+    // Invalid activeHours used to disable the plugin silently (NaN comparisons)
+    // or throw on every run (bad timezone). Fall back to defaults, loudly.
+    const hoursCheck = validateActiveHours(config.activeHours, DEFAULT_CONFIG.activeHours);
+    config.activeHours = hoursCheck.hours;
+    if (hoursCheck.errors.length > 0) {
+      void appendEvent(config.output.eventsPath, {
+        plugin: "thinking", type: "config_invalid", field: "activeHours", errors: hoursCheck.errors, using: "defaults",
+      }).catch(() => {});
+    }
+
     const lockFile = join(workspaceDir, "proactive-thinking", ".pass.lock");
     const agentId: string = ((api.config as Record<string, unknown>)?.agent as Record<string, unknown>)?.id as string ?? "default";
 
@@ -79,7 +79,7 @@ export default definePluginEntry({
       description: "Fetch context bundle and thinking instructions. Call this first in every thinking pass.",
       parameters: Type.Object({}),
       async execute(_id: any, _params: any) {
-        if (!isWithinActiveHours(config)) {
+        if (!isWithinActiveHours(config.activeHours)) {
           await appendEvent(config.output.eventsPath, { plugin: "thinking", type: "pass_skipped", reason: "outside_hours" });
           return { content: [{ type: "text", text: JSON.stringify({ status: "skip", reason: "outside_active_hours" }) }] };
         }
@@ -131,8 +131,14 @@ export default definePluginEntry({
             questions: proposals.open_questions.length,
             nothing_to_report: proposals.nothing_to_report,
           });
-          const sapienceActive = await isSapienceActive(workspaceDir);
-          if (!sapienceActive) await maybeDeliver(proposals, api, config);
+          // Delivery problems are not parse errors — keep them out of the
+          // pass log's "parse error" bucket and in the event stream instead.
+          try {
+            const sapienceActive = await isSapienceActive(workspaceDir);
+            if (!sapienceActive) await maybeDeliver(proposals, api, config);
+          } catch (err) {
+            await appendEvent(config.output.eventsPath, { plugin: "thinking", type: "delivery_failed", reason: String(err) }).catch(() => {});
+          }
         } catch (err) {
           const passId = (params.proposals as Record<string, unknown>)?.pass_id as string ?? "unknown";
           await appendError(passId, err instanceof ParseError ? err.message : String(err), config.output.logPath);
