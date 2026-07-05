@@ -18,7 +18,7 @@ function formatSignal(signal: SignalReport): string {
   ].join("\n");
 }
 
-export async function buildPrompt(bundle: ContextBundle, signal: SignalReport | null): Promise<string> {
+export function buildPrompt(bundle: ContextBundle, signal: SignalReport | null): string {
   const sections: string[] = [THINKING_PROMPT];
 
   sections.push(["## Recent Activity Context", "", bundle.recentActivity].join("\n"));
@@ -32,6 +32,6 @@ export async function buildPrompt(bundle: ContextBundle, signal: SignalReport | 
   return sections.join("\n\n");
 }
 
-export async function buildHeartbeatPrompt(proposalsList: string): Promise<string> {
+export function buildHeartbeatPrompt(proposalsList: string): string {
   return HEARTBEAT_PROMPT.replace("[PROPOSALS LIST]", proposalsList);
 }

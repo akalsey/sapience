@@ -1,9 +1,8 @@
 import { stat, readdir, readFile } from "fs/promises";
 import { join } from "path";
-import { homedir } from "os";
 import { execFile } from "child_process";
 import { promisify } from "util";
-import { readStatusArtifacts } from "../status-artifact.js";
+import { readStatusArtifacts, resolveStateBase } from "../status-artifact.js";
 import { SUITE_PLUGINS, SUITE_CRON_BASES, SUITE_FILES, MEMORY_SETTINGS } from "./inventory.js";
 import type {
   DoctorInputs,
@@ -94,15 +93,6 @@ export function toCronObservation(base: string, jobs: any[]): CronObservation {
 }
 
 // ── filesystem scans for version skew and quarantined state ────────────────
-
-// Mirrors the state-dir resolution in status-artifact.ts.
-export function resolveStateBase(env: NodeJS.ProcessEnv = process.env): string {
-  const override = env.OPENCLAW_STATE_DIR?.trim();
-  if (override && override.length > 0) {
-    return override.startsWith("~/") ? join(homedir(), override.slice(2)) : override;
-  }
-  return join(homedir(), ".openclaw");
-}
 
 // OpenClaw installs each plugin into <state>/npm/projects/<pkg>-<hash>/node_modules/…
 // That copy is what loads on the next gateway restart.

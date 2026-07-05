@@ -88,14 +88,17 @@ function cronFinding(c: CronObservation, allowlist: string[], pluginToolsGlobal:
   return { id, severity: "ok", source: "cron", message: `cron ${j.name} ok` };
 }
 
+function allCronsGreen(i: DoctorInputs): boolean {
+  return i.crons.length > 0 &&
+    i.crons.every((c) => c.job && c.job.enabled && c.job.lastStatus === "ok");
+}
+
 // Every cron reports green yet not one output file exists — the runs complete
 // without the tool handlers ever executing. This is the signature of plugin
 // tools not reaching the cron sessions, whatever the cause.
 function noOutputContradiction(i: DoctorInputs): Finding | undefined {
-  const cronsAllGreen = i.crons.length > 0 &&
-    i.crons.every((c) => c.job && c.job.enabled && c.job.lastStatus === "ok");
   const nothingWritten = i.files.length > 0 && i.files.every((f) => !f.exists);
-  if (!cronsAllGreen || !nothingWritten) return undefined;
+  if (!allCronsGreen(i) || !nothingWritten) return undefined;
   return { id: "paths:no-output", severity: "error", source: "fs",
     message: "crons run green but no output files exist — the plugin tools are never executing",
     detail: "The cron agents likely can't see the suite's tools. Check each job's payload.toolsAllow and the tools.profile/alsoAllow config (see the CRONS section)." };
@@ -115,8 +118,7 @@ function pathsSection(i: DoctorInputs): Section {
   const contradiction = noOutputContradiction(i);
   if (contradiction) findings.push(contradiction);
 
-  const cronsAllGreen = i.crons.length > 0 &&
-    i.crons.every((c) => c.job && c.job.enabled && c.job.lastStatus === "ok");
+  const cronsAllGreen = allCronsGreen(i);
 
   for (const f of i.files) {
     if (f.exists) {
