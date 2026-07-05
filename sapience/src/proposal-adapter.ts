@@ -70,6 +70,15 @@ export async function readUnprocessedPasses(
         // skip malformed line rather than dropping all proposals
       }
     }
-    return passes.filter(p => !processedIds.has(p.pass_id));
+    // proposals.jsonl is append-only and passes are processed in file order,
+    // so everything up to the LAST in-set pass has been processed — including
+    // older ids the capped processed set has evicted. Without this, evicted
+    // ids looked "new" again after ~1000 passes and act-tier proposals from
+    // weeks ago re-executed.
+    const lastProcessedIdx = passes.reduce(
+      (last, p, i) => (processedIds.has(p.pass_id) ? i : last),
+      -1
+    );
+    return passes.slice(lastProcessedIdx + 1).filter(p => !processedIds.has(p.pass_id));
   } catch { return []; }
 }

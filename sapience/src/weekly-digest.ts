@@ -2,21 +2,34 @@ import { readFile } from "fs/promises";
 import { resolvePath } from "./utils.js";
 import type { SapienceConfig } from "./types.js";
 
-export function isDigestDay(config: SapienceConfig): boolean {
-  const now = new Date();
+// Whether the digest should fire now. The caller persists localDate after a
+// successful send and passes it back as lastSentDate — that's what prevents
+// double delivery on a 15-minute cron (the old window check fired twice) and
+// lets a missed slot catch up later the same day. Minutes are honored, so
+// "17:45" fires at 17:45, not during the whole 17:00 hour.
+export function digestDue(
+  config: SapienceConfig,
+  lastSentDate: string | null,
+  now: Date = new Date()
+): { due: boolean; localDate: string } {
   const parts = new Intl.DateTimeFormat("en-US", {
     timeZone: config.activeHours.timezone,
-    weekday: "long", hour: "2-digit", minute: "2-digit", hour12: false,
+    weekday: "long", hour: "2-digit", minute: "2-digit",
+    year: "numeric", month: "2-digit", day: "2-digit",
+    hourCycle: "h23",
   }).formatToParts(now);
+  const get = (type: string) => parts.find(p => p.type === type)?.value ?? "";
 
-  const weekday = parts.find(p => p.type === "weekday")?.value?.toLowerCase() ?? "";
-  const hour = parseInt(parts.find(p => p.type === "hour")?.value ?? "0");
-  const minute = parseInt(parts.find(p => p.type === "minute")?.value ?? "0");
+  const localDate = `${get("year")}-${get("month")}-${get("day")}`;
+  const weekday = get("weekday").toLowerCase();
+  const minutesNow = parseInt(get("hour") || "0") * 60 + parseInt(get("minute") || "0");
   const [digestHour, digestMinute] = config.digest.time.split(":").map(Number);
+  const target = (digestHour ?? 17) * 60 + (digestMinute ?? 0);
 
-  return weekday === config.digest.day.toLowerCase()
-    && hour === (digestHour ?? 17)
-    && minute < 30;
+  const due = weekday === config.digest.day.toLowerCase()
+    && minutesNow >= target
+    && lastSentDate !== localDate;
+  return { due, localDate };
 }
 
 export async function buildDigestPrompt(config: SapienceConfig): Promise<string> {

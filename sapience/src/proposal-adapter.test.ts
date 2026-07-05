@@ -1,5 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { extractDomain, proposalSetToItems } from "./proposal-adapter.js";
+import { mkdtemp, writeFile, rm } from "fs/promises";
+import { join } from "path";
+import { tmpdir } from "os";
+import { extractDomain, proposalSetToItems, readUnprocessedPasses } from "./proposal-adapter.js";
 import type { ProposalSet } from "./proposal-adapter.js";
 
 describe("extractDomain", () => {
@@ -54,5 +57,33 @@ describe("proposalSetToItems", () => {
 
   it("returns empty array for nothing_to_report passes", () => {
     expect(proposalSetToItems({ ...sampleSet, nothing_to_report: true })).toHaveLength(0);
+  });
+});
+
+describe("readUnprocessedPasses", () => {
+
+  function pass(id: string): string {
+    return JSON.stringify({ pass_id: id, timestamp: `2026-06-0${id.slice(-1)}T10:00:00Z`, nothing_to_report: false, summary: "", observations: [], proposed_actions: [], proposed_audits: [], open_questions: [] });
+  }
+
+  it("skips passes that precede the last processed pass in file order (evicted ids stay processed)", async () => {
+    // processed-passes caps its id set; ids evicted from the set must not be
+    // re-routed. proposals.jsonl is append-only, so anything before the last
+    // in-set pass has already been processed.
+    const dir = await mkdtemp(join(tmpdir(), "adapter-"));
+    const path = join(dir, "proposals.jsonl");
+    await writeFile(path, [pass("pass-1"), pass("pass-2"), pass("pass-3")].join("\n") + "\n");
+    const result = await readUnprocessedPasses(path, new Set(["pass-2"]));
+    expect(result.map(p => p.pass_id)).toEqual(["pass-3"]);
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it("returns all passes when none are in the processed set (fresh install path)", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "adapter-"));
+    const path = join(dir, "proposals.jsonl");
+    await writeFile(path, [pass("pass-1"), pass("pass-2")].join("\n") + "\n");
+    const result = await readUnprocessedPasses(path, new Set());
+    expect(result.map(p => p.pass_id)).toEqual(["pass-1", "pass-2"]);
+    await rm(dir, { recursive: true, force: true });
   });
 });

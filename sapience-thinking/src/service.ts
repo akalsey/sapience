@@ -1,4 +1,3 @@
-import { access } from "fs/promises";
 import { join } from "path";
 import { definePluginEntry } from "openclaw/plugin-sdk/plugin-entry";
 import { Type } from "@sinclair/typebox";
@@ -15,6 +14,7 @@ import { DEFAULT_CONFIG, type PluginConfig } from "./types.js";
 import { resolveDataPath } from "./utils.js";
 import { writeStatusArtifact, resolvePluginVersion } from "./status-artifact.js";
 import { acquireLock, releaseLock, clearLock } from "./lock.js";
+import { isSapienceActive } from "./presence.js";
 
 function isWithinActiveHours(config: PluginConfig): boolean {
   const formatter = new Intl.DateTimeFormat("en-US", {
@@ -131,7 +131,7 @@ export default definePluginEntry({
             questions: proposals.open_questions.length,
             nothing_to_report: proposals.nothing_to_report,
           });
-          const sapienceActive = await access(join(workspaceDir, "sapience", ".present")).then(() => true, () => false);
+          const sapienceActive = await isSapienceActive(workspaceDir);
           if (!sapienceActive) await maybeDeliver(proposals, api, config);
         } catch (err) {
           const passId = (params.proposals as Record<string, unknown>)?.pass_id as string ?? "unknown";

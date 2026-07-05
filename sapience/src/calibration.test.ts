@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   getEntry, needsCalibration, upsertEntry,
-  applyConfirmation, applyCorrection,
+  applyConfirmation, applyCorrection, addMissingEntries,
 } from "./calibration.js";
 import type { CalibrationEntry, CalibrationProfile } from "./types.js";
 
@@ -69,5 +69,29 @@ describe("applyCorrection", () => {
     const result = applyCorrection(entry, "ask");
     expect(result.tier).toBe("ask");
     expect(result.corrected_count).toBe(1);
+  });
+});
+
+describe("addMissingEntries", () => {
+  it("adds only entries whose domain/action_class is absent", () => {
+    const current = [
+      { domain: "github", action_class: "pr_merge", tier: "propose" as const, confidence: 0.6, confirmed_count: 3, corrected_count: 0, last_calibrated: "2026-01-01T00:00:00Z", notes: "" },
+    ];
+    const additions = [
+      { domain: "github", action_class: "pr_merge", tier: "propose" as const, confidence: 0, confirmed_count: 0, corrected_count: 0, last_calibrated: "2026-06-01T00:00:00Z", notes: "" },
+      { domain: "slack", action_class: "send", tier: "propose" as const, confidence: 0, confirmed_count: 0, corrected_count: 0, last_calibrated: "2026-06-01T00:00:00Z", notes: "" },
+    ];
+    const merged = addMissingEntries(current, additions);
+    expect(merged).toHaveLength(2);
+    // The existing entry (with learned confidence) wins over the addition.
+    expect(merged.find(e => e.domain === "github")!.confidence).toBe(0.6);
+    expect(merged.find(e => e.domain === "slack")).toBeDefined();
+  });
+
+  it("returns the current profile untouched when nothing is missing", () => {
+    const current = [
+      { domain: "github", action_class: "pr_merge", tier: "propose" as const, confidence: 0.6, confirmed_count: 3, corrected_count: 0, last_calibrated: "2026-01-01T00:00:00Z", notes: "" },
+    ];
+    expect(addMissingEntries(current, current)).toEqual(current);
   });
 });

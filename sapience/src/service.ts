@@ -4,12 +4,14 @@ import { join } from "path";
 import { definePluginEntry } from "openclaw/plugin-sdk/plugin-entry";
 import { DEFAULT_CONFIG, type SapienceConfig } from "./types.js";
 import { resolveDataPath, isWithinActiveHours } from "./utils.js";
-import { loadProfile, saveProfile, upsertEntry } from "./calibration.js";
+import { loadProfile, saveProfile, upsertEntry, addMissingEntries } from "./calibration.js";
 import { routeItem } from "./autonomy.js";
 import { readUnprocessedPasses, proposalSetToItems } from "./proposal-adapter.js";
 import { loadProcessedPasses, markPassProcessed, bootstrapProcessedPasses } from "./processed-passes.js";
 import { deliverItems } from "./delivery.js";
-import { isDigestDay, buildDigestPrompt } from "./weekly-digest.js";
+import { digestDue, buildDigestPrompt } from "./weekly-digest.js";
+import { readJsonSafe, writeJsonAtomic } from "./safe-json.js";
+import { acquireLock, releaseLock, clearLock } from "./lock.js";
 import { appendEvent } from "./events.js";
 import { generateDashboard } from "./dashboard.js";
 import { writeStatusArtifact, resolvePluginVersion } from "./status-artifact.js";
@@ -59,10 +61,14 @@ export default definePluginEntry({
     } catch { return; }
     const config = mergeConfig(api.pluginConfig as Record<string, unknown>, workspaceDir);
 
-    // Write presence marker synchronously so sapience-thinking's .present check is race-free
+    // Write presence marker synchronously so sapience-thinking's .present check is race-free.
+    // It is refreshed on every routing run; thinking treats a stale marker as "router gone".
     const markerDir = join(workspaceDir, "sapience");
     mkdirSync(markerDir, { recursive: true });
     writeFileSync(join(markerDir, ".present"), "", "utf-8");
+    const lockFile = join(markerDir, ".routing.lock");
+    const digestStatePath = join(markerDir, "digest-state.json");
+    void clearLock(lockFile).catch(() => {});
 
     // Record what this plugin actually resolved, so `openclaw sapience doctor` can
     // report production reality (not a recomputation). Fire-and-forget.
@@ -87,81 +93,113 @@ export default definePluginEntry({
             return { content: [{ type: "text", text: "SILENT_REPLY_TOKEN" }] };
           }
 
-          let processed = await loadProcessedPasses(config.output.processedPassesPath);
-          const profile = await loadProfile(config.output.calibrationPath);
-
-          // On first run, mark all existing passes as processed to avoid re-delivering stale proposals
-          if (processed.size === 0) {
-            processed = await bootstrapProcessedPasses(
-              config.proactiveThinking.proposalsPath,
-              config.output.processedPassesPath,
-            );
+          // Overlapping routing runs double-deliver and clobber each other's
+          // calibration writes; skip if another run holds the lock.
+          const acquired = await acquireLock(lockFile);
+          if (!acquired) {
+            await appendEvent(config.output.eventsPath, { plugin: "sapience", type: "routing_skipped", reason: "already_running" });
+            return { content: [{ type: "text", text: "SILENT_REPLY_TOKEN" }] };
           }
 
-          const newPasses = await readUnprocessedPasses(
-            config.proactiveThinking.proposalsPath,
-            processed
-          );
+          try {
+            // Refresh the presence marker: sapience-thinking treats a marker
+            // older than 2h as "router gone" and falls back to self-delivery.
+            writeFileSync(join(markerDir, ".present"), "", "utf-8");
 
-          let updatedProcessed = processed;
-          let updatedProfile = profile;
-          let totalItems = 0;
-          const byTier: Record<string, number> = {};
+            let processed = await loadProcessedPasses(config.output.processedPassesPath);
+            const profile = await loadProfile(config.output.calibrationPath);
 
-          for (const pass of newPasses) {
-            const items = proposalSetToItems(pass);
-            const routed = items.map(item => routeItem(item, updatedProfile, config));
+            // On first run, mark all existing passes as processed to avoid re-delivering stale proposals
+            if (processed.size === 0) {
+              processed = await bootstrapProcessedPasses(
+                config.proactiveThinking.proposalsPath,
+                config.output.processedPassesPath,
+              );
+            }
 
-            await deliverItems(routed, api, config);
-            updatedProcessed = await markPassProcessed(pass.pass_id, config.output.processedPassesPath, updatedProcessed);
+            const newPasses = await readUnprocessedPasses(
+              config.proactiveThinking.proposalsPath,
+              processed
+            );
 
-            for (const item of routed) {
-              totalItems++;
-              byTier[item.tier] = (byTier[item.tier] ?? 0) + 1;
-              const exists = updatedProfile.find(e => e.domain === item.domain && e.action_class === item.action_class);
-              if (!exists) {
-                updatedProfile = upsertEntry(updatedProfile, item.domain, item.action_class, {
-                  tier: config.autonomy.defaultTier,
-                  confidence: 0,
-                });
-                await appendEvent(config.output.eventsPath, {
-                  plugin: "sapience",
-                  type: "calibration_change",
-                  domain: item.domain,
-                  action_class: item.action_class,
-                  old_confidence: null,
-                  new_confidence: 0,
-                  old_tier: null,
-                  new_tier: config.autonomy.defaultTier,
-                  source: "new_entry",
-                });
+            let updatedProcessed = processed;
+            // Routing only ever ADDS calibration entries. Collect them and merge
+            // against a freshly loaded profile at the end — saving the profile
+            // snapshot from the top of the run silently reverted any confidence
+            // change sapience-feedback applied while this run was in flight.
+            let workingProfile = profile;
+            const newEntries: typeof profile = [];
+            let totalItems = 0;
+            const byTier: Record<string, number> = {};
+
+            for (const pass of newPasses) {
+              const items = proposalSetToItems(pass);
+              const routed = items.map(item => routeItem(item, workingProfile, config));
+
+              await deliverItems(routed, api, config);
+              updatedProcessed = await markPassProcessed(pass.pass_id, config.output.processedPassesPath, updatedProcessed);
+
+              for (const item of routed) {
+                totalItems++;
+                byTier[item.tier] = (byTier[item.tier] ?? 0) + 1;
+                const exists = workingProfile.find(e => e.domain === item.domain && e.action_class === item.action_class);
+                if (!exists) {
+                  workingProfile = upsertEntry(workingProfile, item.domain, item.action_class, {
+                    tier: config.autonomy.defaultTier,
+                    confidence: 0,
+                  });
+                  newEntries.push(workingProfile.find(e => e.domain === item.domain && e.action_class === item.action_class)!);
+                  await appendEvent(config.output.eventsPath, {
+                    plugin: "sapience",
+                    type: "calibration_change",
+                    domain: item.domain,
+                    action_class: item.action_class,
+                    old_confidence: null,
+                    new_confidence: 0,
+                    old_tier: null,
+                    new_tier: config.autonomy.defaultTier,
+                    source: "new_entry",
+                  });
+                }
               }
             }
+
+            if (newEntries.length > 0) {
+              const fresh = await loadProfile(config.output.calibrationPath);
+              await saveProfile(addMissingEntries(fresh, newEntries), config.output.calibrationPath);
+            }
+
+            if (newPasses.length === 0) {
+              await appendEvent(config.output.eventsPath, { plugin: "sapience", type: "routing_skipped", reason: "no_new_passes" });
+            } else {
+              await appendEvent(config.output.eventsPath, {
+                plugin: "sapience",
+                type: "routing_completed",
+                passes: newPasses.length,
+                items: totalItems,
+                by_tier: byTier,
+              });
+            }
+
+            if (config.digest.enabled) {
+              const digestState = await readJsonSafe<{ lastSentDate: string | null }>(digestStatePath, { lastSentDate: null });
+              const { due, localDate } = digestDue(config, digestState.lastSentDate);
+              if (due) {
+                const prompt = await buildDigestPrompt(config);
+                const digestResult = await enqueueMainSessionInjection(api, prompt);
+                if (digestResult.enqueued) {
+                  await writeJsonAtomic(digestStatePath, { lastSentDate: localDate });
+                  await appendEvent(config.output.eventsPath, { plugin: "sapience", type: "digest_delivered" });
+                } else {
+                  await appendEvent(config.output.eventsPath, { plugin: "sapience", type: "delivery_failed", what: "digest", reason: digestResult.reason });
+                }
+              }
+            }
+
+            await generateDashboard(config).catch(() => {});
+          } finally {
+            await releaseLock(lockFile);
           }
-
-          await saveProfile(updatedProfile, config.output.calibrationPath);
-
-          if (newPasses.length === 0) {
-            await appendEvent(config.output.eventsPath, { plugin: "sapience", type: "routing_skipped", reason: "no_new_passes" });
-          } else {
-            await appendEvent(config.output.eventsPath, {
-              plugin: "sapience",
-              type: "routing_completed",
-              passes: newPasses.length,
-              items: totalItems,
-              by_tier: byTier,
-            });
-          }
-
-          if (config.digest.enabled && isDigestDay(config)) {
-            const prompt = await buildDigestPrompt(config);
-            const digestResult = await enqueueMainSessionInjection(api, prompt);
-            await appendEvent(config.output.eventsPath, digestResult.enqueued
-              ? { plugin: "sapience", type: "digest_delivered" }
-              : { plugin: "sapience", type: "delivery_failed", what: "digest", reason: digestResult.reason });
-          }
-
-          await generateDashboard(config).catch(() => {});
 
           return { content: [{ type: "text", text: "SILENT_REPLY_TOKEN" }] };
         } catch (err) {

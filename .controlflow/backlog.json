@@ -57,7 +57,7 @@
       "description": "Goals can never leave \"decomposing\" — no tool persists approach selection/progress/status, so weekly status never fires. Add goal_select_approach, goal_update, goal_progress tools; decomposition prompt instructs the agent to record the selection. Fix check_goals ordering: save goals before advancing inbox position, per-goal delivery try/catch, validate goal_submit params, validate inbox position file (integer, clamp to size, advance only to last newline). In-process mutex around goals.json read-modify-write.",
       "priority": 2,
       "complexity": "high",
-      "status": "in_progress",
+      "status": "completed",
       "createdAt": "2026-07-05T12:41:27-07:00",
       "updatedAt": "2026-07-05T12:41:27-07:00"
     },
@@ -67,7 +67,7 @@
       "description": "process_proposals: add short-TTL lock (no overlapping runs); reload+merge calibration before save and skip save when unchanged (stop clobbering feedback's writes); timestamp watermark so evicted processed-passes entries can't cause re-delivery of ancient act-tier proposals; .present marker becomes freshness-based (touched every run, \u003e2h = absent for sapience-thinking's fallback check); digest: persist last-digest date (no double fire) and honor configured minutes; per-item delivery tracking so partial failures don't re-run act items.",
       "priority": 2,
       "complexity": "high",
-      "status": "backlog",
+      "status": "in_progress",
       "createdAt": "2026-07-05T12:41:37-07:00",
       "updatedAt": "2026-07-05T12:41:37-07:00"
     },
@@ -112,7 +112,7 @@
       "updatedAt": "2026-07-05T12:42:08-07:00"
     }
   ],
-  "lastUpdated": "2026-07-05T13:04:07-07:00",
+  "lastUpdated": "2026-07-05T13:09:22-07:00",
   "nextStoryId": 12,
   "nextTaskId": 1
 }

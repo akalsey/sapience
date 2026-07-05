@@ -10,6 +10,16 @@ export async function saveProfile(profile: CalibrationProfile, path: string): Pr
   await writeJsonAtomic(resolvePath(path), profile);
 }
 
+// Merge helper for the routing loop: sapience only ever ADDS entries (never
+// modifies existing ones), so merging against a freshly loaded profile keeps
+// it from clobbering confidence changes sapience-feedback wrote mid-run.
+export function addMissingEntries(current: CalibrationProfile, additions: CalibrationProfile): CalibrationProfile {
+  const missing = additions.filter(
+    a => !current.some(e => e.domain === a.domain && e.action_class === a.action_class)
+  );
+  return missing.length === 0 ? current : [...current, ...missing];
+}
+
 export function getEntry(
   profile: CalibrationProfile,
   domain: string,
