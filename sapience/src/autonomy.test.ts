@@ -68,9 +68,27 @@ describe("evidence gating", () => {
     ];
     const base = {
       id: "i1", type: "action" as const, text: "x", domain: "posthog", action_class: "posthog/action",
-      priority: 4, pass_id: "p", pass_timestamp: "t",
+      priority: 4, pass_id: "p", pass_timestamp: "t", reversible: true,
     };
     expect(routeItem({ ...base, evidence_grade: "quick_check" as const }, profile, DEFAULT_CONFIG).tier).toBe("act");
     expect(routeItem(base, profile, DEFAULT_CONFIG).tier).toBe("act");
+  });
+});
+
+describe("reversibility gating", () => {
+  const profile = [
+    { domain: "posthog", action_class: "posthog/action", tier: "act" as const, confidence: 0.95, confirmed_count: 10, corrected_count: 0, last_calibrated: new Date().toISOString(), notes: "" },
+  ];
+  const base = {
+    id: "i1", type: "action" as const, text: "x", domain: "posthog", action_class: "posthog/action",
+    priority: 4, pass_id: "p", pass_timestamp: "t",
+  };
+
+  // Autonomous execution requires EXPLICITLY reversible actions — unknown
+  // blast radius caps at propose no matter the earned confidence.
+  it("caps act at propose unless the action is explicitly reversible", () => {
+    expect(routeItem({ ...base }, profile, DEFAULT_CONFIG).tier).toBe("propose");
+    expect(routeItem({ ...base, reversible: false }, profile, DEFAULT_CONFIG).tier).toBe("propose");
+    expect(routeItem({ ...base, reversible: true }, profile, DEFAULT_CONFIG).tier).toBe("act");
   });
 });

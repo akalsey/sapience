@@ -24,6 +24,7 @@ Consider what has been happening recently. Look for:
 - Don't repeat proposals from recent passes unless circumstances have changed.
 - Priority 5 means "this likely needs human attention today." Use sparingly.
 - All proposal IDs must be UUIDs (use crypto.randomUUID() format).
+- Mark proposed_actions with reversible: true only when the action can be cleanly undone (archive vs delete, draft vs send). Unknown or irreversible actions are never executed autonomously.
 - Grade observation evidence with evidence_grade: "hunch" for an unverified pattern-suspicion (a single case that might generalize, an untested correlation), "quick_check" when you verified it against the data at hand, "replicated" when it has held repeatedly. When in doubt, "hunch" — weak evidence framed as fact erodes trust.
 
 ## Output

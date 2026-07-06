@@ -24,6 +24,7 @@ export interface SapienceItem {
   pass_id: string;
   pass_timestamp: string;
   evidence_grade?: "hunch" | "quick_check" | "replicated";
+  reversible?: boolean;
 }
 
 export interface RoutedItem extends SapienceItem {
@@ -50,6 +51,8 @@ export interface SapienceConfig {
   push: { enabled: boolean; maxPerDay: number; minPriority: number };
   // Bounded read-only follow-up on hunch-graded items, budgeted per local day.
   investigation: { enabled: boolean; maxPerDay: number; minPriority: number; timeoutSec: number };
+  // Autonomous execution of act-tier items in isolated subagent sessions.
+  act: { execute: boolean; timeoutSec: number };
   output: {
     calibrationPath: string;
     actionLogPath: string;
@@ -81,6 +84,7 @@ export const DEFAULT_CONFIG: SapienceConfig = {
   digest: { enabled: true, day: "friday", time: "17:00" },
   push: { enabled: true, maxPerDay: 6, minPriority: 4 },
   investigation: { enabled: true, maxPerDay: 3, minPriority: 3, timeoutSec: 120 },
+  act: { execute: true, timeoutSec: 300 },
   output: {
     calibrationPath: "sapience/calibration.json",
     actionLogPath: "sapience/action-log.md",

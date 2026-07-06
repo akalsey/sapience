@@ -22,6 +22,9 @@ export const ProposedActionSchema = Type.Object({
   rationale: Type.String(),
   estimated_effort: Type.Union([Type.Literal("small"), Type.Literal("medium"), Type.Literal("large")]),
   priority: PrioritySchema,
+  // Whether the action can be cleanly undone. Autonomous execution requires
+  // an explicit true — unknown blast radius never auto-executes.
+  reversible: Type.Optional(Type.Boolean()),
 });
 
 export const ProposedAuditSchema = Type.Object({

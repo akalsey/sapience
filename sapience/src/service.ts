@@ -21,6 +21,7 @@ import { writeStatusArtifact, resolvePluginVersion } from "./status-artifact.js"
 import { enqueueMainSessionInjection } from "./main-session.js";
 import { requestChannelPush } from "./push.js";
 import { investigateHunches } from "./investigation.js";
+import { executeActItems } from "./act-executor.js";
 import { compileExtraDomains } from "./domains.js";
 import { handleProfileCommand } from "./profile-command.js";
 import { registerSapienceDoctorCli } from "./doctor/cli.js";
@@ -39,6 +40,8 @@ function mergeConfig(raw: Record<string, unknown>, workspaceDir: string): Sapien
     autonomy: { ...DEFAULT_CONFIG.autonomy, ...((raw.autonomy as object) ?? {}) },
     digest: { ...DEFAULT_CONFIG.digest, ...((raw.digest as object) ?? {}) },
     push: { ...DEFAULT_CONFIG.push, ...((raw.push as object) ?? {}) },
+    investigation: { ...DEFAULT_CONFIG.investigation, ...((raw.investigation as object) ?? {}) },
+    act: { ...DEFAULT_CONFIG.act, ...((raw.act as object) ?? {}) },
     output: {
       ...DEFAULT_CONFIG.output,
       ...((raw.output as object) ?? {}),
@@ -176,7 +179,12 @@ export default definePluginEntry({
               const investigated = await investigateHunches(routed, api, config,
                 (item) => routeItem(item, decayProfile(workingProfile), config));
 
-              await deliverItems(investigated, api, config);
+              // Act items execute in isolated subagent sessions; everything
+              // else is delivered as next-turn context.
+              const acts = config.act.execute ? investigated.filter((i) => i.tier === "act") : [];
+              const rest = config.act.execute ? investigated.filter((i) => i.tier !== "act") : investigated;
+              await deliverItems(rest, api, config);
+              if (acts.length > 0) await executeActItems(acts, api, config);
               updatedProcessed = await markPassProcessed(pass.pass_id, config.output.processedPassesPath, updatedProcessed);
 
               for (const item of investigated) {

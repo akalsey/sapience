@@ -9,7 +9,7 @@ export interface ProposalSet {
   nothing_to_report: boolean;
   summary: string;
   observations: Array<{ id: string; text: string; evidence: string; priority: number; evidence_grade?: "hunch" | "quick_check" | "replicated" }>;
-  proposed_actions: Array<{ id: string; text: string; rationale: string; estimated_effort: string; priority: number }>;
+  proposed_actions: Array<{ id: string; text: string; rationale: string; estimated_effort: string; priority: number; reversible?: boolean }>;
   proposed_audits: Array<{ id: string; domain: string; rationale: string; priority: number }>;
   open_questions: Array<{ id: string; text: string; blocking_what: string }>;
 }
@@ -26,7 +26,7 @@ export function proposalSetToItems(raw: ProposalSet, extraDomains: DomainPattern
   }
   for (const action of raw.proposed_actions) {
     const domain = extractDomain(action.text + " " + action.rationale, extraDomains);
-    items.push({ id: action.id, type: "action", text: action.text, domain, action_class: `${domain}/action`, priority: action.priority, pass_id: raw.pass_id, pass_timestamp: raw.timestamp });
+    items.push({ id: action.id, type: "action", text: action.text, domain, action_class: `${domain}/action`, priority: action.priority, pass_id: raw.pass_id, pass_timestamp: raw.timestamp, ...(action.reversible !== undefined ? { reversible: action.reversible } : {}) });
   }
   for (const audit of raw.proposed_audits) {
     const domain = extractDomain(audit.domain + " " + audit.rationale, extraDomains);

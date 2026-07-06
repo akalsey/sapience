@@ -30,5 +30,11 @@ export function routeItem(
     tier = "explore";
   }
 
+  // Blast radius gates autonomy: only explicitly reversible actions execute
+  // without asking. Unknown reversibility caps at propose.
+  if (tier === "act" && item.type === "action" && item.reversible !== true) {
+    tier = "propose";
+  }
+
   return { ...item, tier, confidence };
 }
