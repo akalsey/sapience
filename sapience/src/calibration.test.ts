@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   getEntry, needsCalibration, upsertEntry,
-  applyConfirmation, applyCorrection, addMissingEntries,
+  applyConfirmation, applyCorrection, addMissingEntries, decayProfile,
 } from "./calibration.js";
 import type { CalibrationEntry, CalibrationProfile } from "./types.js";
 
@@ -93,5 +93,31 @@ describe("addMissingEntries", () => {
       { domain: "github", action_class: "pr_merge", tier: "propose" as const, confidence: 0.6, confirmed_count: 3, corrected_count: 0, last_calibrated: "2026-01-01T00:00:00Z", notes: "" },
     ];
     expect(addMissingEntries(current, current)).toEqual(current);
+  });
+});
+
+describe("decayProfile", () => {
+  const NOW = new Date("2026-07-05T00:00:00Z");
+  const entry = (confidence: number, daysAgo: number) => ({
+    domain: "github", action_class: "pr", tier: "act" as const,
+    confidence, confirmed_count: 5, corrected_count: 0,
+    last_calibrated: new Date(NOW.getTime() - daysAgo * 24 * 60 * 60 * 1000).toISOString(),
+    notes: "",
+  });
+
+  it("leaves recently calibrated confidence intact", () => {
+    const [e] = decayProfile([entry(0.8, 5)], NOW);
+    expect(e!.confidence).toBeGreaterThan(0.75);
+  });
+
+  it("halves confidence after one half-life of silence", () => {
+    const [e] = decayProfile([entry(0.8, 90)], NOW);
+    expect(e!.confidence).toBeCloseTo(0.4, 1);
+  });
+
+  it("is a computed view — the input profile is not mutated", () => {
+    const input = [entry(0.8, 90)];
+    decayProfile(input, NOW);
+    expect(input[0]!.confidence).toBe(0.8);
   });
 });

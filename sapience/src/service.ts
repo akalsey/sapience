@@ -5,7 +5,7 @@ import { definePluginEntry } from "openclaw/plugin-sdk/plugin-entry";
 import { DEFAULT_CONFIG, type SapienceConfig } from "./types.js";
 import { resolveDataPath } from "./utils.js";
 import { validateActiveHours, isWithinActiveHours } from "./active-hours.js";
-import { loadProfile, saveProfile, upsertEntry, addMissingEntries } from "./calibration.js";
+import { loadProfile, saveProfile, upsertEntry, addMissingEntries, decayProfile } from "./calibration.js";
 import { routeItem } from "./autonomy.js";
 import { readUnprocessedPasses, proposalSetToItems } from "./proposal-adapter.js";
 import { loadProcessedPasses, markPassProcessed, bootstrapProcessedPasses } from "./processed-passes.js";
@@ -22,6 +22,7 @@ import { enqueueMainSessionInjection } from "./main-session.js";
 import { requestChannelPush } from "./push.js";
 import { investigateHunches } from "./investigation.js";
 import { compileExtraDomains } from "./domains.js";
+import { handleProfileCommand } from "./profile-command.js";
 import { registerSapienceDoctorCli } from "./doctor/cli.js";
 
 function mergeConfig(raw: Record<string, unknown>, workspaceDir: string): SapienceConfig {
@@ -104,6 +105,17 @@ export default definePluginEntry({
       initAt: new Date().toISOString(),
     }).catch(() => {});
 
+    if (typeof api.registerCommand === "function") {
+      api.registerCommand({
+        name: "sapience",
+        description: "Show or adjust the autonomy calibration profile. Usage: /sapience [set <domain> <action_class> <tier>]",
+        acceptsArgs: true,
+        handler: async (ctx: { args?: string }) => ({
+          text: await handleProfileCommand(ctx.args ?? "", config.output.calibrationPath),
+        }),
+      });
+    }
+
     api.registerTool({
       name: "process_proposals",
       description: "Process new proposals from the sapience-thinking log and route them through the autonomy tier function. Called by the sapience cron.",
@@ -158,11 +170,11 @@ export default definePluginEntry({
 
             for (const pass of newPasses) {
               const items = proposalSetToItems(pass, extraDomains);
-              const routed = items.map(item => routeItem(item, workingProfile, config));
-              // Hunches worth surfacing get a bounded read-only check first;
-              // supported ones upgrade and re-route, refuted ones drop.
+              // Route against the DECAYED view: trust earned months ago and
+              // never reinforced should not still authorize autonomy.
+              const routed = items.map(item => routeItem(item, decayProfile(workingProfile), config));
               const investigated = await investigateHunches(routed, api, config,
-                (item) => routeItem(item, workingProfile, config));
+                (item) => routeItem(item, decayProfile(workingProfile), config));
 
               await deliverItems(investigated, api, config);
               updatedProcessed = await markPassProcessed(pass.pass_id, config.output.processedPassesPath, updatedProcessed);

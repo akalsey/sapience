@@ -56,5 +56,7 @@ Deliver a brief weekly summary with these sections:
 
 **What I plan next week:** Based on any active goals or pending work you're aware of.
 
-Keep it concise. This is a status ping, not a report. Omit sections you have nothing meaningful to say about.`;
+Keep it concise. This is a status ping, not a report. Omit sections you have nothing meaningful to say about.
+
+End with ONE calibration question drawn from the action log above — pick the domain where you acted autonomously most often and ask whether to keep that setting (e.g. "I did X without asking 4 times this week — keep it that way, or check in first?"). Skip the question if nothing ran autonomously.`;
 }

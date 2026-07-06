@@ -20,6 +20,23 @@ export function addMissingEntries(current: CalibrationProfile, additions: Calibr
   return missing.length === 0 ? current : [...current, ...missing];
 }
 
+// Trust should not linger: confidence earned months ago and never reinforced
+// decays toward the uncalibrated default with a 90-day half-life. This is a
+// computed VIEW applied at routing time — the stored profile keeps the raw
+// values so reinforcement history is never destroyed.
+export function decayProfile(
+  profile: CalibrationProfile,
+  now: Date = new Date(),
+  halfLifeDays = 90
+): CalibrationProfile {
+  return profile.map((e) => {
+    const ageMs = now.getTime() - new Date(e.last_calibrated).getTime();
+    if (!Number.isFinite(ageMs) || ageMs <= 0) return { ...e };
+    const factor = Math.pow(0.5, ageMs / (halfLifeDays * 24 * 60 * 60 * 1000));
+    return { ...e, confidence: e.confidence * factor };
+  });
+}
+
 export function getEntry(
   profile: CalibrationProfile,
   domain: string,

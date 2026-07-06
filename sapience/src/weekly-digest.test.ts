@@ -51,3 +51,10 @@ describe("buildDigestPrompt", () => {
     expect(prompt).toContain("What I did this week");
   });
 });
+
+describe("digest calibration question", () => {
+  it("asks one calibration question grounded in the action log", async () => {
+    const prompt = await buildDigestPrompt({ ...DEFAULT_CONFIG, output: { ...DEFAULT_CONFIG.output, actionLogPath: "/nonexistent/path.md" } });
+    expect(prompt).toContain("ONE calibration question");
+  });
+});
