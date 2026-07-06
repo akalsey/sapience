@@ -99,6 +99,8 @@ export interface PluginConfig {
   context: { lookbackHours: number; maxContextTokens: number };
   output: { logPath: string; proposalsPath: string; trackerPath: string; eventsPath: string };
   delivery: { heartbeatTrigger: boolean; priorityThreshold: number; maxProposalsPerHeartbeat: number };
+  // Post-task incidental noticing over live session transcripts.
+  noticing: { enabled: boolean; minTurnChars: number; cooldownMinutes: number };
   learning: { trackOutcomes: boolean; adjustPromptBasedOnSignal: boolean; bootstrapDays: number };
 }
 
@@ -114,5 +116,6 @@ export const DEFAULT_CONFIG: PluginConfig = {
     eventsPath: "sapience/events.jsonl",
   },
   delivery: { heartbeatTrigger: true, priorityThreshold: 4, maxProposalsPerHeartbeat: 3 },
+  noticing: { enabled: true, minTurnChars: 1500, cooldownMinutes: 15 },
   learning: { trackOutcomes: true, adjustPromptBasedOnSignal: true, bootstrapDays: 14 },
 };

@@ -22,6 +22,7 @@ import { recordOutcome, RECORDABLE_OUTCOMES, type RecordableOutcome } from "./ou
 import { dedupeProposals } from "./dedup.js";
 import { loadPlaybooks } from "./playbooks.js";
 import { scheduleAudit } from "./audit-scheduler.js";
+import { TurnWatcher, buildNoticerPrompt, parseNoticedObservations, recordNoticedObservations } from "./noticer.js";
 
 function mergeConfig(raw: Record<string, unknown>, workspaceDir: string): PluginConfig {
   return {
@@ -38,6 +39,7 @@ function mergeConfig(raw: Record<string, unknown>, workspaceDir: string): Plugin
       eventsPath: resolveDataPath((raw as any).output?.eventsPath, workspaceDir, DEFAULT_CONFIG.output.eventsPath),
     },
     delivery: { ...DEFAULT_CONFIG.delivery, ...((raw.delivery as object) ?? {}) },
+    noticing: { ...DEFAULT_CONFIG.noticing, ...((raw.noticing as object) ?? {}) },
     learning: { ...DEFAULT_CONFIG.learning, ...((raw.learning as object) ?? {}) },
   };
 }
@@ -87,6 +89,43 @@ export default definePluginEntry({
       },
       initAt: new Date().toISOString(),
     }).catch(() => {});
+
+    // Post-task incidental noticing: peripheral vision over live sessions.
+    const subscribeTranscripts = api?.runtime?.events?.onSessionTranscriptUpdate;
+    const llmComplete = api?.runtime?.llm?.complete;
+    if (config.noticing.enabled && typeof subscribeTranscripts === "function" && typeof llmComplete === "function") {
+      const watcher = new TurnWatcher({
+        minTurnChars: config.noticing.minTurnChars,
+        cooldownMs: config.noticing.cooldownMinutes * 60 * 1000,
+        onTurn: (sessionKey, turnText) => {
+          void (async () => {
+            try {
+              const { text } = await llmComplete({
+                messages: [{ role: "user", content: buildNoticerPrompt(turnText) }],
+                maxTokens: 600,
+                purpose: "sapience post-task noticing",
+              });
+              const observations = parseNoticedObservations(text);
+              if (observations.length === 0) return;
+              const recorded = await recordNoticedObservations(observations, {
+                proposalsPath: config.output.proposalsPath,
+                trackerPath: config.output.trackerPath,
+                sessionKey,
+              });
+              if (recorded) {
+                await appendEvent(config.output.eventsPath, {
+                  plugin: "thinking", type: "noticed",
+                  session: sessionKey, observations: recorded.observations.length,
+                });
+              }
+            } catch { /* peripheral vision must never disturb the main flow */ }
+          })();
+        },
+      });
+      try {
+        subscribeTranscripts((update: any) => watcher.observe(update));
+      } catch { /* subscription unavailable */ }
+    }
 
     api.registerTool({
       name: "get_thinking_context",
