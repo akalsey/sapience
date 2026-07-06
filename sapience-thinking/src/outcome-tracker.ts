@@ -13,16 +13,16 @@ export function addProposals(outcomes: OutcomeMap, proposals: ProposalSet): Outc
   const updated = { ...outcomes };
   const now = new Date().toISOString();
 
-  const add = (id: string, type: ProposalType) => {
+  const add = (id: string, type: ProposalType, text: string) => {
     if (!updated[id]) {
-      updated[id] = { proposal_id: id, proposal_type: type, pass_id: proposals.pass_id, created_at: now, state: "pending" };
+      updated[id] = { proposal_id: id, proposal_type: type, pass_id: proposals.pass_id, created_at: now, state: "pending", text };
     }
   };
 
-  for (const o of proposals.observations) add(o.id, "observation");
-  for (const a of proposals.proposed_actions) add(a.id, "action");
-  for (const a of proposals.proposed_audits) add(a.id, "audit");
-  for (const q of proposals.open_questions) add(q.id, "question");
+  for (const o of proposals.observations) add(o.id, "observation", o.text);
+  for (const a of proposals.proposed_actions) add(a.id, "action", a.text);
+  for (const a of proposals.proposed_audits) add(a.id, "audit", `${a.domain}: ${a.rationale}`);
+  for (const q of proposals.open_questions) add(q.id, "question", q.text);
 
   return updated;
 }

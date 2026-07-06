@@ -19,6 +19,7 @@ import { validateActiveHours, isWithinActiveHours } from "./active-hours.js";
 import { rotateKeepingTail } from "./rotate.js";
 import { logSkipOnce, clearSkipState } from "./skip-log.js";
 import { recordOutcome, RECORDABLE_OUTCOMES, type RecordableOutcome } from "./outcome-recorder.js";
+import { dedupeProposals } from "./dedup.js";
 
 function mergeConfig(raw: Record<string, unknown>, workspaceDir: string): PluginConfig {
   return {
@@ -165,12 +166,18 @@ export default definePluginEntry({
       parameters: Type.Object({ proposals: Type.Unknown() }),
       async execute(_id: any, params: any) {
         try {
-          const proposals = parseProposals(params.proposals);
+          const raw = parseProposals(params.proposals);
+          // Drop near-duplicates of recent history (pending, dismissed, or
+          // expired within the window) before anything is recorded or routed.
+          const history = await loadOutcomes(config.output.trackerPath);
+          const { kept: proposals, dropped } = dedupeProposals(raw, history);
+          if (dropped > 0) {
+            await appendEvent(config.output.eventsPath, { plugin: "thinking", type: "proposals_deduped", pass_id: proposals.pass_id, dropped });
+          }
           await appendPass(proposals, config.output.logPath);
           await appendStructuredProposals(proposals, config.output.proposalsPath);
           if (config.learning.trackOutcomes) {
-            let outcomes = await loadOutcomes(config.output.trackerPath);
-            outcomes = addProposals(outcomes, proposals);
+            let outcomes = addProposals(history, proposals);
             outcomes = expireOldProposals(outcomes);
             outcomes = purgeResolvedOutcomes(outcomes);
             await saveOutcomes(outcomes, config.output.trackerPath);

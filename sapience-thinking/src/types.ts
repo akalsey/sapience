@@ -59,6 +59,8 @@ export interface OutcomeRecord {
   created_at: string;
   resolved_at?: string;
   state: OutcomeState;
+  // Proposal text, kept for cross-pass dedup. Absent on pre-upgrade records.
+  text?: string;
 }
 
 export type OutcomeMap = Record<string, OutcomeRecord>;
