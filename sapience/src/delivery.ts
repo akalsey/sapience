@@ -2,6 +2,8 @@ import type { RoutedItem, SapienceConfig } from "./types.js";
 import { appendAction } from "./action-log.js";
 import { appendEvent } from "./events.js";
 import { enqueueMainSessionInjection } from "./main-session.js";
+import { shouldPush, notePush, requestChannelPush, localDateIn, type PushState } from "./push.js";
+import { readJsonSafe, writeJsonAtomic } from "./safe-json.js";
 
 // The recording instruction closes the learning loop: without it every
 // proposal stayed "pending" until expiry and the signal analyzer learned from
@@ -91,6 +93,25 @@ export async function deliverItems(
         tier: item.tier,
         domain: item.domain,
         reason: result.reason,
+      });
+      continue;
+    }
+
+    // Initiative: high-priority act/propose items wake the agent to deliver
+    // through the last active channel instead of waiting for the user's next
+    // turn. Budgeted per local day.
+    const localDate = localDateIn(config.activeHours.timezone);
+    const state = await readJsonSafe<PushState>(config.output.pushStatePath, { date: "", count: 0 });
+    if (shouldPush(item, config.push, state, localDate)) {
+      await writeJsonAtomic(config.output.pushStatePath, notePush(state, localDate));
+      const requested = requestChannelPush(api, `sapience ${item.tier} (${item.domain})`);
+      await appendEvent(config.output.eventsPath, {
+        plugin: "sapience",
+        type: "push_requested",
+        tier: item.tier,
+        domain: item.domain,
+        priority: item.priority,
+        requested,
       });
     }
   }

@@ -89,6 +89,7 @@ describe("deliverItems", () => {
     const eventsPath = join(dir, "events.jsonl");
     const config = {
       ...DEFAULT_CONFIG,
+      push: { ...DEFAULT_CONFIG.push, enabled: false },
       output: {
         ...DEFAULT_CONFIG.output,
         actionLogPath: join(dir, "action-log.md"),
@@ -108,6 +109,7 @@ describe("deliverItems", () => {
     const eventsPath = join(dir, "events.jsonl");
     const config = {
       ...DEFAULT_CONFIG,
+      push: { ...DEFAULT_CONFIG.push, enabled: false },
       output: {
         ...DEFAULT_CONFIG.output,
         actionLogPath: join(dir, "action-log.md"),
@@ -117,6 +119,55 @@ describe("deliverItems", () => {
     const item = { ...base, tier: "propose" as const, confidence: 0.5 };
     await deliverItems([item], fakeApi, config);
     await expect(readFile(eventsPath, "utf-8")).rejects.toThrow();
+  });
+
+  it("requests a channel push for high-priority act items, within the daily budget", async () => {
+    const eventsPath = join(dir, "events.jsonl");
+    const heartbeats: any[] = [];
+    const pushApi = {
+      ...fakeApi,
+      runtime: { system: { requestHeartbeat: (o: any) => { heartbeats.push(o); } } },
+    };
+    const config = {
+      ...DEFAULT_CONFIG,
+      push: { enabled: true, maxPerDay: 1, minPriority: 4 },
+      output: {
+        ...DEFAULT_CONFIG.output,
+        actionLogPath: join(dir, "action-log.md"),
+        eventsPath,
+        pushStatePath: join(dir, "push-state.json"),
+      },
+    };
+    const high1 = { ...base, id: "a1", tier: "act" as const, priority: 5 };
+    const high2 = { ...base, id: "a2", tier: "act" as const, priority: 5 };
+    const low = { ...base, id: "a3", tier: "propose" as const, priority: 2 };
+    await deliverItems([high1, low, high2], pushApi, config);
+
+    // Budget of 1: only the first high-priority item pushes.
+    expect(heartbeats).toHaveLength(1);
+    expect(heartbeats[0].heartbeat).toEqual({ target: "last" });
+    const events = (await readFile(eventsPath, "utf-8")).trim().split("\n").map((l) => JSON.parse(l));
+    expect(events.filter((e) => e.type === "push_requested")).toHaveLength(1);
+  });
+
+  it("does not push when the injection itself failed", async () => {
+    const heartbeats: any[] = [];
+    const pushApi = {
+      ...decliningApi,
+      runtime: { system: { requestHeartbeat: (o: any) => { heartbeats.push(o); } } },
+    };
+    const config = {
+      ...DEFAULT_CONFIG,
+      push: { enabled: true, maxPerDay: 5, minPriority: 4 },
+      output: {
+        ...DEFAULT_CONFIG.output,
+        actionLogPath: join(dir, "action-log.md"),
+        eventsPath: join(dir, "events.jsonl"),
+        pushStatePath: join(dir, "push-state.json"),
+      },
+    };
+    await deliverItems([{ ...base, tier: "act" as const, priority: 5 }], pushApi, config);
+    expect(heartbeats).toHaveLength(0);
   });
 
   it("emits a delivery_failed event when the gateway declines the injection", async () => {

@@ -19,6 +19,7 @@ import { appendEvent } from "./events.js";
 import { generateDashboard } from "./dashboard.js";
 import { writeStatusArtifact, resolvePluginVersion } from "./status-artifact.js";
 import { enqueueMainSessionInjection } from "./main-session.js";
+import { requestChannelPush } from "./push.js";
 import { registerSapienceDoctorCli } from "./doctor/cli.js";
 
 function mergeConfig(raw: Record<string, unknown>, workspaceDir: string): SapienceConfig {
@@ -34,6 +35,7 @@ function mergeConfig(raw: Record<string, unknown>, workspaceDir: string): Sapien
     learning: { ...DEFAULT_CONFIG.learning, ...((raw.learning as object) ?? {}) },
     autonomy: { ...DEFAULT_CONFIG.autonomy, ...((raw.autonomy as object) ?? {}) },
     digest: { ...DEFAULT_CONFIG.digest, ...((raw.digest as object) ?? {}) },
+    push: { ...DEFAULT_CONFIG.push, ...((raw.push as object) ?? {}) },
     output: {
       ...DEFAULT_CONFIG.output,
       ...((raw.output as object) ?? {}),
@@ -43,6 +45,7 @@ function mergeConfig(raw: Record<string, unknown>, workspaceDir: string): Sapien
       eventsPath: resolveDataPath((raw as any).output?.eventsPath, workspaceDir, DEFAULT_CONFIG.output.eventsPath),
       dashboardPath: resolveDataPath((raw as any).output?.dashboardPath, workspaceDir, DEFAULT_CONFIG.output.dashboardPath),
       goalsPath: resolveDataPath((raw as any).output?.goalsPath, workspaceDir, DEFAULT_CONFIG.output.goalsPath),
+      pushStatePath: resolveDataPath((raw as any).output?.pushStatePath, workspaceDir, DEFAULT_CONFIG.output.pushStatePath),
     },
   };
 }
@@ -204,6 +207,8 @@ export default definePluginEntry({
                 const digestResult = await enqueueMainSessionInjection(api, prompt);
                 if (digestResult.enqueued) {
                   await writeJsonAtomic(digestStatePath, { lastSentDate: localDate });
+                  // The digest is weekly — always worth initiating contact for.
+                  requestChannelPush(api, "sapience weekly digest");
                   await appendEvent(config.output.eventsPath, { plugin: "sapience", type: "digest_delivered" });
                 } else {
                   await appendEvent(config.output.eventsPath, { plugin: "sapience", type: "delivery_failed", what: "digest", reason: digestResult.reason });

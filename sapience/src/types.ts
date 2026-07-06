@@ -44,6 +44,9 @@ export interface SapienceConfig {
     domainFloors: Record<string, "propose" | "ask" | "explore">;
   };
   digest: { enabled: boolean; day: string; time: string };
+  // Proactive channel push for initiative-worthy items (act/propose at or
+  // above minPriority), budgeted per local day.
+  push: { enabled: boolean; maxPerDay: number; minPriority: number };
   output: {
     calibrationPath: string;
     actionLogPath: string;
@@ -51,6 +54,7 @@ export interface SapienceConfig {
     eventsPath: string;
     dashboardPath: string;
     goalsPath: string;
+    pushStatePath: string;
   };
 }
 
@@ -70,6 +74,7 @@ export const DEFAULT_CONFIG: SapienceConfig = {
     domainFloors: {},
   },
   digest: { enabled: true, day: "friday", time: "17:00" },
+  push: { enabled: true, maxPerDay: 6, minPriority: 4 },
   output: {
     calibrationPath: "sapience/calibration.json",
     actionLogPath: "sapience/action-log.md",
@@ -77,5 +82,6 @@ export const DEFAULT_CONFIG: SapienceConfig = {
     eventsPath: "sapience/events.jsonl",
     dashboardPath: "sapience/dashboard.md",
     goalsPath: "goals/goals.json",
+    pushStatePath: "sapience/push-state.json",
   },
 };
