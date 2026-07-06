@@ -18,6 +18,7 @@ import { isSapienceActive } from "./presence.js";
 import { validateActiveHours, isWithinActiveHours } from "./active-hours.js";
 import { rotateKeepingTail } from "./rotate.js";
 import { logSkipOnce, clearSkipState } from "./skip-log.js";
+import { recordOutcome, RECORDABLE_OUTCOMES, type RecordableOutcome } from "./outcome-recorder.js";
 
 function mergeConfig(raw: Record<string, unknown>, workspaceDir: string): PluginConfig {
   return {
@@ -113,6 +114,47 @@ export default definePluginEntry({
         } catch (err) {
           await releaseLock(lockFile);
           throw err;
+        }
+      },
+    });
+
+    api.registerTool({
+      name: "record_outcome",
+      description: "Record the user's reaction to a delivered proposal (acted_on, accepted, rejected, or acknowledged). Call this after the user responds to a surfaced proposal — it is how the autonomy system learns.",
+      parameters: {
+        type: "object",
+        properties: {
+          proposal_id: { type: "string", description: "The proposal id from the delivered prompt" },
+          outcome: { type: "string", enum: [...RECORDABLE_OUTCOMES], description: "acted_on/accepted when the user did it or said yes; rejected when they declined; acknowledged when they saw it but deferred" },
+          domain: { type: "string", description: "The proposal's domain, from the delivered prompt" },
+          action_class: { type: "string", description: "The proposal's action class, from the delivered prompt" },
+        },
+        required: ["proposal_id", "outcome"],
+      },
+      async execute(_id: any, params: any) {
+        try {
+          const outcome = params?.outcome as RecordableOutcome;
+          if (!RECORDABLE_OUTCOMES.includes(outcome)) {
+            return { content: [{ type: "text", text: `Invalid outcome "${String(params?.outcome)}". Valid outcomes: ${RECORDABLE_OUTCOMES.join(", ")}.` }] };
+          }
+          const proposalId = typeof params?.proposal_id === "string" ? params.proposal_id.trim() : "";
+          if (!proposalId) return { content: [{ type: "text", text: "record_outcome requires a proposal_id." }] };
+          const result = await recordOutcome(config.output.trackerPath, workspaceDir, {
+            proposalId,
+            outcome,
+            domain: typeof params?.domain === "string" ? params.domain : undefined,
+            actionClass: typeof params?.action_class === "string" ? params.action_class : undefined,
+          });
+          if (result.ok) {
+            await appendEvent(config.output.eventsPath, {
+              plugin: "thinking", type: "outcome_recorded",
+              proposal_id: proposalId, outcome,
+              domain: params?.domain, action_class: params?.action_class,
+            });
+          }
+          return { content: [{ type: "text", text: result.message }] };
+        } catch (err) {
+          return { content: [{ type: "text", text: `[thinking] record_outcome error: ${String(err)}` }] };
         }
       },
     });

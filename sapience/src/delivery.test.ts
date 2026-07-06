@@ -64,6 +64,24 @@ describe("buildTierPrompt", () => {
     const p = buildTierPrompt({ ...base, tier: "learning" });
     expect(p).toContain("[SAPIENCE: CALIBRATE]");
   });
+
+  // The outcome loop: every delivered prompt instructs the agent to record the
+  // user's reaction via record_outcome, carrying the proposal's identifiers.
+  it("every tier prompt instructs the agent to record the outcome with the proposal's ids", () => {
+    for (const tier of ["act", "propose", "ask", "explore", "learning"] as const) {
+      const p = buildTierPrompt({ ...base, tier });
+      expect(p, tier).toContain("record_outcome");
+      expect(p, tier).toContain(base.id);
+      expect(p, tier).toContain(base.action_class);
+    }
+  });
+
+  it("the act prompt records acted_on after execution; propose offers the reaction set", () => {
+    expect(buildTierPrompt({ ...base, tier: "act" })).toContain('"acted_on"');
+    const propose = buildTierPrompt({ ...base, tier: "propose" });
+    expect(propose).toContain('"rejected"');
+    expect(propose).toContain('"acknowledged"');
+  });
 });
 
 describe("deliverItems", () => {

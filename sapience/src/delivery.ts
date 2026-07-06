@@ -3,6 +3,13 @@ import { appendAction } from "./action-log.js";
 import { appendEvent } from "./events.js";
 import { enqueueMainSessionInjection } from "./main-session.js";
 
+// The recording instruction closes the learning loop: without it every
+// proposal stayed "pending" until expiry and the signal analyzer learned from
+// vacuum. record_outcome is sapience-thinking's tool; the ids come from here.
+function outcomeInstruction(item: RoutedItem, guidance: string): string {
+  return `${guidance} record_outcome({ proposal_id: "${item.id}", outcome: <outcome>, domain: "${item.domain}", action_class: "${item.action_class}" }).`;
+}
+
 export function buildTierPrompt(item: RoutedItem): string {
   switch (item.tier) {
     case "act":
@@ -12,31 +19,37 @@ Action: ${item.text}
 Domain: ${item.domain} / ${item.action_class}
 Confidence: ${(item.confidence * 100).toFixed(0)}%
 
-Execute now. After completion, send a brief message: "I just [what you did]. [Reversible/not reversible]."`;
+Execute now. After completion, send a brief message: "I just [what you did]. [Reversible/not reversible]."
+${outcomeInstruction(item, 'Then record it: use "acted_on" (or "rejected" if execution failed or you had to abort) in')}`;
 
     case "propose":
       return `[SAPIENCE: PROPOSE] A thinking pass identified this as worth doing. Surface it to the user for approval.
 
 Proposal: ${item.text}
 Priority: ${item.priority}/5
+Domain: ${item.domain} / ${item.action_class}
 
-Present this concisely and ask if they'd like you to proceed.`;
+Present this concisely and ask if they'd like you to proceed.
+${outcomeInstruction(item, 'After they respond, record their reaction — "acted_on" if they said yes or did it, "rejected" if they declined, "acknowledged" if they deferred — via')}`;
 
     case "ask":
       return `[SAPIENCE: ASK] You're capable of this but need information to proceed. Ask the user for exactly what you need.
 
 Action: ${item.text}
-Domain: ${item.domain}
+Domain: ${item.domain} / ${item.action_class}
 
-State what you can do, then ask the one or two specific questions that would unblock you.`;
+State what you can do, then ask the one or two specific questions that would unblock you.
+${outcomeInstruction(item, 'After they respond, record it — "acted_on" if they unblocked you, "rejected" if they shut it down, "acknowledged" otherwise — via')}`;
 
     case "explore":
       return `[SAPIENCE: EXPLORE] A problem was identified but the right approach isn't obvious. Present it with options.
 
 Problem: ${item.text}
 Priority: ${item.priority}/5
+Domain: ${item.domain} / ${item.action_class}
 
-Name the problem, offer 2–3 concrete approaches with their tradeoffs, and ask which fits what they're trying to accomplish.`;
+Name the problem, offer 2–3 concrete approaches with their tradeoffs, and ask which fits what they're trying to accomplish.
+${outcomeInstruction(item, 'After they respond, record their reaction — "acted_on" if they picked an approach, "rejected" if they dismissed the problem, "acknowledged" if they deferred — via')}`;
 
     case "learning":
       return `[SAPIENCE: CALIBRATE] This domain/action class hasn't been calibrated yet. Check with the user before routing.
@@ -45,7 +58,8 @@ Item: ${item.text}
 Domain: ${item.domain} / ${item.action_class}
 Current confidence: ${(item.confidence * 100).toFixed(0)}%
 
-Tell the user: "I noticed [item]. My instinct is to [what you'd do at the propose tier]. Is that the right level of initiative, or would you prefer I handle this differently?"`;
+Tell the user: "I noticed [item]. My instinct is to [what you'd do at the propose tier]. Is that the right level of initiative, or would you prefer I handle this differently?"
+${outcomeInstruction(item, 'After they respond, record their reaction — "accepted" if they endorsed the instinct, "rejected" if they wanted less initiative, "acknowledged" if unclear — via')}`;
   }
 }
 
