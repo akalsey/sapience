@@ -21,6 +21,7 @@ import { logSkipOnce, clearSkipState } from "./skip-log.js";
 import { recordOutcome, RECORDABLE_OUTCOMES, type RecordableOutcome } from "./outcome-recorder.js";
 import { dedupeProposals } from "./dedup.js";
 import { loadPlaybooks } from "./playbooks.js";
+import { scheduleAudit } from "./audit-scheduler.js";
 
 function mergeConfig(raw: Record<string, unknown>, workspaceDir: string): PluginConfig {
   return {
@@ -154,6 +155,20 @@ export default definePluginEntry({
               proposal_id: proposalId, outcome,
               domain: params?.domain, action_class: params?.action_class,
             });
+            // An accepted audit becomes recurring coverage: register the cron.
+            const positive = outcome === "accepted" || outcome === "acted_on";
+            if (positive && result.record?.proposal_type === "audit" && result.record.text) {
+              const scheduled = await scheduleAudit(result.record.text, agentId);
+              await appendEvent(config.output.eventsPath, {
+                plugin: "thinking",
+                type: scheduled.ok ? "audit_scheduled" : "audit_schedule_failed",
+                cron: scheduled.name,
+                ...(scheduled.error ? { reason: scheduled.error } : {}),
+              });
+              if (scheduled.ok) {
+                return { content: [{ type: "text", text: `${result.message} Registered recurring audit cron "${scheduled.name}" (Mondays 09:00). Tell the user.` }] };
+              }
+            }
           }
           return { content: [{ type: "text", text: result.message }] };
         } catch (err) {

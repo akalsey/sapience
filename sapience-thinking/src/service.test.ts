@@ -103,3 +103,32 @@ describe("record_outcome", () => {
     expect(out.toLowerCase()).toContain("outcome");
   });
 });
+
+describe("accepted audits become crons", () => {
+  it("attempts cron registration when an audit proposal is accepted", async () => {
+    const { mkdir, writeFile } = await import("fs/promises");
+    await mkdir(join(dir, "proactive-thinking"), { recursive: true });
+    await writeFile(join(dir, "proactive-thinking", "outcomes.json"), JSON.stringify({
+      a1: { proposal_id: "a1", proposal_type: "audit", pass_id: "p1", created_at: new Date().toISOString(), state: "pending", text: "salesforce: duplicate account detection has no coverage" },
+    }));
+    await call("record_outcome", { proposal_id: "a1", outcome: "accepted" });
+    const events = (await readFile(join(dir, "sapience", "events.jsonl"), "utf-8")).trim().split("\n").map((l) => JSON.parse(l));
+    // No openclaw binary in the test environment: the attempt is recorded as a failure event.
+    const auditEvent = events.find((e) => e.type === "audit_scheduled" || e.type === "audit_schedule_failed");
+    expect(auditEvent).toBeDefined();
+    expect(auditEvent.cron).toContain("sapience-audit-");
+  });
+
+  it("does not schedule anything for rejected audits or non-audit proposals", async () => {
+    const { mkdir, writeFile } = await import("fs/promises");
+    await mkdir(join(dir, "proactive-thinking"), { recursive: true });
+    await writeFile(join(dir, "proactive-thinking", "outcomes.json"), JSON.stringify({
+      a1: { proposal_id: "a1", proposal_type: "audit", pass_id: "p1", created_at: new Date().toISOString(), state: "pending", text: "x" },
+      b1: { proposal_id: "b1", proposal_type: "action", pass_id: "p1", created_at: new Date().toISOString(), state: "pending", text: "y" },
+    }));
+    await call("record_outcome", { proposal_id: "a1", outcome: "rejected" });
+    await call("record_outcome", { proposal_id: "b1", outcome: "accepted" });
+    const events = (await readFile(join(dir, "sapience", "events.jsonl"), "utf-8")).trim().split("\n").map((l) => JSON.parse(l));
+    expect(events.some((e) => e.type === "audit_scheduled" || e.type === "audit_schedule_failed")).toBe(false);
+  });
+});
