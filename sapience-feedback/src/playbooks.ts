@@ -1,5 +1,8 @@
 import { readJsonSafe, writeJsonAtomic } from "./safe-json.js";
 
+// Kept in sync between sapience-thinking (reads playbooks into prompts) and
+// sapience-feedback (appends taught playbooks) — copy changes to both.
+
 // Analytical playbooks: the analyst moves a thinking pass applies whenever it
 // has data in hand. Builtins encode the non-negotiables; users teach new ones
 // through method feedback ("whenever you look at churn, segment by plan tier"),

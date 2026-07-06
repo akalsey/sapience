@@ -4,6 +4,7 @@ import { appendEvent } from "./events.js";
 import { enqueueMainSessionInjection } from "./main-session.js";
 import { shouldPush, notePush, requestChannelPush, localDateIn, type PushState } from "./push.js";
 import { readJsonSafe, writeJsonAtomic } from "./safe-json.js";
+import { runSubagentForText } from "./utils.js";
 
 // Checks due watches during routing passes: a bounded read-only subagent
 // fetches the current value, the delta policy decides whether it's worth
@@ -32,43 +33,14 @@ export function parseWatchValue(text: string): number | null {
   }
 }
 
-function extractAssistantText(messages: unknown[]): string {
-  const texts: string[] = [];
-  for (const raw of messages) {
-    const line = raw as { message?: { role?: string; content?: unknown }; role?: string; content?: unknown };
-    const src = line.message && typeof line.message === "object" ? line.message : line;
-    if (src.role !== "assistant") continue;
-    if (typeof src.content === "string") texts.push(src.content);
-    else if (Array.isArray(src.content)) {
-      for (const c of src.content) {
-        if (c && typeof c === "object" && (c as { type?: string }).type === "text") texts.push((c as { text?: string }).text ?? "");
-      }
-    }
-  }
-  return texts.join("\n");
-}
-
 async function fetchWatchValue(api: any, watch: Watch, timeoutSec: number): Promise<number | null> {
-  const subagent = api?.runtime?.subagent;
-  if (!subagent || typeof subagent.run !== "function") return null;
-  const sessionKey = `sapience-watch-${watch.id}`;
-  try {
-    const { runId } = await subagent.run({
-      sessionKey,
-      message: buildWatchFetchPrompt(watch),
-      extraSystemPrompt: "READ-ONLY metric check: fetch one number with at most two queries, modify nothing.",
-      lightContext: true,
-      deliver: false,
-    });
-    const wait = await subagent.waitForRun({ runId, timeoutMs: timeoutSec * 1000 });
-    if (wait.status !== "ok") return null;
-    const { messages } = await subagent.getSessionMessages({ sessionKey, limit: 30 });
-    return parseWatchValue(extractAssistantText(messages ?? []));
-  } catch {
-    return null;
-  } finally {
-    try { await subagent.deleteSession({ sessionKey }); } catch { /* best effort */ }
-  }
+  const result = await runSubagentForText(api, `sapience-watch-${watch.id}`, {
+    message: buildWatchFetchPrompt(watch),
+    extraSystemPrompt: "READ-ONLY metric check: fetch one number with at most two queries, modify nothing.",
+    lightContext: true,
+  }, timeoutSec * 1000, 30);
+  if (result === null || result.status !== "ok") return null;
+  return parseWatchValue(result.text);
 }
 
 export async function checkDueWatches(api: any, config: SapienceConfig): Promise<void> {

@@ -5,6 +5,7 @@ import { enqueueMainSessionInjection } from "./main-session.js";
 import { buildTierPrompt } from "./delivery.js";
 import { shouldPush, notePush, requestChannelPush, localDateIn, type PushState } from "./push.js";
 import { readJsonSafe, writeJsonAtomic } from "./safe-json.js";
+import { runSubagentForText } from "./utils.js";
 
 // Act-tier execution. The old mechanics injected "execute immediately" into
 // the main session — which still waited for the user's next turn and then
@@ -49,41 +50,13 @@ export function parseActResult(text: string): ActResult {
   return { status: "failed", report: "no parseable result from the execution session" };
 }
 
-function extractAssistantText(messages: unknown[]): string {
-  const texts: string[] = [];
-  for (const raw of messages) {
-    const line = raw as { message?: { role?: string; content?: unknown }; role?: string; content?: unknown };
-    const src = line.message && typeof line.message === "object" ? line.message : line;
-    if (src.role !== "assistant") continue;
-    if (typeof src.content === "string") texts.push(src.content);
-    else if (Array.isArray(src.content)) {
-      for (const c of src.content) {
-        if (c && typeof c === "object" && (c as { type?: string }).type === "text") texts.push((c as { text?: string }).text ?? "");
-      }
-    }
-  }
-  return texts.join("\n");
-}
-
 async function runAct(api: any, item: RoutedItem, timeoutSec: number): Promise<ActResult | null> {
-  const subagent = api?.runtime?.subagent;
-  if (!subagent || typeof subagent.run !== "function") return null;
-  const sessionKey = `sapience-act-${item.id}`;
-  try {
-    const { runId } = await subagent.run({
-      sessionKey,
-      message: buildActPrompt(item),
-      deliver: false,
-    });
-    const wait = await subagent.waitForRun({ runId, timeoutMs: timeoutSec * 1000 });
-    if (wait.status !== "ok") return { status: "failed", report: `execution ${wait.status}` };
-    const { messages } = await subagent.getSessionMessages({ sessionKey, limit: 50 });
-    return parseActResult(extractAssistantText(messages ?? []));
-  } catch (err) {
-    return { status: "failed", report: `execution error: ${String(err)}` };
-  } finally {
-    try { await subagent.deleteSession({ sessionKey }); } catch { /* best effort */ }
-  }
+  const result = await runSubagentForText(api, `sapience-act-${item.id}`, {
+    message: buildActPrompt(item),
+  }, timeoutSec * 1000, 50);
+  if (result === null) return null;
+  if (result.status !== "ok") return { status: "failed", report: `execution ${result.status}${result.error ? `: ${result.error}` : ""}` };
+  return parseActResult(result.text);
 }
 
 function buildResultReport(item: RoutedItem, result: ActResult): string {

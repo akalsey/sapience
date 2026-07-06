@@ -3,6 +3,7 @@ import { appendEvent } from "./events.js";
 import { readJsonSafe, writeJsonAtomic } from "./safe-json.js";
 import { localDateIn, notePush, type PushState } from "./push.js";
 import { noteSighting, recordVerdict } from "./hypotheses.js";
+import { runSubagentForText } from "./utils.js";
 
 // Bounded follow-up on hunches: a hunch-graded item worth surfacing gets a
 // capped, read-only subagent run to test whether the pattern holds before the
@@ -42,43 +43,15 @@ export function parseVerdict(text: string): InvestigationVerdict {
   return { verdict: "inconclusive", summary: "no parseable verdict from the investigation" };
 }
 
-function extractAssistantText(messages: unknown[]): string {
-  const texts: string[] = [];
-  for (const raw of messages) {
-    const line = raw as { type?: string; message?: { role?: string; content?: unknown }; role?: string; content?: unknown };
-    const src = line.message && typeof line.message === "object" ? line.message : line;
-    if (src.role !== "assistant") continue;
-    if (typeof src.content === "string") texts.push(src.content);
-    else if (Array.isArray(src.content)) {
-      for (const c of src.content) {
-        if (c && typeof c === "object" && (c as { type?: string }).type === "text") texts.push((c as { text?: string }).text ?? "");
-      }
-    }
-  }
-  return texts.join("\n");
-}
-
 async function investigate(api: any, item: RoutedItem, timeoutSec: number): Promise<InvestigationVerdict | null> {
-  const subagent = api?.runtime?.subagent;
-  if (!subagent || typeof subagent.run !== "function") return null;
-  const sessionKey = `sapience-investigation-${item.id}`;
-  try {
-    const { runId } = await subagent.run({
-      sessionKey,
-      message: buildInvestigationPrompt(item),
-      extraSystemPrompt: "READ-ONLY investigation session: you must not modify, create, send, or delete anything. Verify a hypothesis with at most three read-only queries, then report.",
-      lightContext: true,
-      deliver: false,
-    });
-    const wait = await subagent.waitForRun({ runId, timeoutMs: timeoutSec * 1000 });
-    if (wait.status !== "ok") return { verdict: "inconclusive", summary: `investigation ${wait.status}` };
-    const { messages } = await subagent.getSessionMessages({ sessionKey, limit: 50 });
-    return parseVerdict(extractAssistantText(messages ?? []));
-  } catch (err) {
-    return { verdict: "inconclusive", summary: `investigation failed: ${String(err)}` };
-  } finally {
-    try { await subagent.deleteSession({ sessionKey }); } catch { /* best effort */ }
-  }
+  const result = await runSubagentForText(api, `sapience-investigation-${item.id}`, {
+    message: buildInvestigationPrompt(item),
+    extraSystemPrompt: "READ-ONLY investigation session: you must not modify, create, send, or delete anything. Verify a hypothesis with at most three read-only queries, then report.",
+    lightContext: true,
+  }, timeoutSec * 1000, 50);
+  if (result === null) return null;
+  if (result.status !== "ok") return { verdict: "inconclusive", summary: `investigation ${result.status}${result.error ? `: ${result.error}` : ""}` };
+  return parseVerdict(result.text);
 }
 
 export async function investigateHunches(
