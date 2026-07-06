@@ -1,12 +1,47 @@
+import { stat } from "fs/promises";
 import { execFile } from "child_process";
 import { promisify } from "util";
-import { gatherInputs } from "./sources.js";
+import { gatherInputs, parseCronListJson } from "./sources.js";
 import { buildSuiteDoctorReport } from "./report.js";
 import { renderReport, renderJson } from "./render.js";
 import { planFixes, applyFixes, type FixEffectors } from "./fix.js";
 import { SUITE_CRONS } from "./inventory.js";
+import { runThinkingProbe, type ProbeEffects } from "./probe.js";
+import { readStatusArtifacts } from "../status-artifact.js";
+import { validateActiveHours, isWithinActiveHours } from "../active-hours.js";
 
 const exec = promisify(execFile);
+
+function makeProbeEffects(): ProbeEffects {
+  return {
+    async listCronJobs() {
+      try {
+        const { stdout } = await exec("openclaw", ["cron", "list", "--all", "--json"]);
+        return parseCronListJson(stdout);
+      } catch { return []; }
+    },
+    async runCronJob(id, timeoutSec) {
+      try {
+        await exec("openclaw", ["cron", "run", id, "--wait", "--wait-timeout", `${timeoutSec}s`],
+          { timeout: (timeoutSec + 30) * 1000 });
+        return { ok: true };
+      } catch (err) {
+        return { ok: false, error: String(err) };
+      }
+    },
+    async statMtime(path) {
+      try { return (await stat(path)).mtimeMs; } catch { return null; }
+    },
+    readArtifacts: () => readStatusArtifacts(process.env),
+  };
+}
+
+function thinkingWithinHours(config: any): boolean {
+  const raw = config?.plugins?.entries?.["sapience-thinking"]?.config?.activeHours ?? {};
+  const fallback = { start: "08:00", end: "20:00", timezone: "America/Los_Angeles" };
+  const { hours } = validateActiveHours({ ...fallback, ...raw }, fallback);
+  return isWithinActiveHours(hours);
+}
 
 // Registration args mirror install.sh so --fix registers identical jobs. No
 // --model: crons inherit the agent default (a pinned model outside the allowlist
@@ -51,7 +86,17 @@ export function registerSapienceDoctorCli(api: any): void {
       const cmd = group.command("doctor").description("Diagnose the sapience suite (crons, paths, memory config)");
       cmd.option("--fix", "apply the safe, auto-fixable findings (memory config, missing crons)");
       cmd.option("--json", "output the report as JSON");
-      cmd.action(async (opts: { fix?: boolean; json?: boolean }) => {
+      cmd.option("--probe", "trigger one real thinking pass end-to-end and verify it writes output");
+      cmd.action(async (opts: { fix?: boolean; json?: boolean; probe?: boolean }) => {
+        if (opts.probe) {
+          console.log("Probing: triggering one sapience-thinking cron run and watching for writes (up to ~3 minutes)...");
+          const result = await runThinkingProbe(makeProbeEffects(), { withinHours: thinkingWithinHours(config) });
+          const mark = result.verdict === "pass" ? "✓" : result.verdict === "inconclusive" ? "?" : "✗";
+          console.log(`${mark} probe ${result.verdict}: ${result.message}`);
+          if (result.detail) console.log(`  ${result.detail}`);
+          process.exitCode = result.verdict === "pass" || result.verdict === "inconclusive" ? 0 : 1;
+          return;
+        }
         const nowMs = Date.now();
         let report = buildSuiteDoctorReport(await gatherInputs({ api, config, env: process.env, nowMs }));
 
