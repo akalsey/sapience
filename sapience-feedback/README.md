@@ -32,6 +32,7 @@ openclaw plugins install npm:@akalsey/sapience-feedback
     "sapience-feedback": {
       "logPath": "sapience/feedback.md",
       "calibrationPath": "sapience/calibration.json",
+      "playbooksPath": "sapience/playbooks.json",
       "memoryEnabled": true,
       "semanticDetection": {
         "enabled": true,
@@ -55,7 +56,7 @@ Passive capture rides the gateway's message hook: every incoming user message is
 
 ## What it detects
 
-Every user message is analyzed by the agent's default inference provider (using `api.runtime.llm.complete` — no separate provider configuration required). The classifier returns structured signals in one of three categories. No trigger words or special syntax — speak normally.
+Every user message is analyzed by the agent's default inference provider (using `api.runtime.llm.complete` — no separate provider configuration required). The classifier returns structured signals in one of four categories. No trigger words or special syntax — speak normally.
 
 ### Corrections
 
@@ -75,6 +76,12 @@ Instructions about how much autonomy the agent should have. "Just do it" or "sto
 
 **Effect:** Tier for matching domain/action-class is updated directly.
 
+### Method feedback
+
+Standing rules about *how* to analyze something, rather than how much autonomy to take. "Whenever you look at churn, segment by plan tier." "Always check for outliers before reporting an average."
+
+**Effect:** No confidence change — the rule is appended to the shared analytical playbooks file (`playbooksPath`), and every future thinking pass applies it whenever the data in front of it is relevant. Near-duplicate rules are detected and skipped (`playbook_duplicate` event).
+
 If the LLM is unavailable (no `api.runtime.llm` exposed, or the call fails), the plugin falls back to a regex matcher covering the common phrasings. The regex layer is intentionally conservative and misses paraphrases — semantic detection is the primary path.
 
 ---
@@ -93,7 +100,9 @@ The command runs the same classifier and then records the result as a `manual` s
 
 ## Domain detection
 
-The LLM extracts a domain slug from the content of your message: `github`, `credentials`, `okr-system`, `salesforce`, etc. When the LLM can't identify anything specific, it returns `general`. The regex fallback uses a fixed keyword table and is more likely to bucket things into `general`.
+The LLM extracts a domain slug from the content of your message: `github`, `credentials`, `okr-system`, `salesforce`, etc. When the LLM can't identify anything specific, it returns `general`. The regex fallback uses a shared builtin taxonomy (the same one sapience's routing uses) and is more likely to bucket things into `general`.
+
+The taxonomy is extendable: set `domains: {"<regex>": "<slug>"}` in plugin config — your patterns are checked before the builtins. Set the same key on the `sapience` plugin so feedback lands on domains routing actually emits.
 
 ---
 
@@ -106,7 +115,7 @@ cat <workspace>/sapience/feedback.md
 The log rotates at 5 MB (newest 500 lines kept in place, previous contents in `feedback.md.old`).
 
 Each entry shows:
-- Signal type (correction / confirmation / tier_adjustment)
+- Signal type (correction / confirmation / tier_adjustment / method)
 - Domain and action class affected
 - The original message
 - Tier adjustment, if any

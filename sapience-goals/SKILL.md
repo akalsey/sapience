@@ -26,10 +26,13 @@ After submitting, confirm to the user: "I've recorded that as a goal and will co
 - `goal_progress(id, summary, what_changed)` — call whenever meaningful work toward an active goal happens
 - `goal_blocker(id, description, waiting_on)` — call when something blocks progress
 - `goal_update(id, status)` — status transitions: `active`, `paused`, `completed`, `abandoned`
+- `goal_set_metric(id, name, target, unit?, query_hint?, baseline?)` — call when the user states (or agrees to) a measurable key result for a goal: "measure this by SMB churn, target 5%". Include a `query_hint` for where to fetch the current value and a `baseline` when known, so pace can be computed
 
 ## Weekly check-ins
 
 Every Monday (or the configured day), goals with status `active` receive a `[GOALS: WEEKLY STATUS]` prompt. You report what happened, what's blocked, and what's planned next. Keep it brief — if nothing happened, say so.
+
+When the goal has a metric, the prompt tells you to fetch the current value first and lead with it: current value, percent of target, and whether the pace to target is on track. Numbers before narrative.
 
 ## When NOT to submit
 

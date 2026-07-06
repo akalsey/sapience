@@ -85,7 +85,7 @@ When you pick, the agent calls `goal_select_approach` (the decomposition prompt 
 
 ## Goal lifecycle tools
 
-The plugin registers five tools the agent calls in conversation — you never invoke these directly, just talk:
+The plugin registers six tools the agent calls in conversation — you never invoke these directly, just talk:
 
 | Tool | Does |
 |------|------|
@@ -94,8 +94,9 @@ The plugin registers five tools the agent calls in conversation — you never in
 | `goal_update(id, status)` | Status transitions: `active`, `paused`, `completed`, `abandoned` |
 | `goal_progress(id, summary, what_changed?)` | Records a progress note when meaningful work toward the goal happens |
 | `goal_blocker(id, description, waiting_on?)` | Records something blocking progress |
+| `goal_set_metric(id, name, target, unit?, query_hint?, baseline?)` | Attaches a measurable key result — weekly statuses then compute progress from data instead of narration |
 
-So "mark the OKR goal complete" or "note that the PostHog goal is blocked on billing access" work as plain conversation. `goals.json` is still plain JSON if you prefer to edit directly.
+So "mark the OKR goal complete" or "measure this by SMB churn rate, target 5%" work as plain conversation. `goals.json` is still plain JSON if you prefer to edit directly.
 
 ---
 
@@ -109,6 +110,8 @@ Every Monday at 9am (or your configured day/time), goals with `status: "active"`
 > - What I plan next week: …"
 
 Each goal gets its own delivery. If nothing happened and nothing is blocked, the agent says so briefly and doesn't pad.
+
+Goals with a metric attached (`goal_set_metric`) get an instrumented status: the agent fetches the current value first (using the metric's `query_hint`) and **leads with the numbers** — current value, percent of target, and whether the pace to target is on track — before the narrative.
 
 The next delivery date is stored per-goal in `goals.json` and rolls forward automatically after each successful delivery. If an injection fails, a `delivery_failed` event is recorded and the status is retried on the next run rather than silently skipping a week.
 

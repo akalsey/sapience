@@ -53,17 +53,47 @@ Relative paths resolve under the agent workspace dir (`<workspace>/`), not `~/.o
 
 ---
 
+## What a pass reads
+
+The context bundle for each pass is built from what's actually on disk, resolved through the runtime:
+
+- **Session transcripts** — recent activity from the agent's real sessions dir, ordered by file mtime (newest first) within the `lookbackHours` window
+- **Memory** — the memory-wiki vault first, then the legacy per-agent memory dir; newest `.md` files first
+- **Active goals** — in-flight goals from `goals/goals.json`, so passes weigh proposals by whether they advance one
+- **Open hypotheses** — unsettled cases from sapience's hypothesis ledger, for opportunistic re-testing when adjacent data is in hand
+- **Analytical playbooks** — built-in analyst moves (decompose on delta, outlier check, denominator check, seasonality check, case-to-cohort) plus any you've taught via method feedback, loaded from `<workspace>/sapience/playbooks.json`
+
+The resolved sessions and memory dirs are recorded in the plugin's status artifact, so `openclaw sapience doctor` shows exactly which directories a pass reads.
+
 ## What a pass looks like
 
 Each entry in `log.md` has:
 
-- **Observations** — things noticed with supporting evidence and priority (1–5)
-- **Proposed actions** — concrete things to do, with estimated effort
+- **Observations** — things noticed with supporting evidence, priority (1–5), and an **evidence grade**: `hunch` (unverified pattern-suspicion), `quick_check` (verified against the data at hand), or `replicated` (has held repeatedly). Grades gate how much initiative routing allows downstream
+- **Proposed actions** — concrete things to do, with estimated effort and a `reversible` flag; only actions explicitly marked reversible ever execute autonomously
 - **Proposed audits** — domains worth reviewing
 - **Open questions** — things blocking analysis
 - **Summary** — one-paragraph overview
 
 A pass that found nothing useful logs `nothing_to_report: true`. Over time, this data shows when thinking passes are productive.
+
+Before anything is recorded, proposals are deduplicated against the last 14 days of outcome history — a proposal you dismissed last week doesn't resurface reworded. Drops are logged as `proposals_deduped` events.
+
+---
+
+## Closing the loop: `record_outcome`
+
+Every delivered proposal carries an instruction to record your reaction via the `record_outcome` tool: `acted_on` or `accepted` (positive), `rejected`, or `acknowledged` (seen but deferred). Outcomes feed the signal-to-noise report, and — except for `acknowledged` — move calibration confidence for the proposal's domain by ±0.1.
+
+When you accept an **audit** proposal, it becomes recurring coverage: the plugin registers a `sapience-audit-<slug>` cron job that runs the audit weekly (Mondays 09:00) and reports findings — or a clean bill — back to you.
+
+---
+
+## Post-task noticing
+
+Beyond scheduled passes, the plugin has peripheral vision over live sessions. When a substantial turn completes (at least `noticing.minTurnChars` characters, at most once per `noticing.cooldownMinutes` per session), a cheap side-pass asks one question: what crossed the agent's path that *wasn't* the point of the task? Duplicate accounts spotted while pulling a report, a surprising number, a dead link.
+
+Findings become hunch-graded observations in `proposals.jsonl` with provenance (`noticed` events record the source session), so they flow through the normal routing, investigation, and evidence machinery. The suite's own `sapience-*` machine sessions are never watched, and an empty result is the normal one. Disable with `noticing.enabled: false`.
 
 ---
 
@@ -91,7 +121,7 @@ openclaw cron run sapience-thinking
 Run `openclaw sapience doctor`. The most common cause is the cron session not seeing the plugin tools (missing `--tools` grant) — the run reports ok but nothing is written. See [docs/troubleshooting.md](../docs/troubleshooting.md). Otherwise check that `logPath` is writable and resolving where you expect (the doctor's PATHS section shows the resolved paths).
 
 **Too many proposals, too much noise**
-After the 14-day bootstrap period (`learning.bootstrapDays`), the signal-to-noise data in `outcomes.json` feeds back into future prompts. Outcome resolution (marking proposals acted-on/dismissed) is tracked internally but not currently exposed as a command — set `delivery.priorityThreshold` higher to cut noise in the meantime.
+React to what's delivered — the agent records your reactions via `record_outcome`, and after the 14-day bootstrap period (`learning.bootstrapDays`) the signal-to-noise data in `outcomes.json` feeds back into future prompts. Repeats of recently dismissed proposals are already suppressed by the 14-day dedup. To cut noise further, set `delivery.priorityThreshold` higher (standalone mode) or raise `noticing.minTurnChars` / disable `noticing`.
 
 **`nothing_to_report` on every pass**
-This usually means the context bundle is too thin — no recent session activity to analyze. The plugin needs active use of OpenClaw to have something to think about.
+This usually means the context bundle is too thin — no recent session activity to analyze. The plugin needs active use of OpenClaw to have something to think about. Run `openclaw sapience doctor` and check the resolved `contextSessionsDir`/`contextMemoryDirs` paths point where your sessions actually live; `openclaw sapience doctor --probe` runs one real pass end-to-end.

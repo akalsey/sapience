@@ -26,10 +26,10 @@ That's the sapience suite.
 
 | Plugin | Does |
 |--------|------|
-| `sapience-thinking` | Runs periodic isolated "thinking passes" every 15 minutes. Generates structured proposals — observations, suggested actions, audits, open questions — and writes them to a sidecar file for the routing layer to process. |
-| `sapience` | Routes proposals through autonomy tiers based on blast radius, reversibility, and calibrated confidence. Act on the obvious. Surface the uncertain. Ask before anything sensitive. Delivers a weekly digest. |
-| `sapience-feedback` | Scans your messages for corrections and confirmations. "Don't push to main without a PR" automatically drops confidence for that domain. "Yes, exactly" reinforces the pattern. No manual calibration file to manage. |
-| `sapience-goals` | Accepts fuzzy long-running objectives, decomposes them into concrete approaches, and delivers a weekly status update per goal. "Improve our OKR scoring rate" becomes a tracked initiative. |
+| `sapience-thinking` | Runs periodic isolated "thinking passes" every 15 minutes over your real session transcripts, memory, goals, and open hypotheses. Generates evidence-graded proposals — observations, suggested actions, audits, open questions — and also notices things *in passing* after substantial task turns. |
+| `sapience` | Routes proposals through autonomy tiers based on evidence, reversibility, and calibrated (decaying) confidence. Executes act-tier items in isolated sessions, investigates hunches read-only before surfacing them, keeps a hypothesis ledger, watches metrics you care about, and pushes what matters through your channel. Delivers a weekly digest. |
+| `sapience-feedback` | Scans your messages for corrections, confirmations, and method advice. "Don't push to main without a PR" automatically drops confidence for that domain. "Whenever you look at churn, segment by plan tier" becomes a standing analytical playbook. No manual calibration file to manage. |
+| `sapience-goals` | Accepts fuzzy long-running objectives, decomposes them into concrete approaches, attaches measurable key results, and delivers a weekly status update per goal — leading with the numbers when a metric is set. |
 
 Each plugin works standalone. Together, they compose into a coherent system.
 
@@ -111,7 +111,7 @@ Each plugin works standalone. When sapience is installed alongside thinking, thi
 
 ### 2. Start a session
 
-Everything runs automatically. The thinking plugin fires every 15 minutes during active hours (08:00–20:00 local by default). The first routing run baselines any existing passes rather than delivering them, so expect the first proposals roughly 30–45 minutes in. Deliveries are **next-turn injections into your main session** — they appear when you next take a turn, not as a push.
+Everything runs automatically. The thinking plugin fires every 15 minutes during active hours (08:00–20:00 local by default). The first routing run baselines any existing passes rather than delivering them, so expect the first proposals roughly 30–45 minutes in. Most deliveries are **next-turn injections into your main session** — they appear when you next take a turn. High-priority items, notable metric moves, and the weekly digest also **push** through your last active channel, within a daily budget.
 
 The first week is calibration. Proposals will arrive as `[SAPIENCE: CALIBRATE]` questions — the agent is learning what level of initiative you want for each type of action. Answer them and it calibrates. Ignore them and it stays conservative.
 
@@ -152,22 +152,28 @@ Full configuration reference — every key with its default — in [docs/configu
 
 | Marker | Means |
 |--------|-------|
-| `[SAPIENCE: ACT]` | Something was just done — brief notification |
+| `[SAPIENCE: ACT RESULT]` | An autonomous action just executed (or failed) — result and undo path |
 | `[SAPIENCE: PROPOSE]` | A proposal waiting for your yes/no |
 | `[SAPIENCE: ASK]` | One question needed before the agent proceeds |
 | `[SAPIENCE: EXPLORE]` | A problem surfaced with 2–3 options for you to choose from |
 | `[SAPIENCE: CALIBRATE]` | A new domain — agent checking what level of initiative you want |
-| `[SAPIENCE: WEEKLY DIGEST]` | Friday summary of what happened, what's pending, what's planned |
+| `[SAPIENCE: WATCH]` | A watched metric moved notably |
+| `[SAPIENCE: WEEKLY DIGEST]` | Friday summary of what happened, what's pending, what's planned — ends with one calibration question |
 | `[GOALS: DECOMPOSE]` | New goal detected — agent presenting approaches for you to choose from |
 | `[GOALS: WEEKLY STATUS]` | Monday goal check-in — what happened, what's blocked, what's next |
 
 **Giving feedback:**
 
-The feedback plugin captures your corrections and confirmations automatically. Just talk to the agent the way you would with a human:
+The feedback plugin captures your corrections, confirmations, and method advice automatically. Just talk to the agent the way you would with a human:
 
 - `"Don't update Salesforce records without asking"` → confidence drops for that domain
 - `"Good call, keep doing that"` → confidence increases
 - `"Just do it, you don't need to ask about GitHub actions"` → tier bumped toward Act
+- `"Whenever you look at churn, segment by plan tier"` → recorded as an analytical playbook every future thinking pass applies
+
+**Watching a metric:**
+
+Say `"keep an eye on daily signups"` — the agent calls `watch_metric` and the suite checks the number on a cadence, surfacing notable moves (percent delta vs baseline, or threshold crossings) and staying quiet otherwise. `/sapience watches` lists what's being watched.
 
 **Submitting a goal:**
 
@@ -183,9 +189,16 @@ The next `check_goals` cron run (within 15 minutes, during active hours) picks i
 
 ## Training the autonomy profile
 
-The first two weeks are the most important for calibration. Each `[SAPIENCE: CALIBRATE]` prompt you answer teaches the agent your preferences for that domain. After 3–5 calibrations per domain the agent stops asking and just acts at the calibrated tier.
+The first two weeks are the most important for calibration. Each `[SAPIENCE: CALIBRATE]` prompt you answer teaches the agent your preferences for that domain, and every reaction to a delivered proposal (recorded via `record_outcome`) moves confidence too. After 3–5 calibrations per domain the agent stops asking and just acts at the calibrated tier. Confidence that isn't reinforced decays with a 90-day half-life, so stale trust doesn't linger.
 
-To see the current calibration state:
+To see the current calibration state, use the chat command (it shows the decayed confidence routing actually uses, grouped by tier):
+
+```
+/sapience
+/sapience set <domain> <action_class> <act|propose|ask|explore>
+```
+
+Or read the raw file:
 
 ```bash
 cat <workspace>/sapience/calibration.json
@@ -217,7 +230,12 @@ All relative paths in plugin config resolve under the **agent workspace director
 | `<workspace>/sapience/events.jsonl` | Unified event log written by all plugins |
 | `<workspace>/sapience/dashboard.md` | Auto-generated dashboard: autonomy progression, heartbeat, recent activity |
 | `<workspace>/sapience/feedback.md` | Captured feedback signals |
-| `<workspace>/goals/goals.json` | All goals with status and progress |
+| `<workspace>/sapience/playbooks.json` | Analytical playbooks taught via method feedback |
+| `<workspace>/sapience/hypotheses.json` | Hypothesis ledger — open cases with sightings and evidence |
+| `<workspace>/sapience/watches.json` | Metric watches and their reading history |
+| `<workspace>/sapience/push-state.json` | Daily channel-push budget tracking |
+| `<workspace>/sapience/investigation-state.json` | Daily investigation budget tracking |
+| `<workspace>/goals/goals.json` | All goals with status, metrics, and progress |
 | `<workspace>/goals/inbox.md` | Where you (or scripts) write new goals |
 
 Large logs rotate automatically at 5 MB (see [docs/observability.md](docs/observability.md)). If a JSON state file is ever unparseable, it's quarantined to `<name>.corrupt-<timestamp>` and rebuilt — `openclaw sapience doctor` reports quarantined files.

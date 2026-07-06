@@ -8,6 +8,7 @@ The suite ships a diagnostic command that checks production reality — what the
 openclaw sapience doctor
 openclaw sapience doctor --fix    # apply the safe, auto-fixable findings
 openclaw sapience doctor --json   # machine-readable report
+openclaw sapience doctor --probe  # trigger one real thinking pass and verify it writes
 ```
 
 What it checks:
@@ -19,6 +20,13 @@ What it checks:
 - **VERSIONS** — skew between what the gateway is running and what's installed on disk (restart needed), stale legacy npm pins, and newer published versions.
 
 `--fix` applies only the safe fixes: setting the memory config values and registering missing cron jobs (with the same arguments as `install.sh`). Everything else it reports with instructions. Exit code is non-zero when errors remain, so it's scriptable.
+
+`--probe` goes beyond the static checks: it triggers one real `sapience-thinking` cron run (`openclaw cron run --wait`, up to ~3 minutes) and watches `log.md`/`proposals.jsonl` for writes. Verdicts:
+
+- **pass** — the run wrote output; tool exposure, prompts, and the pipeline path all work
+- **fail** — the run completed but nothing was written (the classic tools-not-granted signature, see below), or the run itself errored
+- **inconclusive** — the run completed but writes are suppressed outside active hours; re-run within the window
+- **blocked** — the plugin never initialized or the cron job isn't registered, so there's nothing to probe
 
 ---
 

@@ -27,9 +27,14 @@ Every key each plugin reads, with its default. Set overrides under `plugins.<plu
 | `delivery.heartbeatTrigger` | `true` | Standalone mode: inject high-priority proposals into the main session (ignored when the sapience router is active) |
 | `delivery.priorityThreshold` | `4` | Minimum priority (1–5) for standalone delivery |
 | `delivery.maxProposalsPerHeartbeat` | `3` | Cap on proposals per standalone delivery |
+| `noticing.enabled` | `true` | Post-task incidental noticing: watch live session transcripts and run a cheap side-pass after substantial turns |
+| `noticing.minTurnChars` | `1500` | Turns shorter than this (characters) are never noticed on |
+| `noticing.cooldownMinutes` | `15` | Minimum gap between noticing passes per session |
 | `learning.trackOutcomes` | `true` | Record each proposal in `outcomes.json` |
 | `learning.adjustPromptBasedOnSignal` | `true` | Feed signal-to-noise stats back into the thinking prompt |
 | `learning.bootstrapDays` | `14` | Days of data required before the signal report kicks in |
+
+Not configurable here: thinking passes read analytical playbooks from `<workspace>/sapience/playbooks.json` (a fixed path). The *write* side of that file is sapience-feedback's `playbooksPath` key.
 
 ## sapience
 
@@ -48,12 +53,28 @@ Every key each plugin reads, with its default. Set overrides under `plugins.<plu
 | `digest.enabled` | `true` | Deliver the weekly digest |
 | `digest.day` | `"friday"` | Digest day (weekday name) |
 | `digest.time` | `"17:00"` | Digest time, `HH:MM` — minutes are honored; fires on the first routing run at/after this, once per day |
+| `push.enabled` | `true` | Proactive channel push: wake the agent to deliver high-priority act/propose items through the last active channel instead of waiting for your next turn |
+| `push.maxPerDay` | `6` | Push budget per local day (the weekly digest always pushes and doesn't count) |
+| `push.minPriority` | `4` | Minimum priority (1–5) for an item to push |
+| `investigation.enabled` | `true` | Bounded read-only investigation of hunch-graded items before they surface |
+| `investigation.maxPerDay` | `3` | Investigation budget per local day |
+| `investigation.minPriority` | `3` | Minimum priority (1–5) for a hunch to be investigated |
+| `investigation.timeoutSec` | `120` | Timeout for one investigation subagent run |
+| `act.execute` | `true` | Execute act-tier items in isolated subagent sessions at routing time (falls back to legacy main-session injection when the subagent runtime is unavailable) |
+| `act.timeoutSec` | `300` | Timeout for one act execution |
+| `watch.maxChecksPerRun` | `2` | Cap on metric-watch checks per routing pass |
+| `watch.timeoutSec` | `120` | Timeout for one watch-check subagent run |
+| `domains` | `{}` | Extra domain taxonomy: `{"<regex>": "<slug>"}` patterns matched against proposal text, checked before the builtins (github, salesforce, posthog, lovable, slack, google-docs, slides, okr-system, linear, credentials) |
 | `output.calibrationPath` | `"sapience/calibration.json"` | Autonomy calibration profile |
 | `output.actionLogPath` | `"sapience/action-log.md"` | Prose log of Act-tier items |
 | `output.processedPassesPath` | `"sapience/processed-passes.json"` | Routed-pass tracking |
 | `output.eventsPath` | `"sapience/events.jsonl"` | Shared suite event log |
 | `output.dashboardPath` | `"sapience/dashboard.md"` | Auto-generated dashboard |
 | `output.goalsPath` | `"goals/goals.json"` | Goals store (read for the dashboard's goals summary) |
+| `output.pushStatePath` | `"sapience/push-state.json"` | Daily push budget tracking |
+| `output.investigationStatePath` | `"sapience/investigation-state.json"` | Daily investigation budget tracking |
+| `output.hypothesesPath` | `"sapience/hypotheses.json"` | Hypothesis ledger — open cases built from recurring hunches |
+| `output.watchesPath` | `"sapience/watches.json"` | Metric watches and their reading history |
 
 ## sapience-feedback
 
@@ -61,8 +82,10 @@ Every key each plugin reads, with its default. Set overrides under `plugins.<plu
 |-----|---------|-------------|
 | `logPath` | `"sapience/feedback.md"` | Feedback signal log |
 | `calibrationPath` | `"sapience/calibration.json"` | Calibration profile to update (shared with sapience) |
+| `playbooksPath` | `"sapience/playbooks.json"` | Where method feedback appends analytical playbooks (read by sapience-thinking) |
 | `eventsPath` | `"sapience/events.jsonl"` | Shared suite event log |
 | `memoryEnabled` | `true` | Write meta-pointer reminders for corrections via `api.memory.add` |
+| `domains` | `{}` | Extra domain taxonomy for the regex fallback: `{"<regex>": "<slug>"}`, checked before the builtins — same format as sapience's `domains` key |
 | `semanticDetection.enabled` | `true` | Use the LLM classifier; `false` falls back to regex-only matching |
 | `semanticDetection.minLength` | `8` | Messages shorter than this (characters) are never classified |
 | `semanticDetection.minConfidence` | `0.6` | Classifier signals below this confidence are dropped |

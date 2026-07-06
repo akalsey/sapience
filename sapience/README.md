@@ -15,13 +15,40 @@ The suite has four plugins that each work independently and compose into a whole
 
 `sapience-thinking` runs a thinking pass every 15 minutes and writes proposals to `proposals.jsonl`. `sapience` reads that sidecar, routes each proposal through an autonomy decision function, and delivers it to your main session at the right level:
 
-- **Act** — high-confidence, reversible, low-blast-radius → done immediately, brief notification
+- **Act** — high-confidence, reversible, low-blast-radius → executed autonomously, result reported
 - **Propose** — worth doing, needs your approval → surfaces it for a yes/no
 - **Ask** — agent can do it but needs one piece of information → asks exactly what's needed
 - **Explore** — the problem is real but the right path is unclear → presents 2–3 options with tradeoffs
 - **Learning** — new domain or low confidence → calibration question before acting
 
 The routing decision uses a calibration profile: per-domain, per-action-class entries with a confidence score. Until a domain is calibrated, everything goes through **Learning** mode and will ask you to confirm its choices before acting.
+
+Two hard gates sit on top of calibration:
+
+- **Evidence gates tiers.** Observations arrive with an evidence grade (`hunch`, `quick_check`, `replicated`). An unverified hunch never routes to act or propose, no matter how much confidence the domain has earned — it's capped at explore (and may get investigated first, below).
+- **Reversibility gates autonomy.** Only actions the thinking pass explicitly marked `reversible: true` can execute at the act tier. Unknown blast radius caps at propose.
+
+And trust doesn't linger: routing uses a **decayed view** of the calibration profile — confidence earned long ago and never reinforced decays toward the uncalibrated default with a 90-day half-life. The stored values are untouched; the decay is computed at routing time, so reinforcement history is never destroyed.
+
+### Investigation of hunches
+
+Before a hunch-graded item at or above `investigation.minPriority` surfaces, sapience can spend a bounded, read-only subagent run (at most three queries, `investigation.timeoutSec` cap, `investigation.maxPerDay` budget) testing whether the pattern holds. Supported hunches upgrade to `quick_check` — with the finding appended — and re-route; refuted ones are dropped (the `investigation_completed` event is the trace); inconclusive ones stay gated at explore.
+
+### The hypothesis ledger
+
+Hunches that don't clear the evidence bar don't evaporate. Every investigated-or-budget-blocked hunch becomes (or updates) a case in `<workspace>/sapience/hypotheses.json`: near-identical sightings merge into one evolving case file with a sighting count and an evidence trail of verdicts. Thinking passes see the open cases and re-test them opportunistically instead of re-alerting on every sighting.
+
+### Act-tier execution
+
+Act items run in isolated subagent sessions at routing time (`act.execute`, timeout `act.timeoutSec`). The execution session is told to prefer the most reversible path and to stop rather than push through anything riskier than described. Your main session then gets the **result** — what was done, with the undo path — not a request to do it. Failures are reported too, with a question about whether to try differently. Without the subagent runtime, sapience falls back to the legacy act injection into your main session.
+
+### Channel push
+
+Next-turn injection alone means the agent can never initiate contact. For initiative-worthy items — act/propose at or above `push.minPriority` — sapience requests a heartbeat targeting the last active channel, so the agent delivers as a real outbound message. Budgeted at `push.maxPerDay` per local day; the weekly digest always pushes. Notable watch readings and act results share the same budget.
+
+### Metric watches
+
+"Keep an eye on X" is a first-class primitive. The agent calls `watch_metric(name, query_hint, cadence_hours?, policy?, threshold?)` when you ask it to watch a number; `watch_remove(name)` stops. Each routing pass checks up to `watch.maxChecksPerRun` due watches with a bounded read-only fetch; the delta policy — `percent` (vs the recent baseline mean, default ±20%), `above`, `below`, or `always` — decides whether a reading is worth surfacing. Notable moves go to your main session (and push, budget permitting); steady readings stay in the event stream. Watches live in `<workspace>/sapience/watches.json`; list them with `/sapience watches`.
 
 ## Setup
 
@@ -73,6 +100,10 @@ openclaw plugins install npm:@akalsey/sapience-goals       # optional
 
 **`digest`** — Weekly summary of what was acted on, what's pending review, and what's planned. Delivered at the configured day and time.
 
+**`push` / `investigation` / `act` / `watch`** — budgets and timeouts for channel push, hunch investigation, act-tier execution, and metric watches (all on by default; see above).
+
+**`domains`** — extend the domain taxonomy with `{"<regex>": "<slug>"}` patterns, checked against proposal text before the builtins. Use the same key on `sapience-feedback` so feedback lands on the domains routing emits.
+
 **`activeHours`** — Invalid values (a start/end that isn't `HH:MM`, or a bad IANA timezone) don't disable the plugin: it falls back to the defaults and emits a `config_invalid` event. Overnight windows (start later than end, e.g. `22:00`–`06:00`) are supported.
 
 Full key-by-key reference: [docs/configuration.md](../docs/configuration.md).
@@ -89,6 +120,10 @@ Relative paths resolve under the agent workspace dir (`<workspace>/`), not `~/.o
 | `<workspace>/sapience/events.jsonl` | Unified event log (all suite plugins append here) |
 | `<workspace>/sapience/dashboard.md` | Auto-generated dashboard, regenerated every routing pass |
 | `<workspace>/sapience/digest-state.json` | Date the weekly digest last went out |
+| `<workspace>/sapience/hypotheses.json` | Hypothesis ledger — open cases with sightings and evidence trails |
+| `<workspace>/sapience/watches.json` | Metric watches and their reading history |
+| `<workspace>/sapience/push-state.json` | Daily channel-push budget tracking |
+| `<workspace>/sapience/investigation-state.json` | Daily investigation budget tracking |
 
 `action-log.md` rotates at 5 MB (newest 500 lines kept, previous contents in `action-log.md.old`); `events.jsonl` rotates to timestamped archives with only the newest two archives kept. If a JSON state file is corrupt, it's quarantined to `<name>.corrupt-<timestamp>` and rebuilt.
 
@@ -109,12 +144,24 @@ You respond to confirm or redirect. The calibration profile updates accordingly.
 | Event | Effect |
 |-------|--------|
 | You confirm the proposed approach ("yes, that's right") | Confidence +0.1 |
+| You act on or accept a delivered proposal (recorded via `record_outcome`) | Confidence +0.1 |
+| You reject a delivered proposal | Confidence −0.1 |
 | You correct the approach ("no, just do it") | Confidence −0.3, tier updated |
 | No feedback | Confidence unchanged |
 
-Confidence caps at 1.0 and floors at 0.0. A domain needs roughly 3–5 confirmations to reach the default threshold (0.4) from zero.
+Confidence caps at 1.0 and floors at 0.0. A domain needs roughly 3–5 confirmations to reach the default threshold (0.4) from zero — and confidence that isn't reinforced decays with a 90-day half-life in the routing view.
 
-### Reading the calibration profile
+### Reading and adjusting the profile: `/sapience`
+
+The `/sapience` chat command shows the profile grouped by tier, with the decayed confidence routing actually uses:
+
+```
+/sapience                                        # show the profile
+/sapience set <domain> <action_class> <tier>     # one-line tier override
+/sapience watches                                # list metric watches
+```
+
+The raw file is still plain JSON:
 
 ```bash
 cat <workspace>/sapience/calibration.json
@@ -143,13 +190,14 @@ Delete the entry from `calibration.json` to reset a domain to Learning mode.
 Once installed, the suite runs in the background. What you'll see in your sessions:
 
 - `[SAPIENCE: PROPOSE]` — a proposal needing your yes/no
-- `[SAPIENCE: ACT]` — notification of something just done
+- `[SAPIENCE: ACT RESULT]` — an autonomous action just executed (or failed); includes the undo path
 - `[SAPIENCE: ASK]` — a question needed before proceeding
 - `[SAPIENCE: EXPLORE]` — a problem with options for you to choose from
 - `[SAPIENCE: CALIBRATE]` — a calibration question for a new domain
+- `[SAPIENCE: WATCH]` — a watched metric moved notably
 - `[SAPIENCE: WEEKLY DIGEST]` — Friday summary of actions, pending items, and plans
 
-All deliveries are **next-turn injections into your main session** (session key `agent:<id>:main`): the routing cron enqueues them, and they appear the next time you take a turn — not as a push. If the injection fails, a `delivery_failed` event is recorded in `events.jsonl`.
+Most deliveries are **next-turn injections into your main session** (session key `agent:<id>:main`): the routing cron enqueues them, and they appear the next time you take a turn. High-priority act/propose items, notable watch moves, and the weekly digest additionally request a **channel push** — a heartbeat targeting your last active channel, so they arrive as real outbound messages within the daily `push` budget. If an injection fails, a `delivery_failed` event is recorded in `events.jsonl`.
 
 ### Weekly digest
 
@@ -157,6 +205,8 @@ Every Friday at 5pm (or your configured `digest.day`/`digest.time` — minutes a
 - What was acted on this week
 - Proposals still waiting on your input
 - What's planned for next week
+
+It ends with one calibration question drawn from the week's autonomous actions — "I did X without asking 4 times this week; keep it that way, or check in first?" — skipped when nothing ran autonomously.
 
 The digest fires on the first routing run at or after the configured time on the configured day, at most once per day (tracked in `<workspace>/sapience/digest-state.json`). If a slot was missed — say the gateway was down at 17:00 — it catches up later the same day.
 
@@ -166,6 +216,7 @@ Start with the diagnostic command — it checks plugins, crons (including tool g
 
 ```bash
 openclaw sapience doctor
+openclaw sapience doctor --probe   # trigger one real thinking pass and verify it writes
 ```
 
 See [docs/troubleshooting.md](../docs/troubleshooting.md) for the full guide.

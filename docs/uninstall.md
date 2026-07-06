@@ -19,7 +19,7 @@ openclaw cron delete --name sapience-routing
 openclaw cron delete --name sapience-goals-check
 ```
 
-If you installed for multiple agents, the jobs are suffixed `<base>-<agent>` (e.g. `sapience-thinking-research`) — list them and delete each:
+Accepted audit proposals register their own recurring jobs named `sapience-audit-<slug>` — delete those too. If you installed for multiple agents, the jobs are suffixed `<base>-<agent>` (e.g. `sapience-thinking-research`). List everything suite-created and delete each:
 
 ```bash
 openclaw cron list --json | jq -r '.[].name' | grep '^sapience'

@@ -89,6 +89,10 @@ Every event has `ts` (ISO-8601), `plugin` (`thinking` | `sapience` | `feedback` 
 **sapience-thinking** (`plugin: "thinking"`):
 - `pass_completed` — a thinking pass finished; fields: `pass_id`, `observations`, `actions`, `audits`, `questions`, `nothing_to_report`
 - `pass_skipped` — pass did not run; field: `reason` (`outside_hours` or `already_running`). `outside_hours` is logged once on the transition out of hours, not every 15 minutes
+- `proposals_deduped` — near-duplicates of proposals from the last 14 days were dropped before routing; fields: `pass_id`, `dropped`
+- `outcome_recorded` — the agent recorded your reaction to a delivered proposal via `record_outcome`; fields: `proposal_id`, `outcome` (`acted_on`/`accepted`/`rejected`/`acknowledged`), `domain`, `action_class`
+- `audit_scheduled` / `audit_schedule_failed` — an accepted audit proposal was (or couldn't be) registered as a recurring `sapience-audit-<slug>` cron job; fields: `cron`, plus `reason` on failure
+- `noticed` — post-task noticing found incidental observations in a live session; fields: `session`, `observations`
 - `delivery_failed` — standalone-mode injection into the main session failed; field: `reason`
 - `config_invalid` — invalid `activeHours` config; running on defaults; fields: `field`, `errors`, `using`
 
@@ -97,13 +101,20 @@ Every event has `ts` (ISO-8601), `plugin` (`thinking` | `sapience` | `feedback` 
 - `routing_skipped` — routing did nothing; field: `reason` (`outside_hours` [logged once per transition], `no_new_passes`, or `already_running`)
 - `calibration_change` — a calibration entry was created or changed; fields: `domain`, `action_class`, `old_confidence`, `new_confidence`, `old_tier`, `new_tier`, `source` (`new_entry` when routing first sees a domain)
 - `action_logged` — an act-tier action was taken autonomously; fields: `domain`, `action_class`, `confidence`
+- `act_executed` / `act_failed` — an act-tier item finished (or failed) executing in its isolated subagent session; fields: `proposal_id`, `domain`, `report`
+- `investigation_completed` — a hunch got its bounded read-only investigation; fields: `proposal_id`, `domain`, `verdict` (`supported`/`refuted`/`inconclusive`)
+- `push_requested` — a high-priority item requested a channel push (heartbeat to the last active channel); fields: `tier`, `domain`, `priority`, `requested`
+- `watch_added` / `watch_removed` — a metric watch was created or removed; field: `watch`
+- `watch_checked` — a due watch was checked; fields: `watch`, `value`, `notable`
+- `watch_check_failed` — the watch's value couldn't be fetched (cadence still advances); field: `watch`
 - `digest_delivered` — weekly digest was queued for the next main-session turn
-- `delivery_failed` — a tier prompt or the digest could not be injected; fields: `reason`, plus `tier`/`domain` or `what: "digest"`
+- `delivery_failed` — a tier prompt, the digest, or a watch alert could not be injected; fields: `reason`, plus `tier`/`domain`, `what: "digest"`, or `what: "watch"`
 - `config_invalid` — invalid `activeHours` config; running on defaults
 
 **sapience-feedback** (`plugin: "feedback"`):
 - `signal_detected` — feedback signal captured; fields: `signal_type`, `domain`, `action_class`, `source` (`llm`, `regex`, or `manual`)
 - `calibration_change` — the signal was applied to the profile; same fields as sapience's event, with `source` `feedback` (existing entry updated) or `feedback_new_entry` (feedback on an unknown domain seeded a new entry — orphaned signals are no longer dropped). The `plugin` field distinguishes these from sapience's own calibration events
+- `playbook_added` / `playbook_duplicate` — a `method` signal appended a new analytical playbook (or matched an existing one); fields: `domain`, `source`
 - `memory_write_failed` — the meta-pointer write via `api.memory.add` failed; fields: `domain`, `reason`
 
 **sapience-goals** (`plugin: "goals"`):
@@ -111,6 +122,7 @@ Every event has `ts` (ISO-8601), `plugin` (`thinking` | `sapience` | `feedback` 
 - `goal_activated` — an approach was selected (`goal_select_approach`); field: `goal_id`
 - `goal_status_changed` — status transition via `goal_update`; fields: `goal_id`, `status`
 - `goal_progress` — progress note recorded; field: `goal_id`
+- `goal_metric_set` — a measurable key result was attached via `goal_set_metric`; fields: `goal_id`, `metric`
 - `goal_blocked` — blocker recorded; field: `goal_id`
 - `status_delivered` — weekly status queued for a goal; field: `goal_id`
 - `delivery_failed` — a decomposition or weekly-status injection failed; fields: `what` (`decomposition` or `weekly_status`), `goal_id`, `reason`. Failed weekly statuses are retried next run
