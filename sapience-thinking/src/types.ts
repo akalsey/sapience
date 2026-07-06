@@ -9,6 +9,11 @@ export const ObservationSchema = Type.Object({
   text: Type.String(),
   evidence: Type.String(),
   priority: PrioritySchema,
+  // How solid the evidence is: an unverified pattern-suspicion is a "hunch"
+  // and gets gated (and possibly investigated) downstream.
+  evidence_grade: Type.Optional(Type.Union([
+    Type.Literal("hunch"), Type.Literal("quick_check"), Type.Literal("replicated"),
+  ])),
 });
 
 export const ProposedActionSchema = Type.Object({

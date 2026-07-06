@@ -20,6 +20,7 @@ import { generateDashboard } from "./dashboard.js";
 import { writeStatusArtifact, resolvePluginVersion } from "./status-artifact.js";
 import { enqueueMainSessionInjection } from "./main-session.js";
 import { requestChannelPush } from "./push.js";
+import { investigateHunches } from "./investigation.js";
 import { registerSapienceDoctorCli } from "./doctor/cli.js";
 
 function mergeConfig(raw: Record<string, unknown>, workspaceDir: string): SapienceConfig {
@@ -153,11 +154,15 @@ export default definePluginEntry({
             for (const pass of newPasses) {
               const items = proposalSetToItems(pass);
               const routed = items.map(item => routeItem(item, workingProfile, config));
+              // Hunches worth surfacing get a bounded read-only check first;
+              // supported ones upgrade and re-route, refuted ones drop.
+              const investigated = await investigateHunches(routed, api, config,
+                (item) => routeItem(item, workingProfile, config));
 
-              await deliverItems(routed, api, config);
+              await deliverItems(investigated, api, config);
               updatedProcessed = await markPassProcessed(pass.pass_id, config.output.processedPassesPath, updatedProcessed);
 
-              for (const item of routed) {
+              for (const item of investigated) {
                 totalItems++;
                 byTier[item.tier] = (byTier[item.tier] ?? 0) + 1;
                 const exists = workingProfile.find(e => e.domain === item.domain && e.action_class === item.action_class);

@@ -7,7 +7,7 @@ export interface ProposalSet {
   timestamp: string;
   nothing_to_report: boolean;
   summary: string;
-  observations: Array<{ id: string; text: string; evidence: string; priority: number }>;
+  observations: Array<{ id: string; text: string; evidence: string; priority: number; evidence_grade?: "hunch" | "quick_check" | "replicated" }>;
   proposed_actions: Array<{ id: string; text: string; rationale: string; estimated_effort: string; priority: number }>;
   proposed_audits: Array<{ id: string; domain: string; rationale: string; priority: number }>;
   open_questions: Array<{ id: string; text: string; blocking_what: string }>;
@@ -38,7 +38,7 @@ export function proposalSetToItems(raw: ProposalSet): SapienceItem[] {
 
   for (const obs of raw.observations) {
     const domain = extractDomain(obs.text + " " + obs.evidence);
-    items.push({ id: obs.id, type: "observation", text: obs.text, domain, action_class: "observation", priority: obs.priority, pass_id: raw.pass_id, pass_timestamp: raw.timestamp });
+    items.push({ id: obs.id, type: "observation", text: obs.text, domain, action_class: "observation", priority: obs.priority, pass_id: raw.pass_id, pass_timestamp: raw.timestamp, ...(obs.evidence_grade ? { evidence_grade: obs.evidence_grade } : {}) });
   }
   for (const action of raw.proposed_actions) {
     const domain = extractDomain(action.text + " " + action.rationale);

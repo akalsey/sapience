@@ -23,6 +23,7 @@ export interface SapienceItem {
   priority: number;
   pass_id: string;
   pass_timestamp: string;
+  evidence_grade?: "hunch" | "quick_check" | "replicated";
 }
 
 export interface RoutedItem extends SapienceItem {
@@ -47,6 +48,8 @@ export interface SapienceConfig {
   // Proactive channel push for initiative-worthy items (act/propose at or
   // above minPriority), budgeted per local day.
   push: { enabled: boolean; maxPerDay: number; minPriority: number };
+  // Bounded read-only follow-up on hunch-graded items, budgeted per local day.
+  investigation: { enabled: boolean; maxPerDay: number; minPriority: number; timeoutSec: number };
   output: {
     calibrationPath: string;
     actionLogPath: string;
@@ -55,6 +58,7 @@ export interface SapienceConfig {
     dashboardPath: string;
     goalsPath: string;
     pushStatePath: string;
+    investigationStatePath: string;
   };
 }
 
@@ -75,6 +79,7 @@ export const DEFAULT_CONFIG: SapienceConfig = {
   },
   digest: { enabled: true, day: "friday", time: "17:00" },
   push: { enabled: true, maxPerDay: 6, minPriority: 4 },
+  investigation: { enabled: true, maxPerDay: 3, minPriority: 3, timeoutSec: 120 },
   output: {
     calibrationPath: "sapience/calibration.json",
     actionLogPath: "sapience/action-log.md",
@@ -83,5 +88,6 @@ export const DEFAULT_CONFIG: SapienceConfig = {
     dashboardPath: "sapience/dashboard.md",
     goalsPath: "goals/goals.json",
     pushStatePath: "sapience/push-state.json",
+    investigationStatePath: "sapience/investigation-state.json",
   },
 };

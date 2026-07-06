@@ -46,3 +46,33 @@ describe("parseProposals", () => {
     expect(() => parseProposals(bad)).toThrow(ParseError);
   });
 });
+
+describe("evidence grading", () => {
+  const base = {
+    pass_id: "p1", timestamp: "2026-07-05T00:00:00Z", nothing_to_report: false, summary: "s",
+    proposed_actions: [], proposed_audits: [], open_questions: [],
+  };
+
+  it("accepts a graded observation", () => {
+    const set = parseProposals({
+      ...base,
+      observations: [{ id: "o1", text: "spend velocity decays before churn", evidence: "one case", priority: 3, evidence_grade: "hunch" }],
+    });
+    expect(set.observations[0]!.evidence_grade).toBe("hunch");
+  });
+
+  it("rejects an invalid grade", () => {
+    expect(() => parseProposals({
+      ...base,
+      observations: [{ id: "o1", text: "x", evidence: "y", priority: 3, evidence_grade: "gut_feeling" }],
+    })).toThrow();
+  });
+
+  it("keeps ungraded observations valid (grade optional)", () => {
+    const set = parseProposals({
+      ...base,
+      observations: [{ id: "o1", text: "x", evidence: "y", priority: 3 }],
+    });
+    expect(set.observations[0]!.evidence_grade).toBeUndefined();
+  });
+});

@@ -24,5 +24,11 @@ export function routeItem(
     if (tierIdx !== -1 && floorIdx !== -1 && tierIdx < floorIdx) tier = floor;
   }
 
+  // Evidence gates initiative: an unverified hunch never routes to act or
+  // propose, no matter how much confidence the domain has earned.
+  if (item.evidence_grade === "hunch" && (tier === "act" || tier === "propose")) {
+    tier = "explore";
+  }
+
   return { ...item, tier, confidence };
 }

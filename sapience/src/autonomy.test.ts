@@ -45,3 +45,32 @@ describe("routeItem", () => {
     expect(routed.tier).toBe(DEFAULT_CONFIG.autonomy.defaultTier);
   });
 });
+
+describe("evidence gating", () => {
+  // An unverified hunch must never route to act/propose no matter how much
+  // confidence the domain has earned — weak evidence caps initiative.
+  it("caps hunch-graded items at explore even in a high-confidence domain", () => {
+    const profile = [
+      { domain: "posthog", action_class: "posthog/action", tier: "act" as const, confidence: 0.95, confirmed_count: 10, corrected_count: 0, last_calibrated: "2026-01-01T00:00:00Z", notes: "" },
+    ];
+    const item = {
+      id: "i1", type: "action" as const, text: "spend velocity predicts churn — act on it",
+      domain: "posthog", action_class: "posthog/action", priority: 4,
+      pass_id: "p", pass_timestamp: "t", evidence_grade: "hunch" as const,
+    };
+    const routed = routeItem(item, profile, DEFAULT_CONFIG);
+    expect(routed.tier).toBe("explore");
+  });
+
+  it("leaves quick_check and ungraded items on their earned tier", () => {
+    const profile = [
+      { domain: "posthog", action_class: "posthog/action", tier: "act" as const, confidence: 0.95, confirmed_count: 10, corrected_count: 0, last_calibrated: "2026-01-01T00:00:00Z", notes: "" },
+    ];
+    const base = {
+      id: "i1", type: "action" as const, text: "x", domain: "posthog", action_class: "posthog/action",
+      priority: 4, pass_id: "p", pass_timestamp: "t",
+    };
+    expect(routeItem({ ...base, evidence_grade: "quick_check" as const }, profile, DEFAULT_CONFIG).tier).toBe("act");
+    expect(routeItem(base, profile, DEFAULT_CONFIG).tier).toBe("act");
+  });
+});
