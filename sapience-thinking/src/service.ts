@@ -4,7 +4,7 @@ import { Type } from "@sinclair/typebox";
 
 import { buildContext, resolveContextDirs, getLastThreePasses } from "./context-builder.js";
 import { buildPrompt } from "./prompt-builder.js";
-import { parseProposals, ParseError } from "./output-parser.js";
+import { normalizeProposals, ParseError } from "./output-parser.js";
 import { appendPass, appendError, appendSkipped, appendStructuredProposals } from "./log-writer.js";
 import { appendEvent } from "./events.js";
 import { loadOutcomes, saveOutcomes, addProposals, expireOldProposals, purgeResolvedOutcomes } from "./outcome-tracker.js";
@@ -222,7 +222,13 @@ export default definePluginEntry({
       parameters: Type.Object({ proposals: Type.Unknown() }),
       async execute(_id: any, params: any) {
         try {
-          const raw = parseProposals(params.proposals);
+          // Tolerant normalization: the model is sloppy about the envelope
+          // (missing pass_id/timestamp/estimated_effort, half-formed items).
+          // Recover what's usable instead of rejecting the whole pass.
+          const { proposals: raw, dropped: coerced } = normalizeProposals(params.proposals);
+          if (coerced > 0) {
+            await appendEvent(config.output.eventsPath, { plugin: "thinking", type: "proposals_coerced", pass_id: raw.pass_id, dropped_items: coerced });
+          }
           // Drop near-duplicates of recent history (pending, dismissed, or
           // expired within the window) before anything is recorded or routed.
           const history = await loadOutcomes(config.output.trackerPath);

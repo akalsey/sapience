@@ -23,13 +23,25 @@ Consider what has been happening recently. Look for:
 - If nothing is worth reporting, set nothing_to_report: true and explain why in the summary field.
 - Don't repeat proposals from recent passes unless circumstances have changed.
 - Priority 5 means "this likely needs human attention today." Use sparingly.
-- All proposal IDs must be UUIDs (use crypto.randomUUID() format).
+- Each item needs its own "id" (a UUID). pass_id and timestamp are added by the system — do not include them.
+- Every proposed_action MUST include an "estimated_effort" of exactly "small", "medium", or "large".
 - Mark proposed_actions with reversible: true only when the action can be cleanly undone (archive vs delete, draft vs send). Unknown or irreversible actions are never executed autonomously.
 - Grade observation evidence with evidence_grade: "hunch" for an unverified pattern-suspicion (a single case that might generalize, an untested correlation), "quick_check" when you verified it against the data at hand, "replicated" when it has held repeatedly. When in doubt, "hunch" — weak evidence framed as fact erodes trust.
 
 ## Output
 
-Call record_thinking_output() with valid JSON matching the ProposalSet schema. No preamble, no explanation outside the tool call.`;
+Call record_thinking_output() with a JSON object of EXACTLY this shape. All four arrays must be present (use [] when empty):
+
+{
+  "observations": [{"id": "<uuid>", "text": "...", "evidence": "...", "priority": 3, "evidence_grade": "hunch"}],
+  "proposed_actions": [{"id": "<uuid>", "text": "...", "rationale": "...", "estimated_effort": "medium", "priority": 3, "reversible": false}],
+  "proposed_audits": [{"id": "<uuid>", "domain": "...", "rationale": "...", "priority": 2}],
+  "open_questions": [{"id": "<uuid>", "text": "...", "blocking_what": "..."}],
+  "nothing_to_report": false,
+  "summary": "one or two sentences"
+}
+
+No preamble, no text outside the tool call.`;
 
 export const HEARTBEAT_PROMPT = `A scheduled thinking pass produced high-priority proposals worth surfacing:
 
