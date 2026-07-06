@@ -6,6 +6,7 @@ import { applyFeedbackToProfile } from "./calibration-bridge.js";
 import { appendEvent } from "./events.js";
 import { generateId } from "./utils.js";
 import { rotateKeepingTail } from "./rotate.js";
+import { addPlaybook } from "./playbooks.js";
 
 export function shouldClassify(text: string, config: FeedbackConfig): boolean {
   const trimmed = text.trim();
@@ -52,6 +53,20 @@ export async function persistSignal(signal: DetectedSignal, ctx: PersistContext)
 
   await appendFeedback(entry, ctx.config.logPath);
   await rotateKeepingTail(ctx.config.logPath).catch(() => {});
+
+  // Method feedback teaches HOW to analyze, not how much autonomy to take —
+  // it amends the shared playbook library instead of moving confidence.
+  if (signal.type === "method") {
+    const playbook = await addPlaybook(ctx.config.playbooksPath, signal.raw_text);
+    await appendEvent(ctx.config.eventsPath, {
+      plugin: "feedback",
+      type: playbook ? "playbook_added" : "playbook_duplicate",
+      domain: signal.domain,
+      source: signal.source ?? "regex",
+    });
+    return entry;
+  }
+
   const result = await applyFeedbackToProfile(signal, ctx.config.calibrationPath);
 
   if (metaPointer && ctx.config.memoryEnabled && ctx.memoryAdd) {

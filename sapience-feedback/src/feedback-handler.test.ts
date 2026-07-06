@@ -208,3 +208,35 @@ describe("persistSignal event emission", () => {
     expect(events.map((e: any) => e.type)).toEqual(["signal_detected"]);
   });
 });
+
+describe("method feedback persistence", () => {
+  let dir: string;
+  const baseConfig: FeedbackConfig = { ...DEFAULT_CONFIG };
+  beforeEach(async () => { dir = await mkdtemp(join(tmpdir(), "feedback-method-")); });
+  afterEach(async () => { await rm(dir, { recursive: true, force: true }); });
+
+  it("adds a playbook and emits playbook_added, leaving calibration untouched", async () => {
+    const eventsPath = join(dir, "events.jsonl");
+    await writeFile(join(dir, "calibration.json"), JSON.stringify([
+      { domain: "general", action_class: "general", tier: "propose", confidence: 0.6, confirmed_count: 0, corrected_count: 0, last_calibrated: "2026-01-01T00:00:00Z", notes: "" },
+    ]), "utf-8");
+    const config: FeedbackConfig = {
+      ...baseConfig, eventsPath,
+      calibrationPath: join(dir, "calibration.json"),
+      logPath: join(dir, "feedback.md"),
+      playbooksPath: join(dir, "playbooks.json"),
+    };
+    const signal: DetectedSignal = { type: "method", domain: "general", action_class: "general", message: "whenever you look at churn, segment by plan tier", raw_text: "whenever you look at churn, segment by plan tier", source: "regex" };
+    await persistSignal(signal, { config });
+
+    const playbooks = JSON.parse(await readFile(join(dir, "playbooks.json"), "utf-8"));
+    expect(playbooks).toHaveLength(1);
+    expect(playbooks[0].instruction).toContain("segment by plan tier");
+
+    const events = (await readFile(eventsPath, "utf-8")).trim().split("\n").map(l => JSON.parse(l));
+    expect(events.map((e: any) => e.type)).toContain("playbook_added");
+
+    const profile = JSON.parse(await readFile(join(dir, "calibration.json"), "utf-8"));
+    expect(profile[0].confidence).toBe(0.6);
+  });
+});

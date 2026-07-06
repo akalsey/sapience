@@ -45,3 +45,24 @@ describe("parseMessage", () => {
     expect(signals[0]!.domain).toBe("github");
   });
 });
+
+describe("method feedback", () => {
+  // "Whenever you look at churn, segment by plan tier" isn't a correction or a
+  // confirmation — it's teaching the agent HOW to analyze. It becomes a
+  // playbook, not a confidence change.
+  it("detects 'whenever you X' methodology teaching", () => {
+    const signals = parseMessage("whenever you look at churn, segment by plan tier");
+    expect(signals).toHaveLength(1);
+    expect(signals[0]!.type).toBe("method");
+  });
+
+  it("detects 'always check/segment/decompose' teaching", () => {
+    const signals = parseMessage("always check for outliers before reporting an average");
+    expect(signals[0]!.type).toBe("method");
+  });
+
+  it("does not flag ordinary corrections as method feedback", () => {
+    const signals = parseMessage("don't push to github without asking");
+    expect(signals.every((s) => s.type !== "method")).toBe(true);
+  });
+});

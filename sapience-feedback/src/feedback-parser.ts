@@ -23,6 +23,15 @@ const TIER_DOWN_PATTERNS: RegExp[] = [
   /\bnext\s+time\s+(check|ask|confirm)\b/i,
 ];
 
+// Methodology teaching — "whenever you look at X, do Y" / "always segment by Z".
+// Checked before corrections: these amend the analytical playbooks rather than
+// moving autonomy confidence.
+const METHOD_PATTERNS: RegExp[] = [
+  /\bwhenever\s+you\s+(look|check|analy[zs]e|pull|review|report|examine)\b/i,
+  /\balways\s+(check|segment|decompose|break\s+down|compare|normali[zs]e|exclude|include)\b/i,
+  /\bnext\s+time\s+(segment|decompose|break\s+it\s+down|normali[zs]e)\b/i,
+];
+
 const CONFIRMATION_PATTERNS: RegExp[] = [
   /\byes[\s,]+exactly\b/i,
   /\bgood\s+call\b/i,
@@ -52,6 +61,13 @@ function extractDomain(text: string): string {
 export function parseMessage(text: string): DetectedSignal[] {
   const signals: DetectedSignal[] = [];
   const domain = extractDomain(text);
+
+  for (const pattern of METHOD_PATTERNS) {
+    if (pattern.test(text)) {
+      signals.push({ type: "method", domain, action_class: "general", message: text, raw_text: text });
+      return signals;
+    }
+  }
 
   for (const pattern of TIER_UP_PATTERNS) {
     if (pattern.test(text)) {

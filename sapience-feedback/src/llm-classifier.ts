@@ -1,11 +1,11 @@
 import type { DetectedSignal, FeedbackSignalType, LlmClient, LlmCompleteMessage } from "./types.js";
 
-const VALID_TYPES: ReadonlySet<FeedbackSignalType> = new Set(["correction", "confirmation", "tier_adjustment"]);
+const VALID_TYPES: ReadonlySet<FeedbackSignalType> = new Set(["correction", "confirmation", "tier_adjustment", "method"]);
 const VALID_TIERS = new Set(["act", "propose", "ask", "explore"]);
 
 const SYSTEM_PROMPT = `You analyze ONE chat message a developer sent to their AI coding agent. Decide whether it contains behavioral feedback the agent should learn from.
 
-Three signal types:
+Four signal types:
 
 1. "correction" — the user is correcting the agent, pointing out a mistake, redirecting an approach, expressing frustration with a recent action, or telling it to use a different tool/source. This includes leading questions like "did you check X first?" or "is there something wrong with X?" — these are corrections phrased as rhetorical questions.
 
@@ -15,12 +15,14 @@ Three signal types:
    - suggested_tier "act": user wants less asking ("just do it", "stop asking", "go ahead without me")
    - suggested_tier "ask": user wants more checking ("always ask first", "never do that without checking", "check X before doing Y")
 
+4. "method" — the user is teaching the agent HOW to analyze or check something, as a standing rule rather than a one-off correction: "whenever you look at churn, segment by plan tier", "always check for outliers before reporting an average", "compare against the same weekday when you report metrics". These become analytical playbooks.
+
 A message is NOT feedback if it is: a fresh task request, a technical question about code or systems, a code snippet, conversational filler, or status unrelated to the agent's behavior.
 
 When unsure, prefer empty output — false positives are worse than misses.
 
 For each detected signal extract:
-- "type": one of "correction" | "confirmation" | "tier_adjustment"
+- "type": one of "correction" | "confirmation" | "tier_adjustment" | "method"
 - "domain": short kebab-case slug for the subject area. Use what fits: "github", "credentials", "okr-system", "salesforce", "slack", "slides", "linear", "posthog", or invent a clear one. Use "general" only if nothing specific applies.
 - "action_class": short slug; "general" if nothing more specific
 - "suggested_tier": "act" | "propose" | "ask" | "explore" — only set for tier_adjustment, otherwise null
@@ -48,6 +50,9 @@ Response: {"signals":[{"type":"correction","domain":"credentials","action_class"
 
 Message: "yes that's exactly what I wanted, keep doing that"
 Response: {"signals":[{"type":"confirmation","domain":"general","action_class":"general","suggested_tier":null,"confidence":0.95}]}
+
+Message: "whenever you report on usage, break it out by plan tier first"
+Response: {"signals":[{"type":"method","domain":"general","action_class":"general","suggested_tier":null,"confidence":0.9}]}
 
 Message: "what does this regex match"
 Response: {"signals":[]}

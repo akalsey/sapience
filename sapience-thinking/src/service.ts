@@ -20,6 +20,7 @@ import { rotateKeepingTail } from "./rotate.js";
 import { logSkipOnce, clearSkipState } from "./skip-log.js";
 import { recordOutcome, RECORDABLE_OUTCOMES, type RecordableOutcome } from "./outcome-recorder.js";
 import { dedupeProposals } from "./dedup.js";
+import { loadPlaybooks } from "./playbooks.js";
 
 function mergeConfig(raw: Record<string, unknown>, workspaceDir: string): PluginConfig {
   return {
@@ -103,14 +104,15 @@ export default definePluginEntry({
           return { content: [{ type: "text", text: JSON.stringify({ status: "skip", reason: "pass_already_running" }) }] };
         }
         try {
-          const [bundle, recentPasses, outcomes] = await Promise.all([
+          const [bundle, recentPasses, outcomes, playbooks] = await Promise.all([
             buildContext(config, api, agentId, workspaceDir),
             getLastThreePasses(config.output.logPath),
             loadOutcomes(config.output.trackerPath),
+            loadPlaybooks(join(workspaceDir, "sapience", "playbooks.json")),
           ]);
           bundle.recentPasses = recentPasses;
           const signal = config.learning.adjustPromptBasedOnSignal ? computeSignal(outcomes, config) : null;
-          const prompt = await buildPrompt(bundle, signal);
+          const prompt = buildPrompt(bundle, signal, playbooks);
           return { content: [{ type: "text", text: prompt }] };
         } catch (err) {
           await releaseLock(lockFile);

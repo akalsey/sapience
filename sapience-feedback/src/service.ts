@@ -12,6 +12,7 @@ function mergeConfig(raw: Record<string, unknown>, workspaceDir: string): Feedba
     ...(raw as Partial<FeedbackConfig>),
     logPath: resolveDataPath((raw as any).logPath, workspaceDir, DEFAULT_CONFIG.logPath),
     calibrationPath: resolveDataPath((raw as any).calibrationPath, workspaceDir, DEFAULT_CONFIG.calibrationPath),
+    playbooksPath: resolveDataPath((raw as any).playbooksPath, workspaceDir, DEFAULT_CONFIG.playbooksPath),
     eventsPath: resolveDataPath((raw as any).eventsPath, workspaceDir, DEFAULT_CONFIG.eventsPath),
     semanticDetection: { ...DEFAULT_CONFIG.semanticDetection, ...rawSemantic },
   };

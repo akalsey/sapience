@@ -1,4 +1,4 @@
-export type FeedbackSignalType = "correction" | "confirmation" | "tier_adjustment";
+export type FeedbackSignalType = "correction" | "confirmation" | "tier_adjustment" | "method";
 
 export interface DetectedSignal {
   type: FeedbackSignalType;
@@ -27,6 +27,7 @@ export interface SemanticDetectionConfig {
 export interface FeedbackConfig {
   logPath: string;
   calibrationPath: string;
+  playbooksPath: string;
   eventsPath: string;
   memoryEnabled: boolean;
   semanticDetection: SemanticDetectionConfig;
@@ -35,6 +36,7 @@ export interface FeedbackConfig {
 export const DEFAULT_CONFIG: FeedbackConfig = {
   logPath: "sapience/feedback.md",
   calibrationPath: "sapience/calibration.json",
+  playbooksPath: "sapience/playbooks.json",
   eventsPath: "sapience/events.jsonl",
   memoryEnabled: true,
   semanticDetection: {

@@ -78,3 +78,17 @@ describe("buildHeartbeatPrompt", () => {
     expect(prompt).toContain("SILENT_REPLY_TOKEN");
   });
 });
+
+describe("playbooks section", () => {
+  it("renders analytical playbooks when provided", async () => {
+    const prompt = buildPrompt(bundle, null, [
+      { id: "x", title: "X", instruction: "When an aggregate metric moved, decompose before reporting." },
+    ]);
+    expect(prompt).toContain("## Analytical Playbooks");
+    expect(prompt).toContain("decompose before reporting");
+  });
+
+  it("omits the section without playbooks", async () => {
+    expect(buildPrompt(bundle, null)).not.toContain("## Analytical Playbooks");
+  });
+});

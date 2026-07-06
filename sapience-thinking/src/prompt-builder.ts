@@ -1,5 +1,6 @@
 import type { ContextBundle, SignalReport } from "./types.js";
 import { THINKING_PROMPT, HEARTBEAT_PROMPT } from "./prompts.js";
+import { renderPlaybooks, type Playbook } from "./playbooks.js";
 
 function pct(n: number, total: number): string {
   return total === 0 ? "0%" : `${Math.round((n / total) * 100)}%`;
@@ -18,10 +19,20 @@ function formatSignal(signal: SignalReport): string {
   ].join("\n");
 }
 
-export function buildPrompt(bundle: ContextBundle, signal: SignalReport | null): string {
+export function buildPrompt(bundle: ContextBundle, signal: SignalReport | null, playbooks?: Playbook[]): string {
   const sections: string[] = [THINKING_PROMPT];
 
   sections.push(["## Recent Activity Context", "", bundle.recentActivity].join("\n"));
+
+  if (playbooks && playbooks.length > 0) {
+    sections.push([
+      "## Analytical Playbooks",
+      "",
+      "Apply these moves whenever the data in front of you makes them relevant:",
+      "",
+      renderPlaybooks(playbooks),
+    ].join("\n"));
+  }
 
   if (bundle.activeGoals) {
     sections.push([
