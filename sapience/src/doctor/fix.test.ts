@@ -16,15 +16,19 @@ const report: DoctorReport = {
       { id: "memory:wiki", severity: "warn", message: "not installed",
         fix: { autofixable: false, kind: "config-set", description: "install memory-wiki" } }, // not autofixable
     ] },
+    { title: "VERSIONS", findings: [
+      { id: "version:sapience-thinking", severity: "warn", message: "v0.4.0 installed, v0.4.1 published",
+        fix: { autofixable: true, kind: "plugin-update", description: "update sapience-thinking to v0.4.1", payload: { pluginId: "sapience-thinking" } } },
+    ] },
   ],
-  summary: { ok: 0, warn: 2, error: 2 },
+  summary: { ok: 0, warn: 3, error: 2 },
   exitCode: 1,
 };
 
 describe("planFixes", () => {
   it("selects only autofixable findings that carry a payload", () => {
     const plan = planFixes(report);
-    expect(plan.map((a) => a.finding.id)).toEqual(["cron:sapience-routing", "memory:bridgeEnabled"]);
+    expect(plan.map((a) => a.finding.id)).toEqual(["cron:sapience-routing", "memory:bridgeEnabled", "version:sapience-thinking"]);
   });
 });
 
@@ -34,9 +38,14 @@ describe("applyFixes", () => {
     const eff: FixEffectors = {
       async setConfig(path, value) { calls.push(`config ${path}=${String(value)}`); },
       async registerCron(base) { calls.push(`cron ${base}`); },
+      async updatePlugin(id) { calls.push(`update ${id}`); },
     };
     const done = await applyFixes(planFixes(report), eff);
-    expect(calls).toEqual(["cron sapience-routing", "config plugins.memory-wiki.bridge.enabled=true"]);
-    expect(done).toEqual(["registered cron sapience-routing", "set plugins.memory-wiki.bridge.enabled = true"]);
+    expect(calls).toEqual(["cron sapience-routing", "config plugins.memory-wiki.bridge.enabled=true", "update sapience-thinking"]);
+    expect(done).toEqual([
+      "registered cron sapience-routing",
+      "set plugins.memory-wiki.bridge.enabled = true",
+      "updated sapience-thinking (restart the gateway to load it)",
+    ]);
   });
 });

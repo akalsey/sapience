@@ -265,13 +265,17 @@ describe("buildSuiteDoctorReport", () => {
     expect(f?.message.toLowerCase()).toContain("restart");
   });
 
-  it("warns when the registry has a newer version than the one installed", () => {
+  it("warns when the registry has a newer version, offering an autofixable update", () => {
     const i = healthy();
     i.versions = [{ pluginId: "sapience", running: "0.2.7", onDisk: "0.2.7", registryLatest: "0.3.0" }];
     const r = buildSuiteDoctorReport(i);
     const f = byId(r, "version:sapience");
     expect(f?.severity).toBe("warn");
     expect(f?.message).toContain("0.3.0");
+    expect(f?.detail).toContain("openclaw plugins update sapience");
+    expect(f?.fix?.autofixable).toBe(true);
+    expect(f?.fix?.kind).toBe("plugin-update");
+    expect(f?.fix?.payload?.pluginId).toBe("sapience");
   });
 
   it("warns about a stale legacy pin in the top-level npm package.json", () => {

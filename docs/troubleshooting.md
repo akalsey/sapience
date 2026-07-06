@@ -17,9 +17,9 @@ What it checks:
 - **CRONS** — the three jobs exist, are enabled, aren't erroring, don't pin a disallowed model, and grant their tools via `payload.toolsAllow` (see below).
 - **PATHS** — the resolved workspace dir, whether each output file exists, and — critically — whether pipeline files are **fresh**. A green cron with a stale `log.md`/`proposals.jsonl`/`events.jsonl` (older than 24h) is flagged as an error: the cron runs but the tool handlers never execute. Quarantined `.corrupt-*` files are reported here too.
 - **MEMORY** — memory-wiki installed, plus the four settings the suite needs (`memory-core` dreaming, wiki bridge mode, bridge enabled, search corpus `all`).
-- **VERSIONS** — skew between what the gateway is running and what's installed on disk (restart needed), stale legacy npm pins, and newer published versions.
+- **VERSIONS** — skew between what the gateway is running and what's installed on disk (restart needed), stale legacy npm pins, and newer published versions. When a plugin is out of date against the registry, the fix is auto-fixable — the doctor runs `openclaw plugins update <id>`. (Re-running `install.sh` does **not** update an already-installed plugin; use the doctor or `openclaw plugins update`.)
 
-`--fix` applies only the safe fixes: setting the memory config values and registering missing cron jobs (with the same arguments as `install.sh`). Everything else it reports with instructions. Exit code is non-zero when errors remain, so it's scriptable.
+`--fix` applies the safe fixes: setting the memory config values, registering missing cron jobs (with the same arguments as `install.sh`), and updating out-of-date suite plugins to the latest published version. After a plugin update it reminds you to restart the gateway (updates don't take effect until then). Everything else it reports with instructions. Exit code is non-zero when errors remain, so it's scriptable.
 
 `--probe` goes beyond the static checks: it triggers one real `sapience-thinking` cron run (`openclaw cron run --wait`, up to ~3 minutes) and watches `log.md`/`proposals.jsonl` for writes. Verdicts:
 

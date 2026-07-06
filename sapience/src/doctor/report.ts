@@ -177,7 +177,8 @@ function versionFinding(v: VersionObservation): Finding {
   if (current && v.registryLatest && versionLess(current, v.registryLatest)) {
     return { id, severity: "warn", source: "fs",
       message: `${v.pluginId}: v${current} installed, v${v.registryLatest} published`,
-      detail: "Update the plugin and restart the gateway, then re-run the doctor." };
+      detail: `Run \`openclaw plugins update ${v.pluginId}\` and restart the gateway — or \`openclaw sapience doctor --fix\` does the update.`,
+      fix: { autofixable: true, kind: "plugin-update", description: `update ${v.pluginId} to v${v.registryLatest}`, payload: { pluginId: v.pluginId } } };
   }
   return { id, severity: "ok", source: "fs", message: `${v.pluginId} v${current ?? "unknown"} current` };
 }

@@ -7,8 +7,9 @@ export type FindingSource = "artifact" | "fs" | "resolver" | "config" | "cron";
 export interface FixDescriptor {
   autofixable: boolean;
   description: string;
-  kind: "config-set" | "cron-register";
+  kind: "config-set" | "cron-register" | "plugin-update";
   // For config-set: { path, value }. For cron-register: { base }.
+  // For plugin-update: { pluginId }.
   payload?: Record<string, unknown>;
 }
 

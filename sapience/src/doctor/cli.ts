@@ -92,6 +92,9 @@ function makeEffectors(agentId: string): FixEffectors {
     async registerCron(base) {
       await exec("openclaw", cronRegisterArgs(base, agentId));
     },
+    async updatePlugin(pluginId) {
+      await exec("openclaw", ["plugins", "update", pluginId]);
+    },
   };
 }
 
@@ -129,6 +132,9 @@ export function registerSapienceDoctorCli(api: any): void {
             const done = await applyFixes(actions, makeEffectors(agentId));
             console.log("Applied fixes:");
             for (const d of done) console.log(`  • ${d}`);
+            if (actions.some((a) => a.kind === "plugin-update")) {
+              console.log("\n  Restart the gateway (`openclaw gateway restart`) for updated plugins to take effect.");
+            }
             console.log("");
             // Re-gather so the printed report reflects the applied fixes.
             report = buildSuiteDoctorReport(await gatherInputs({ api, config, env: process.env, nowMs: Date.now() }));
