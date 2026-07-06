@@ -92,3 +92,11 @@ describe("playbooks section", () => {
     expect(buildPrompt(bundle, null)).not.toContain("## Analytical Playbooks");
   });
 });
+
+describe("open hypotheses section", () => {
+  it("surfaces open hypotheses for opportunistic re-testing", async () => {
+    const prompt = buildPrompt({ ...bundle, openHypotheses: "- [open] spend velocity decays before churn (seen 3x)" }, null);
+    expect(prompt).toContain("## Open Hypotheses");
+    expect(prompt).toContain("spend velocity decays");
+  });
+});

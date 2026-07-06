@@ -42,6 +42,7 @@ function config(overrides: Partial<typeof DEFAULT_CONFIG.investigation> = {}) {
     output: { ...DEFAULT_CONFIG.output,
       eventsPath: join(dir, "events.jsonl"),
       investigationStatePath: join(dir, "investigation-state.json"),
+      hypothesesPath: join(dir, "hypotheses.json"),
     },
   };
 }

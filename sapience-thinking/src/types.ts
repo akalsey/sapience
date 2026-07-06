@@ -85,6 +85,8 @@ export interface ContextBundle {
   // so passes reason against what the user is trying to achieve. Empty when
   // there are no goals (or the goals plugin isn't in use).
   activeGoals?: string;
+  // Open cases from the hypothesis ledger, for opportunistic re-testing.
+  openHypotheses?: string;
   tokenEstimate: number;
 }
 

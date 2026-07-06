@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtemp, rm, mkdir, writeFile } from "fs/promises";
 import { join } from "path";
 import { tmpdir } from "os";
-import { buildContextFromDirs, resolveContextDirs, buildGoalsContext, getLastThreePasses } from "./context-builder.js";
+import { buildContextFromDirs, resolveContextDirs, buildGoalsContext, buildHypothesesContext, getLastThreePasses } from "./context-builder.js";
 import type { PluginConfig } from "./types.js";
 import { DEFAULT_CONFIG } from "./types.js";
 
@@ -217,5 +217,25 @@ describe("goal-aware bundle", () => {
     ]));
     const bundle = await buildContextFromDirs(config, sessionDir, [join(tmpDir, "memory")], join(tmpDir, "goals", "goals.json"));
     expect(bundle.activeGoals).toContain("Reduce churn");
+  });
+});
+
+describe("buildHypothesesContext", () => {
+  it("summarizes open and supported hypotheses with their evidence trail", async () => {
+    const path = join(tmpDir, "hypotheses.json");
+    await writeFile(path, JSON.stringify([
+      { id: "h1", text: "spend velocity decays before churn", domain: "posthog", status: "open", sightings: 3, evidence: [{ at: "2026-07-01T00:00:00Z", verdict: "inconclusive", note: "not enough data" }], first_seen: "2026-06-01T00:00:00Z", last_seen: "2026-07-01T00:00:00Z" },
+      { id: "h2", text: "voice spike is one dialer customer", domain: "voice", status: "supported", sightings: 2, evidence: [{ at: "2026-07-02T00:00:00Z", verdict: "supported", note: "confirmed, customer X" }], first_seen: "2026-06-20T00:00:00Z", last_seen: "2026-07-02T00:00:00Z" },
+      { id: "h3", text: "dead idea", domain: "general", status: "refuted", sightings: 1, evidence: [], first_seen: "2026-06-01T00:00:00Z", last_seen: "2026-06-01T00:00:00Z" },
+    ]));
+    const text = await buildHypothesesContext(path);
+    expect(text).toContain("spend velocity decays");
+    expect(text).toContain("seen 3x");
+    expect(text).toContain("voice spike");
+    expect(text).not.toContain("dead idea");
+  });
+
+  it("returns empty when the ledger is missing or empty", async () => {
+    expect(await buildHypothesesContext(join(tmpDir, "nope.json"))).toBe("");
   });
 });

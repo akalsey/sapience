@@ -47,6 +47,8 @@ function mergeConfig(raw: Record<string, unknown>, workspaceDir: string): Sapien
       dashboardPath: resolveDataPath((raw as any).output?.dashboardPath, workspaceDir, DEFAULT_CONFIG.output.dashboardPath),
       goalsPath: resolveDataPath((raw as any).output?.goalsPath, workspaceDir, DEFAULT_CONFIG.output.goalsPath),
       pushStatePath: resolveDataPath((raw as any).output?.pushStatePath, workspaceDir, DEFAULT_CONFIG.output.pushStatePath),
+      investigationStatePath: resolveDataPath((raw as any).output?.investigationStatePath, workspaceDir, DEFAULT_CONFIG.output.investigationStatePath),
+      hypothesesPath: resolveDataPath((raw as any).output?.hypothesesPath, workspaceDir, DEFAULT_CONFIG.output.hypothesesPath),
     },
   };
 }

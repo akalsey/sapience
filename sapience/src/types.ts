@@ -59,6 +59,7 @@ export interface SapienceConfig {
     goalsPath: string;
     pushStatePath: string;
     investigationStatePath: string;
+    hypothesesPath: string;
   };
 }
 
@@ -89,5 +90,6 @@ export const DEFAULT_CONFIG: SapienceConfig = {
     goalsPath: "goals/goals.json",
     pushStatePath: "sapience/push-state.json",
     investigationStatePath: "sapience/investigation-state.json",
+    hypothesesPath: "sapience/hypotheses.json",
   },
 };

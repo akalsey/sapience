@@ -73,6 +73,31 @@ export async function buildGoalsContext(goalsPath: string): Promise<string> {
   }).join("\n");
 }
 
+// Open cases from the sapience hypothesis ledger, so passes re-test them
+// opportunistically when adjacent data is in hand instead of forgetting them.
+export async function buildHypothesesContext(path: string): Promise<string> {
+  interface HypothesisLite {
+    text?: string;
+    status?: string;
+    sightings?: number;
+    evidence?: Array<{ verdict?: string; note?: string }>;
+  }
+  let list: HypothesisLite[];
+  try {
+    const parsed = JSON.parse(await readFile(path, "utf-8"));
+    list = Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return "";
+  }
+  const live = list.filter((h) => h.status === "open" || h.status === "supported");
+  if (live.length === 0) return "";
+  return live.map((h) => {
+    const latest = h.evidence?.[h.evidence.length - 1];
+    const evidenceNote = latest?.note ? ` — latest: ${latest.verdict}, ${latest.note}` : "";
+    return `- [${h.status}] ${h.text ?? ""} (seen ${h.sightings ?? 1}x${evidenceNote})`;
+  }).join("\n");
+}
+
 export async function buildContextFromDirs(
   config: PluginConfig,
   sessionDir: string,
@@ -186,9 +211,11 @@ export function resolveContextDirs(api: any, agentId: string): ContextDirs {
 
 export async function buildContext(config: PluginConfig, api: any, agentId: string, workspaceDir: string): Promise<ContextBundle> {
   const dirs = resolveContextDirs(api, agentId);
-  // Convention shared with sapience-goals' default output.goalsPath.
+  // Conventions shared with sapience-goals' and sapience's default paths.
   const goalsPath = join(workspaceDir, "goals", "goals.json");
-  return buildContextFromDirs(config, dirs.sessionsDir, dirs.memoryDirs, goalsPath);
+  const bundle = await buildContextFromDirs(config, dirs.sessionsDir, dirs.memoryDirs, goalsPath);
+  bundle.openHypotheses = await buildHypothesesContext(join(workspaceDir, "sapience", "hypotheses.json"));
+  return bundle;
 }
 
 export async function getLastThreePasses(logPath: string): Promise<string> {

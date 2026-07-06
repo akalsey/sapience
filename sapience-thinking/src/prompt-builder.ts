@@ -48,6 +48,16 @@ export function buildPrompt(bundle: ContextBundle, signal: SignalReport | null, 
     sections.push(["## Your Recent Proposals (Last 3 Passes)", "", bundle.recentPasses].join("\n"));
   }
 
+  if (bundle.openHypotheses) {
+    sections.push([
+      "## Open Hypotheses",
+      "",
+      "Suspicions from earlier passes that haven't been settled. When the data in front of you touches one, test it and report what you find (with evidence_grade). Don't re-propose them as new observations.",
+      "",
+      bundle.openHypotheses,
+    ].join("\n"));
+  }
+
   if (signal) sections.push(formatSignal(signal));
 
   return sections.join("\n\n");

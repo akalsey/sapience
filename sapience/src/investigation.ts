@@ -2,6 +2,7 @@ import type { RoutedItem, SapienceConfig } from "./types.js";
 import { appendEvent } from "./events.js";
 import { readJsonSafe, writeJsonAtomic } from "./safe-json.js";
 import { localDateIn, notePush, type PushState } from "./push.js";
+import { noteSighting, recordVerdict } from "./hypotheses.js";
 
 // Bounded follow-up on hunches: a hunch-graded item worth surfacing gets a
 // capped, read-only subagent run to test whether the pattern holds before the
@@ -95,6 +96,11 @@ export async function investigateHunches(
     const eligible = item.evidence_grade === "hunch" && item.priority >= config.investigation.minPriority;
     if (!eligible) { out.push(item); continue; }
 
+    // Every eligible hunch becomes (or updates) a case in the hypothesis
+    // ledger — even when budget or runtime blocks investigating it today.
+    const hypothesis = await noteSighting(config.output.hypothesesPath, item)
+      .catch(() => null);
+
     const state = await readJsonSafe<PushState>(config.output.investigationStatePath, { date: "", count: 0 });
     const spentToday = state.date === localDate ? state.count : 0;
     if (spentToday >= config.investigation.maxPerDay) { out.push(item); continue; }
@@ -107,6 +113,10 @@ export async function investigateHunches(
       plugin: "sapience", type: "investigation_completed",
       proposal_id: item.id, domain: item.domain, verdict: verdict.verdict,
     });
+    if (hypothesis) {
+      await recordVerdict(config.output.hypothesesPath, hypothesis.id, verdict.verdict, verdict.summary)
+        .catch(() => {});
+    }
 
     if (verdict.verdict === "refuted") continue; // drop — the event is the trace
     if (verdict.verdict === "supported") {
