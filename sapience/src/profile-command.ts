@@ -1,4 +1,5 @@
 import { loadProfile, saveProfile, decayProfile } from "./calibration.js";
+import { loadWatches, renderWatches } from "./watches.js";
 import type { CalibrationEntry, CalibrationProfile, Tier } from "./types.js";
 
 // The /sapience chat command: the calibration profile was invisible outside
@@ -33,8 +34,13 @@ export function renderProfile(profile: CalibrationProfile, now: Date): string {
   return lines.join("\n");
 }
 
-export async function handleProfileCommand(args: string, calibrationPath: string): Promise<string> {
+export async function handleProfileCommand(args: string, calibrationPath: string, watchesPath?: string): Promise<string> {
   const parts = args.trim().split(/\s+/).filter(Boolean);
+
+  if (parts[0] === "watches") {
+    return renderWatches(watchesPath ? await loadWatches(watchesPath) : []);
+  }
+
   const profile = await loadProfile(calibrationPath);
 
   if (parts[0] !== "set") return renderProfile(profile, new Date());

@@ -22,6 +22,8 @@ import { enqueueMainSessionInjection } from "./main-session.js";
 import { requestChannelPush } from "./push.js";
 import { investigateHunches } from "./investigation.js";
 import { executeActItems } from "./act-executor.js";
+import { checkDueWatches } from "./watch-checker.js";
+import { addWatch, removeWatch, loadWatches, renderWatches, type DeltaPolicy } from "./watches.js";
 import { compileExtraDomains } from "./domains.js";
 import { handleProfileCommand } from "./profile-command.js";
 import { registerSapienceDoctorCli } from "./doctor/cli.js";
@@ -42,6 +44,7 @@ function mergeConfig(raw: Record<string, unknown>, workspaceDir: string): Sapien
     push: { ...DEFAULT_CONFIG.push, ...((raw.push as object) ?? {}) },
     investigation: { ...DEFAULT_CONFIG.investigation, ...((raw.investigation as object) ?? {}) },
     act: { ...DEFAULT_CONFIG.act, ...((raw.act as object) ?? {}) },
+    watch: { ...DEFAULT_CONFIG.watch, ...((raw.watch as object) ?? {}) },
     output: {
       ...DEFAULT_CONFIG.output,
       ...((raw.output as object) ?? {}),
@@ -54,6 +57,7 @@ function mergeConfig(raw: Record<string, unknown>, workspaceDir: string): Sapien
       pushStatePath: resolveDataPath((raw as any).output?.pushStatePath, workspaceDir, DEFAULT_CONFIG.output.pushStatePath),
       investigationStatePath: resolveDataPath((raw as any).output?.investigationStatePath, workspaceDir, DEFAULT_CONFIG.output.investigationStatePath),
       hypothesesPath: resolveDataPath((raw as any).output?.hypothesesPath, workspaceDir, DEFAULT_CONFIG.output.hypothesesPath),
+      watchesPath: resolveDataPath((raw as any).output?.watchesPath, workspaceDir, DEFAULT_CONFIG.output.watchesPath),
     },
   };
 }
@@ -114,10 +118,68 @@ export default definePluginEntry({
         description: "Show or adjust the autonomy calibration profile. Usage: /sapience [set <domain> <action_class> <tier>]",
         acceptsArgs: true,
         handler: async (ctx: { args?: string }) => ({
-          text: await handleProfileCommand(ctx.args ?? "", config.output.calibrationPath),
+          text: await handleProfileCommand(ctx.args ?? "", config.output.calibrationPath, config.output.watchesPath),
         }),
       });
     }
+
+    api.registerTool({
+      name: "watch_metric",
+      description: "Start watching a metric: the suite checks it on a cadence and surfaces notable moves (deltas vs baseline, or threshold crossings). Use when the user says 'keep an eye on X' or repeatedly asks for the same number.",
+      parameters: {
+        type: "object",
+        properties: {
+          name: { type: "string", description: "Short metric name, e.g. 'daily signups'" },
+          query_hint: { type: "string", description: "Where/how to fetch the current value" },
+          cadence_hours: { type: "number", description: "How often to check (default 24)" },
+          policy: { type: "string", enum: ["percent", "above", "below", "always"], description: "When to notify (default percent)" },
+          threshold: { type: "number", description: "Percent delta or absolute threshold (default 20 for percent)" },
+        },
+        required: ["name", "query_hint"],
+      },
+      async execute(_id: any, params: any) {
+        try {
+          const name = typeof params?.name === "string" ? params.name.trim() : "";
+          const queryHint = typeof params?.query_hint === "string" ? params.query_hint.trim() : "";
+          if (!name || !queryHint) return { content: [{ type: "text", text: "watch_metric requires name and query_hint." }] };
+          const kind = ["percent", "above", "below", "always"].includes(params?.policy) ? params.policy : "percent";
+          const threshold = typeof params?.threshold === "number" ? params.threshold : 20;
+          const delta_policy = (kind === "always" ? { kind } : { kind, threshold }) as DeltaPolicy;
+          const watch = await addWatch(config.output.watchesPath, {
+            name, query_hint: queryHint,
+            cadence_hours: typeof params?.cadence_hours === "number" && params.cadence_hours > 0 ? params.cadence_hours : 24,
+            delta_policy,
+          });
+          await appendEvent(config.output.eventsPath, { plugin: "sapience", type: "watch_added", watch: watch.name });
+          return { content: [{ type: "text", text: `Watching "${watch.name}" every ${watch.cadence_hours}h.` }] };
+        } catch (err) {
+          return { content: [{ type: "text", text: `[sapience] watch_metric error: ${String(err)}` }] };
+        }
+      },
+    });
+
+    api.registerTool({
+      name: "watch_remove",
+      description: "Stop watching a metric (by name or id).",
+      parameters: {
+        type: "object",
+        properties: { name: { type: "string", description: "The watch name or id" } },
+        required: ["name"],
+      },
+      async execute(_id: any, params: any) {
+        try {
+          const name = typeof params?.name === "string" ? params.name.trim() : "";
+          if (!name) return { content: [{ type: "text", text: "watch_remove requires a name." }] };
+          const list = await loadWatches(config.output.watchesPath);
+          const match = list.find((w) => w.id === name || w.name.toLowerCase() === name.toLowerCase());
+          const removed = match ? await removeWatch(config.output.watchesPath, match.id) : false;
+          if (removed) await appendEvent(config.output.eventsPath, { plugin: "sapience", type: "watch_removed", watch: match!.name });
+          return { content: [{ type: "text", text: removed ? `Stopped watching "${match!.name}".` : `No watch named "${name}".\n${renderWatches(list)}` }] };
+        } catch (err) {
+          return { content: [{ type: "text", text: `[sapience] watch_remove error: ${String(err)}` }] };
+        }
+      },
+    });
 
     api.registerTool({
       name: "process_proposals",
@@ -245,6 +307,9 @@ export default definePluginEntry({
                 }
               }
             }
+
+            // Due metric watches get their bounded read-only check each pass.
+            await checkDueWatches(api, config).catch(() => {});
 
             await generateDashboard(config).catch(() => {});
             await clearSkipState(skipStatePath).catch(() => {});

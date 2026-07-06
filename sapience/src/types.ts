@@ -53,6 +53,8 @@ export interface SapienceConfig {
   investigation: { enabled: boolean; maxPerDay: number; minPriority: number; timeoutSec: number };
   // Autonomous execution of act-tier items in isolated subagent sessions.
   act: { execute: boolean; timeoutSec: number };
+  // Metric watches checked during routing passes.
+  watch: { maxChecksPerRun: number; timeoutSec: number };
   output: {
     calibrationPath: string;
     actionLogPath: string;
@@ -63,6 +65,7 @@ export interface SapienceConfig {
     pushStatePath: string;
     investigationStatePath: string;
     hypothesesPath: string;
+    watchesPath: string;
   };
 }
 
@@ -85,6 +88,7 @@ export const DEFAULT_CONFIG: SapienceConfig = {
   push: { enabled: true, maxPerDay: 6, minPriority: 4 },
   investigation: { enabled: true, maxPerDay: 3, minPriority: 3, timeoutSec: 120 },
   act: { execute: true, timeoutSec: 300 },
+  watch: { maxChecksPerRun: 2, timeoutSec: 120 },
   output: {
     calibrationPath: "sapience/calibration.json",
     actionLogPath: "sapience/action-log.md",
@@ -95,5 +99,6 @@ export const DEFAULT_CONFIG: SapienceConfig = {
     pushStatePath: "sapience/push-state.json",
     investigationStatePath: "sapience/investigation-state.json",
     hypothesesPath: "sapience/hypotheses.json",
+    watchesPath: "sapience/watches.json",
   },
 };

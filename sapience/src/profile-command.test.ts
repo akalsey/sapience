@@ -56,3 +56,13 @@ describe("handleProfileCommand", () => {
     expect((await handleProfileCommand("set nope nope/x ask", calibrationPath)).toLowerCase()).toContain("no calibration entry");
   });
 });
+
+describe("watches subcommand", () => {
+  it("lists watches via /sapience watches", async () => {
+    const { addWatch } = await import("./watches.js");
+    const watchesPath = join(dir, "watches.json");
+    await addWatch(watchesPath, { name: "daily signups", query_hint: "sf", cadence_hours: 24, delta_policy: { kind: "percent", threshold: 20 } });
+    const out = await handleProfileCommand("watches", calibrationPath, watchesPath);
+    expect(out).toContain("daily signups");
+  });
+});
