@@ -74,6 +74,10 @@ export interface SignalReport {
 export interface ContextBundle {
   recentActivity: string;
   recentPasses: string;
+  // Summary of active/decomposing goals from the sapience-goals workspace file,
+  // so passes reason against what the user is trying to achieve. Empty when
+  // there are no goals (or the goals plugin isn't in use).
+  activeGoals?: string;
   tokenEstimate: number;
 }
 

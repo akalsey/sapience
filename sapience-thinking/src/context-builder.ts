@@ -40,10 +40,44 @@ function isTranscriptFile(name: string): boolean {
   return name.endsWith(".jsonl") && !name.includes(".trajectory.");
 }
 
+// Summarize in-flight goals from the sapience-goals workspace file so thinking
+// passes can ask "what would advance these?" instead of only "what happened?".
+// Completed/abandoned goals are noise and excluded.
+export async function buildGoalsContext(goalsPath: string): Promise<string> {
+  interface GoalLite {
+    description?: string;
+    status?: string;
+    active_approach?: string;
+    progress_notes?: Array<{ timestamp?: string; summary?: string }>;
+    blockers?: Array<{ description?: string; waiting_on?: string }>;
+  }
+  let goals: GoalLite[];
+  try {
+    const parsed = JSON.parse(await readFile(goalsPath, "utf-8"));
+    goals = Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return "";
+  }
+  const inFlight = goals.filter((g) => g.status === "active" || g.status === "decomposing");
+  if (inFlight.length === 0) return "";
+
+  return inFlight.map((g) => {
+    const lines = [`- ${g.description ?? "(no description)"} [${g.status}]`];
+    if (g.active_approach) lines.push(`  approach: ${g.active_approach}`);
+    const latest = g.progress_notes?.[g.progress_notes.length - 1];
+    if (latest?.summary) lines.push(`  latest progress: ${latest.summary}`);
+    for (const b of g.blockers ?? []) {
+      lines.push(`  blocked: ${b.description ?? ""}${b.waiting_on ? ` (waiting on ${b.waiting_on})` : ""}`);
+    }
+    return lines.join("\n");
+  }).join("\n");
+}
+
 export async function buildContextFromDirs(
   config: PluginConfig,
   sessionDir: string,
-  memoryDirs: string[]
+  memoryDirs: string[],
+  goalsPath?: string
 ): Promise<ContextBundle> {
   const cutoff = Date.now() - config.context.lookbackHours * 60 * 60 * 1000;
   const transcriptBudget = Math.floor(config.context.maxContextTokens * 0.7);
@@ -110,11 +144,13 @@ export async function buildContextFromDirs(
   }
   if (memChunks.length > 0) memoryText = `\n\n## Recent Memory\n\n${memChunks.join("\n---\n")}`;
 
+  const activeGoals = goalsPath ? await buildGoalsContext(goalsPath) : "";
+
   // chunks were pushed newest-first (files desc, entries reversed); restore chronological order
   const activity = chunks.length > 0 ? chunks.reverse().join("\n") : "No recent session activity found.";
   const full = activity + memoryText;
 
-  return { recentActivity: full, recentPasses: "", tokenEstimate: estimateTokens(full) };
+  return { recentActivity: full, recentPasses: "", activeGoals, tokenEstimate: estimateTokens(full) + estimateTokens(activeGoals) };
 }
 
 export interface ContextDirs {
@@ -148,9 +184,11 @@ export function resolveContextDirs(api: any, agentId: string): ContextDirs {
   };
 }
 
-export async function buildContext(config: PluginConfig, api: any, agentId: string): Promise<ContextBundle> {
+export async function buildContext(config: PluginConfig, api: any, agentId: string, workspaceDir: string): Promise<ContextBundle> {
   const dirs = resolveContextDirs(api, agentId);
-  return buildContextFromDirs(config, dirs.sessionsDir, dirs.memoryDirs);
+  // Convention shared with sapience-goals' default output.goalsPath.
+  const goalsPath = join(workspaceDir, "goals", "goals.json");
+  return buildContextFromDirs(config, dirs.sessionsDir, dirs.memoryDirs, goalsPath);
 }
 
 export async function getLastThreePasses(logPath: string): Promise<string> {

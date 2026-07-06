@@ -23,6 +23,16 @@ export function buildPrompt(bundle: ContextBundle, signal: SignalReport | null):
 
   sections.push(["## Recent Activity Context", "", bundle.recentActivity].join("\n"));
 
+  if (bundle.activeGoals) {
+    sections.push([
+      "## Active Goals",
+      "",
+      "These are the goals the user is working toward. Weigh proposals by whether they advance one — a modest idea that moves a goal beats a clever one that doesn't.",
+      "",
+      bundle.activeGoals,
+    ].join("\n"));
+  }
+
   if (bundle.recentPasses) {
     sections.push(["## Your Recent Proposals (Last 3 Passes)", "", bundle.recentPasses].join("\n"));
   }

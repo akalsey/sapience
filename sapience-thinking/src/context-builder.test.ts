@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtemp, rm, mkdir, writeFile } from "fs/promises";
 import { join } from "path";
 import { tmpdir } from "os";
-import { buildContextFromDirs, resolveContextDirs, getLastThreePasses } from "./context-builder.js";
+import { buildContextFromDirs, resolveContextDirs, buildGoalsContext, getLastThreePasses } from "./context-builder.js";
 import type { PluginConfig } from "./types.js";
 import { DEFAULT_CONFIG } from "./types.js";
 
@@ -170,5 +170,52 @@ describe("getLastThreePasses", () => {
     expect(result).toContain("pass-2");
     expect(result).toContain("pass-3");
     expect(result).toContain("pass-4");
+  });
+});
+
+describe("buildGoalsContext", () => {
+  it("summarizes active and decomposing goals with approach, blockers, and latest progress", async () => {
+    const goalsPath = join(tmpDir, "goals", "goals.json");
+    await mkdir(join(tmpDir, "goals"), { recursive: true });
+    await writeFile(goalsPath, JSON.stringify([
+      {
+        id: "g1", description: "Reduce churn in SMB segment", status: "active",
+        active_approach: "monthly usage-drop outreach",
+        progress_notes: [
+          { timestamp: "2026-06-01T00:00:00Z", summary: "built the usage query", actions_taken: [], what_changed: "" },
+          { timestamp: "2026-07-01T00:00:00Z", summary: "first outreach batch sent", actions_taken: [], what_changed: "" },
+        ],
+        blockers: [{ description: "no churn-reason field in CRM", since: "2026-06-15T00:00:00Z", waiting_on: "salesforce admin" }],
+      },
+      { id: "g2", description: "Ship usage dashboards", status: "decomposing", active_approach: "", progress_notes: [], blockers: [] },
+      { id: "g3", description: "Old thing", status: "completed", active_approach: "", progress_notes: [], blockers: [] },
+    ]));
+    const text = await buildGoalsContext(goalsPath);
+    expect(text).toContain("Reduce churn in SMB segment");
+    expect(text).toContain("monthly usage-drop outreach");
+    expect(text).toContain("first outreach batch sent");
+    expect(text).toContain("salesforce admin");
+    expect(text).toContain("Ship usage dashboards");
+    expect(text).not.toContain("Old thing"); // completed goals are noise
+  });
+
+  it("returns empty for a missing or empty goals file", async () => {
+    expect(await buildGoalsContext(join(tmpDir, "nope.json"))).toBe("");
+    const goalsPath = join(tmpDir, "goals.json");
+    await writeFile(goalsPath, "[]");
+    expect(await buildGoalsContext(goalsPath)).toBe("");
+  });
+});
+
+describe("goal-aware bundle", () => {
+  it("includes goals in the context bundle when a workspace goals file exists", async () => {
+    const sessionDir = join(tmpDir, "sessions");
+    await mkdir(sessionDir, { recursive: true });
+    await mkdir(join(tmpDir, "goals"), { recursive: true });
+    await writeFile(join(tmpDir, "goals", "goals.json"), JSON.stringify([
+      { id: "g1", description: "Reduce churn", status: "active", active_approach: "outreach", progress_notes: [], blockers: [] },
+    ]));
+    const bundle = await buildContextFromDirs(config, sessionDir, [join(tmpDir, "memory")], join(tmpDir, "goals", "goals.json"));
+    expect(bundle.activeGoals).toContain("Reduce churn");
   });
 });

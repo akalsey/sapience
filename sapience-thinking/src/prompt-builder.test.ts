@@ -57,6 +57,19 @@ describe("buildPrompt", () => {
   });
 });
 
+describe("goal-aware prompt", () => {
+  it("includes an Active Goals section when the bundle carries goals", async () => {
+    const prompt = await buildPrompt({ ...bundle, activeGoals: "- Reduce churn [active]\n  approach: outreach" }, null);
+    expect(prompt).toContain("## Active Goals");
+    expect(prompt).toContain("Reduce churn");
+  });
+
+  it("omits the goals section when there are none", async () => {
+    const prompt = await buildPrompt(bundle, null);
+    expect(prompt).not.toContain("## Active Goals");
+  });
+});
+
 describe("buildHeartbeatPrompt", () => {
   it("substitutes the proposals list into the compiled-in template", async () => {
     const prompt = await buildHeartbeatPrompt("- fix the flux capacitor");

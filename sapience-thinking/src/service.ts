@@ -102,7 +102,7 @@ export default definePluginEntry({
         }
         try {
           const [bundle, recentPasses, outcomes] = await Promise.all([
-            buildContext(config, api, agentId),
+            buildContext(config, api, agentId, workspaceDir),
             getLastThreePasses(config.output.logPath),
             loadOutcomes(config.output.trackerPath),
           ]);
