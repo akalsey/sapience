@@ -1,6 +1,6 @@
 import { resolvePath } from "./utils.js";
 import { readJsonSafe, writeJsonAtomic } from "./safe-json.js";
-import type { Goal, GoalStatus, ProgressNote } from "./types.js";
+import type { Goal, GoalMetric, GoalStatus, ProgressNote } from "./types.js";
 
 export async function loadGoals(path: string): Promise<Goal[]> {
   return readJsonSafe<Goal[]>(resolvePath(path), []);
@@ -38,6 +38,13 @@ export function setActiveApproach(goals: Goal[], id: string, approach: string): 
 export function addBlocker(goals: Goal[], id: string, blocker: { description: string; waiting_on: string }): Goal[] {
   return goals.map(g => g.id === id
     ? { ...g, blockers: [...g.blockers, { ...blocker, since: new Date().toISOString() }], updated_at: new Date().toISOString() }
+    : g
+  );
+}
+
+export function setGoalMetric(goals: Goal[], id: string, metric: GoalMetric): Goal[] {
+  return goals.map(g => g.id === id
+    ? { ...g, metric, updated_at: new Date().toISOString() }
     : g
   );
 }

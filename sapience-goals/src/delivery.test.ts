@@ -41,3 +41,17 @@ describe("buildWeeklyStatusPrompt", () => {
     expect(prompt).toContain("Team Beta");
   });
 });
+
+describe("metric-instrumented weekly status", () => {
+  it("instructs the agent to fetch the KR metric and lead with pace", () => {
+    const instrumented = {
+      ...activeGoal,
+      metric: { name: "SMB churn rate", target: 2.5, unit: "%", query_hint: "PostHog churn insight" },
+    };
+    const prompt = buildWeeklyStatusPrompt(instrumented);
+    expect(prompt).toContain("SMB churn rate");
+    expect(prompt).toContain("2.5");
+    expect(prompt).toContain("PostHog churn insight");
+    expect(prompt.toLowerCase()).toContain("fetch the current value");
+  });
+});

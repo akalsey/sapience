@@ -5,7 +5,7 @@ import { resolveDataPath, generateId, nextWeeklyDate } from "./utils.js";
 import { validateActiveHours, isWithinActiveHours } from "./active-hours.js";
 import {
   loadGoals, saveGoals, addGoal, updateNextDelivery,
-  setActiveApproach, updateGoalStatus, addProgressNote, addBlocker,
+  setActiveApproach, updateGoalStatus, addProgressNote, addBlocker, setGoalMetric,
 } from "./goal-store.js";
 import { readNewGoals, savePosition } from "./inbox-reader.js";
 import { deliverDecomposition, deliverWeeklyStatus } from "./delivery.js";
@@ -234,6 +234,45 @@ export default definePluginEntry({
           return toolText(JSON.stringify({ id, recorded: true }));
         } catch (err) {
           return toolText(`[goals] goal_blocker error: ${String(err)}`);
+        }
+      },
+    });
+
+    api.registerTool({
+      name: "goal_set_metric",
+      description: "Attach a measurable key result to a goal (metric name, numeric target). Weekly statuses then compute progress from data instead of narration.",
+      parameters: {
+        type: "object",
+        properties: {
+          id: { type: "string", description: "The goal id" },
+          name: { type: "string", description: "Metric name, e.g. 'SMB churn rate'" },
+          target: { type: "number", description: "Numeric target value" },
+          unit: { type: "string", description: "Unit suffix, e.g. '%'" },
+          query_hint: { type: "string", description: "Where/how to fetch the current value" },
+          baseline: { type: "number", description: "Starting value, for pace math" },
+        },
+        required: ["id", "name", "target"],
+      },
+      async execute(_id: any, params: any) {
+        try {
+          const id = asTrimmedString(params?.id);
+          const name = asTrimmedString(params?.name);
+          const target = typeof params?.target === "number" ? params.target : NaN;
+          if (!id || !name || !Number.isFinite(target)) {
+            return toolText("goal_set_metric requires id, name, and a numeric target.");
+          }
+          const metric = {
+            name, target,
+            ...(typeof params?.unit === "string" ? { unit: params.unit } : {}),
+            ...(typeof params?.query_hint === "string" ? { query_hint: params.query_hint } : {}),
+            ...(typeof params?.baseline === "number" ? { baseline: params.baseline } : {}),
+          };
+          const err = await mutateGoal(id, (goals) => setGoalMetric(goals, id, metric));
+          if (err) return toolText(err);
+          await appendEvent(config.output.eventsPath, { plugin: "goals", type: "goal_metric_set", goal_id: id, metric: name });
+          return toolText(JSON.stringify({ id, metric: name, target }));
+        } catch (err) {
+          return toolText(`[goals] goal_set_metric error: ${String(err)}`);
         }
       },
     });

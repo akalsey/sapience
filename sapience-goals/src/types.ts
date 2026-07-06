@@ -13,12 +13,23 @@ export interface Blocker {
   waiting_on: string;
 }
 
+// A measurable key result attached to a goal. The weekly status computes
+// progress from data instead of narrated vibes when one is set.
+export interface GoalMetric {
+  name: string;
+  target: number;
+  unit?: string;
+  query_hint?: string;
+  baseline?: number;
+}
+
 export interface Goal {
   id: string;
   description: string;
   decomposed_approaches: string[];
   active_approach: string;
   status: GoalStatus;
+  metric?: GoalMetric;
   created_at: string;
   updated_at: string;
   progress_notes: ProgressNote[];

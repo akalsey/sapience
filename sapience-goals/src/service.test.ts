@@ -112,3 +112,18 @@ describe("decomposition prompt", () => {
     expect(api.injections[0]).toContain("goal_select_approach");
   });
 });
+
+describe("goal_set_metric", () => {
+  it("attaches a KR that the weekly status will compute from", async () => {
+    const { id } = JSON.parse(await call("goal_submit", { description: "reduce churn" }));
+    await call("goal_set_metric", { id, name: "SMB churn rate", target: 2.5, unit: "%", query_hint: "PostHog churn insight" });
+    const [goal] = await storedGoals();
+    expect(goal.metric.name).toBe("SMB churn rate");
+    expect(goal.metric.target).toBe(2.5);
+  });
+
+  it("validates its params", async () => {
+    const out = await call("goal_set_metric", { id: "x", name: "y" });
+    expect(out).toContain("numeric target");
+  });
+});

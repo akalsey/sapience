@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtemp, rm } from "fs/promises";
 import { join } from "path";
 import { tmpdir } from "os";
-import { loadGoals, saveGoals, addGoal, updateGoalStatus, addProgressNote } from "./goal-store.js";
+import { loadGoals, saveGoals, addGoal, updateGoalStatus, addProgressNote, setGoalMetric } from "./goal-store.js";
 import type { Goal } from "./types.js";
 
 let dir: string;
@@ -59,5 +59,13 @@ describe("addProgressNote", () => {
     const note = { timestamp: new Date().toISOString(), summary: "made progress", actions_taken: ["did x"], what_changed: "x is done" };
     const updated = addProgressNote([goal], "goal-1", note);
     expect(updated[0]!.progress_notes).toHaveLength(1);
+  });
+});
+
+describe("setGoalMetric", () => {
+  it("attaches a measurable KR to a goal", () => {
+    const updated = setGoalMetric([goal], "goal-1", { name: "SMB churn rate", target: 2.5, unit: "%", query_hint: "PostHog churn insight, SMB cohort" });
+    expect(updated[0]!.metric).toEqual({ name: "SMB churn rate", target: 2.5, unit: "%", query_hint: "PostHog churn insight, SMB cohort" });
+    expect(updated[0]!.updated_at).not.toBe(goal.updated_at);
   });
 });

@@ -48,6 +48,7 @@ export async function buildGoalsContext(goalsPath: string): Promise<string> {
     description?: string;
     status?: string;
     active_approach?: string;
+    metric?: { name?: string; target?: number; unit?: string };
     progress_notes?: Array<{ timestamp?: string; summary?: string }>;
     blockers?: Array<{ description?: string; waiting_on?: string }>;
   }
@@ -64,6 +65,7 @@ export async function buildGoalsContext(goalsPath: string): Promise<string> {
   return inFlight.map((g) => {
     const lines = [`- ${g.description ?? "(no description)"} [${g.status}]`];
     if (g.active_approach) lines.push(`  approach: ${g.active_approach}`);
+    if (g.metric?.name) lines.push(`  KR: ${g.metric.name} — target ${g.metric.target}${g.metric.unit ?? ""}`);
     const latest = g.progress_notes?.[g.progress_notes.length - 1];
     if (latest?.summary) lines.push(`  latest progress: ${latest.summary}`);
     for (const b of g.blockers ?? []) {

@@ -27,11 +27,16 @@ export function buildWeeklyStatusPrompt(goal: Goal): string {
     ? goal.blockers.map(b => `- ${b.description} (waiting on: ${b.waiting_on})`).join("\n")
     : "None.";
 
+  const metricBlock = goal.metric
+    ? `\nMeasurable KR: ${goal.metric.name} — target ${goal.metric.target}${goal.metric.unit ?? ""}${goal.metric.baseline !== undefined ? ` (baseline ${goal.metric.baseline}${goal.metric.unit ?? ""})` : ""}.
+Before writing the status, fetch the current value${goal.metric.query_hint ? ` (hint: ${goal.metric.query_hint})` : ""} and LEAD with it: current value, percent of target, and whether the pace to target is on track.\n`
+    : "";
+
   return `[GOALS: WEEKLY STATUS] Deliver a weekly status update for this goal.
 
 Goal: "${goal.description}"
 Active approach: ${goal.active_approach || "(not yet selected)"}
-Status: ${goal.status}
+Status: ${goal.status}${metricBlock}
 
 Recent progress:
 ${progressText}
