@@ -21,12 +21,32 @@ function makeProbeEffects(): ProbeEffects {
       } catch { return []; }
     },
     async runCronJob(id, timeoutSec) {
+      // The CLI exits 1 whenever the awaited run's status is not ok, but it
+      // still prints the run JSON — parse stdout from success OR failure so
+      // "ran and errored" is distinguishable from "never started".
+      const parse = (stdout: string) => {
+        try {
+          const res = JSON.parse(stdout);
+          if (res && typeof res === "object" && "completed" in res) {
+            return {
+              completed: Boolean(res.completed),
+              runStatus: typeof res.status === "string" ? res.status : undefined,
+              error: typeof res.run?.error === "string" ? res.run.error : undefined,
+            };
+          }
+        } catch { /* not JSON */ }
+        return null;
+      };
       try {
-        await exec("openclaw", ["cron", "run", id, "--wait", "--wait-timeout", `${timeoutSec}s`],
+        const { stdout } = await exec("openclaw", ["cron", "run", id, "--wait", "--wait-timeout", `${timeoutSec}s`],
           { timeout: (timeoutSec + 30) * 1000 });
-        return { ok: true };
+        return parse(stdout) ?? { completed: true, runStatus: "ok" };
       } catch (err) {
-        return { ok: false, error: String(err) };
+        const e = err as { stdout?: string; stderr?: string; message?: string };
+        const parsed = e.stdout ? parse(e.stdout) : null;
+        if (parsed) return parsed;
+        const detail = [e.stderr?.trim(), e.stdout?.trim(), e.message].filter(Boolean).join(" | ").slice(0, 500);
+        return { completed: false, error: detail || String(err) };
       }
     },
     async statMtime(path) {

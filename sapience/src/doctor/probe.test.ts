@@ -14,7 +14,7 @@ function makeEffects(overrides: Partial<ProbeEffects> = {}): ProbeEffects {
   let ran = false;
   return {
     listCronJobs: async () => [{ id: "job-1", name: "sapience-thinking", enabled: true }],
-    runCronJob: async () => { ran = true; return { ok: true }; },
+    runCronJob: async () => { ran = true; return { completed: true, runStatus: "ok" }; },
     // mtime advances after the run — the tool handlers actually wrote.
     statMtime: async () => (ran ? 2000 : 1000),
     readArtifacts: async () => ({ "sapience-thinking": artifact as any }),
@@ -51,19 +51,48 @@ describe("runThinkingProbe", () => {
     expect(result.verdict).toBe("blocked");
   });
 
-  it("fails when the cron run itself errors", async () => {
+  it("fails with the transport error when the CLI could not reach the gateway", async () => {
     const result = await runThinkingProbe(
-      makeEffects({ runCronJob: async () => ({ ok: false, error: "gateway unreachable" }) }),
+      makeEffects({ runCronJob: async () => ({ completed: false, error: "gateway unreachable" }) }),
       { withinHours: true }
     );
     expect(result.verdict).toBe("fail");
     expect(result.detail).toContain("gateway unreachable");
   });
 
+  // `openclaw cron run --wait` exits 1 whenever the awaited run's status is
+  // not ok — that is NOT "failed before execute"; the run RAN and errored.
+  it("reports a run that executed but errored, with the run's own status", async () => {
+    const result = await runThinkingProbe(
+      makeEffects({
+        runCronJob: async () => ({ completed: true, runStatus: "error", error: "isolated agent setup timed out" }),
+        statMtime: async () => 1000,
+      }),
+      { withinHours: true }
+    );
+    expect(result.verdict).toBe("fail");
+    expect(result.message).toContain("errored");
+    expect(result.detail).toContain("isolated agent setup timed out");
+  });
+
+  it("passes when files advanced even if the CLI exited non-zero", async () => {
+    let ran = false;
+    const result = await runThinkingProbe(
+      makeEffects({
+        runCronJob: async () => { ran = true; return { completed: true, runStatus: "error", error: "late failure" }; },
+        statMtime: async () => (ran ? 2000 : 1000),
+      }),
+      { withinHours: true }
+    );
+    // The tool handlers wrote — the pipeline works; the run error is noted.
+    expect(result.verdict).toBe("pass");
+    expect(result.detail).toContain("late failure");
+  });
+
   it("treats a missing file that appears after the run as a write", async () => {
     let ran = false;
     const effects = makeEffects({
-      runCronJob: async () => { ran = true; return { ok: true }; },
+      runCronJob: async () => { ran = true; return { completed: true, runStatus: "ok" }; },
       statMtime: async () => (ran ? 5000 : null),
     });
     const result = await runThinkingProbe(effects, { withinHours: true });
