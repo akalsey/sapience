@@ -21,6 +21,7 @@ import { writeStatusArtifact, resolvePluginVersion } from "./status-artifact.js"
 import { enqueueMainSessionInjection } from "./main-session.js";
 import { requestChannelPush } from "./push.js";
 import { investigateHunches } from "./investigation.js";
+import { compileExtraDomains } from "./domains.js";
 import { registerSapienceDoctorCli } from "./doctor/cli.js";
 
 function mergeConfig(raw: Record<string, unknown>, workspaceDir: string): SapienceConfig {
@@ -79,6 +80,8 @@ export default definePluginEntry({
         plugin: "sapience", type: "config_invalid", field: "activeHours", errors: hoursCheck.errors, using: "defaults",
       }).catch(() => {});
     }
+
+    const extraDomains = compileExtraDomains((api.pluginConfig as Record<string, unknown>)?.domains);
 
     // Write presence marker synchronously so sapience-thinking's .present check is race-free.
     // It is refreshed on every routing run; thinking treats a stale marker as "router gone".
@@ -154,7 +157,7 @@ export default definePluginEntry({
             const byTier: Record<string, number> = {};
 
             for (const pass of newPasses) {
-              const items = proposalSetToItems(pass);
+              const items = proposalSetToItems(pass, extraDomains);
               const routed = items.map(item => routeItem(item, workingProfile, config));
               // Hunches worth surfacing get a bounded read-only check first;
               // supported ones upgrade and re-route, refuted ones drop.

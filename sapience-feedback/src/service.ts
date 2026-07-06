@@ -3,6 +3,7 @@ import { definePluginEntry } from "openclaw/plugin-sdk/plugin-entry";
 import { DEFAULT_CONFIG, type FeedbackConfig, type LlmClient } from "./types.js";
 import { resolveDataPath } from "./utils.js";
 import { classifyMessage, persistSignal } from "./feedback-handler.js";
+import { compileExtraDomains } from "./domains.js";
 import { writeStatusArtifact, resolvePluginVersion } from "./status-artifact.js";
 
 function mergeConfig(raw: Record<string, unknown>, workspaceDir: string): FeedbackConfig {
@@ -36,6 +37,7 @@ export default definePluginEntry({
     } catch { return; }
     const config = mergeConfig(api.pluginConfig as Record<string, unknown>, workspaceDir);
     const llm = getLlmClient(api);
+    const extraDomains = compileExtraDomains((api.pluginConfig as Record<string, unknown>)?.domains);
     const memoryAdd = api.memory?.add ? (params: any) => api.memory.add(params) : undefined;
 
     // Passive capture rides the gateway's internal message hooks — the only
@@ -49,7 +51,7 @@ export default definePluginEntry({
         const content = event?.context?.content;
         if (typeof content !== "string" || !content.trim()) return;
         try {
-          const signals = await classifyMessage(content, config, llm);
+          const signals = await classifyMessage(content, config, llm, extraDomains);
           for (const signal of signals) {
             await persistSignal(signal, { config, memoryAdd });
           }
@@ -84,7 +86,7 @@ export default definePluginEntry({
           }
 
           try {
-            let signals = await classifyMessage(text, config, llm);
+            let signals = await classifyMessage(text, config, llm, extraDomains);
             if (signals.length === 0) {
               signals = [{
                 type: "correction",

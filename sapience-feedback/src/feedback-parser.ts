@@ -1,4 +1,5 @@
 import type { DetectedSignal } from "./types.js";
+import { extractDomain, type DomainPattern } from "./domains.js";
 
 const CORRECTION_PATTERNS: RegExp[] = [
   /\bdon'?t\b.{0,60}\b(do|update|change|delete|send|push|write|modify|set|use)\b/i,
@@ -40,27 +41,11 @@ const CONFIRMATION_PATTERNS: RegExp[] = [
   /\bthat'?s\s+(exactly\s+)?right\b/i,
 ];
 
-const DOMAIN_PATTERNS: Array<[RegExp, string]> = [
-  [/github/i, "github"],
-  [/salesforce/i, "salesforce"],
-  [/posthog/i, "posthog"],
-  [/lovable/i, "lovable"],
-  [/slack/i, "slack"],
-  [/slides?|deck/i, "slides"],
-  [/okr/i, "okr-system"],
-  [/linear/i, "linear"],
-];
 
-function extractDomain(text: string): string {
-  for (const [pattern, domain] of DOMAIN_PATTERNS) {
-    if (pattern.test(text)) return domain;
-  }
-  return "general";
-}
 
-export function parseMessage(text: string): DetectedSignal[] {
+export function parseMessage(text: string, extraDomains: DomainPattern[] = []): DetectedSignal[] {
   const signals: DetectedSignal[] = [];
-  const domain = extractDomain(text);
+  const domain = extractDomain(text, extraDomains);
 
   for (const pattern of METHOD_PATTERNS) {
     if (pattern.test(text)) {

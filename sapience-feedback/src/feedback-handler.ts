@@ -1,5 +1,6 @@
 import type { DetectedSignal, FeedbackConfig, FeedbackEntry, LlmClient } from "./types.js";
 import { parseMessage } from "./feedback-parser.js";
+import type { DomainPattern } from "./domains.js";
 import { classifyWithLlm } from "./llm-classifier.js";
 import { appendFeedback } from "./log-writer.js";
 import { applyFeedbackToProfile } from "./calibration-bridge.js";
@@ -18,7 +19,8 @@ export function shouldClassify(text: string, config: FeedbackConfig): boolean {
 export async function classifyMessage(
   text: string,
   config: FeedbackConfig,
-  llm: LlmClient | null
+  llm: LlmClient | null,
+  extraDomains: DomainPattern[] = []
 ): Promise<DetectedSignal[]> {
   if (!shouldClassify(text, config)) return [];
 
@@ -29,7 +31,7 @@ export async function classifyMessage(
     if (signals.length > 0) return signals;
   }
 
-  return parseMessage(text).map(s => ({ ...s, source: "regex" as const }));
+  return parseMessage(text, extraDomains).map(s => ({ ...s, source: "regex" as const }));
 }
 
 export function buildMetaPointer(signal: DetectedSignal): string {
