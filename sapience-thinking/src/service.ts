@@ -76,8 +76,11 @@ export default definePluginEntry({
     // Record what this plugin actually resolved, for `openclaw sapience doctor`.
     // Context dirs included: passes that read from the wrong places ran blind
     // for weeks with nothing observable — now the doctor can see the inputs.
+    // Refreshed on every cron run as a liveness heartbeat: register-time-only
+    // artifacts made the doctor call healthy plugins "stale" on any gateway
+    // that had simply been up longer than the staleness window.
     const contextDirs = resolveContextDirs(api, agentId);
-    void writeStatusArtifact({
+    const touchArtifact = () => writeStatusArtifact({
       pluginId: "sapience-thinking",
       version: resolvePluginVersion(),
       agentId,
@@ -89,6 +92,7 @@ export default definePluginEntry({
       },
       initAt: new Date().toISOString(),
     }).catch(() => {});
+    void touchArtifact();
 
     // Post-task incidental noticing: peripheral vision over live sessions.
     const subscribeTranscripts = api?.runtime?.events?.onSessionTranscriptUpdate;
@@ -132,6 +136,7 @@ export default definePluginEntry({
       description: "Fetch context bundle and thinking instructions. Call this first in every thinking pass.",
       parameters: Type.Object({}),
       async execute(_id: any, _params: any) {
+        void touchArtifact();
         if (!isWithinActiveHours(config.activeHours)) {
           await logSkipOnce(skipStatePath, "outside_hours", () =>
             appendEvent(config.output.eventsPath, { plugin: "thinking", type: "pass_skipped", reason: "outside_hours" }));

@@ -67,7 +67,8 @@ export default definePluginEntry({
     }
 
     // Record what this plugin actually resolved, for `openclaw sapience doctor`.
-    void writeStatusArtifact({
+    // Refreshed each check_goals run as a liveness heartbeat.
+    const touchArtifact = () => writeStatusArtifact({
       pluginId: "sapience-goals",
       version: resolvePluginVersion(),
       agentId: ((api.config as Record<string, unknown>)?.agent as Record<string, unknown>)?.id as string ?? "default",
@@ -80,6 +81,7 @@ export default definePluginEntry({
       },
       initAt: new Date().toISOString(),
     }).catch(() => {});
+    void touchArtifact();
 
     const skipStatePath = resolveDataPath(undefined, workspaceDir, "goals/.skip-state.json");
 
@@ -315,6 +317,7 @@ export default definePluginEntry({
       parameters: { type: "object", properties: {} },
       async execute(_id: any, _params: any) {
         try {
+          void touchArtifact();
           if (!isWithinActiveHours(config.activeHours)) {
             await logSkipOnce(skipStatePath, "outside_hours", () =>
               appendEvent(config.output.eventsPath, { plugin: "goals", type: "check_skipped", reason: "outside_hours" }));

@@ -102,8 +102,9 @@ export default definePluginEntry({
     void clearLock(lockFile).catch(() => {});
 
     // Record what this plugin actually resolved, so `openclaw sapience doctor` can
-    // report production reality (not a recomputation). Fire-and-forget.
-    void writeStatusArtifact({
+    // report production reality (not a recomputation). Refreshed each routing
+    // run as a liveness heartbeat (see sapience-thinking for why).
+    const touchArtifact = () => writeStatusArtifact({
       pluginId: "sapience",
       version: resolvePluginVersion(),
       agentId: ((api.config as Record<string, unknown>)?.agent as Record<string, unknown>)?.id as string ?? "default",
@@ -111,6 +112,7 @@ export default definePluginEntry({
       outputPaths: config.output as unknown as Record<string, string>,
       initAt: new Date().toISOString(),
     }).catch(() => {});
+    void touchArtifact();
 
     if (typeof api.registerCommand === "function") {
       api.registerCommand({
@@ -187,6 +189,7 @@ export default definePluginEntry({
       parameters: { type: "object", properties: {} },
       async execute(_id: any, _params: any) {
         try {
+          void touchArtifact();
           if (!isWithinActiveHours(config.activeHours)) {
             await logSkipOnce(skipStatePath, "outside_hours", () =>
               appendEvent(config.output.eventsPath, { plugin: "sapience", type: "routing_skipped", reason: "outside_hours" }));

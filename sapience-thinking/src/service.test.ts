@@ -132,3 +132,30 @@ describe("accepted audits become crons", () => {
     expect(events.some((e) => e.type === "audit_scheduled" || e.type === "audit_schedule_failed")).toBe(false);
   });
 });
+
+describe("status artifact heartbeat", () => {
+  // Artifacts used to be written only at register(), so any gateway running
+  // longer than the doctor's staleness window warned about perfectly healthy
+  // plugins. Every cron-tool run now refreshes the artifact as a liveness
+  // signal.
+  it("get_thinking_context refreshes the status artifact", async () => {
+    const prev = process.env.OPENCLAW_STATE_DIR;
+    process.env.OPENCLAW_STATE_DIR = join(dir, "state");
+    try {
+      const artifactPath = join(dir, "state", "sapience", "status", "sapience-thinking.json");
+      const { mkdir, writeFile } = await import("fs/promises");
+      await mkdir(join(dir, "state", "sapience", "status"), { recursive: true });
+      const stale = { pluginId: "sapience-thinking", version: "x", agentId: "main", resolvedWorkspaceDir: dir, outputPaths: {}, initAt: "2026-01-01T00:00:00.000Z" };
+      await writeFile(artifactPath, JSON.stringify(stale));
+
+      await call("get_thinking_context", {});
+      // fire-and-forget write: give it a beat
+      await new Promise((r) => setTimeout(r, 50));
+      const refreshed = JSON.parse(await readFile(artifactPath, "utf-8"));
+      expect(new Date(refreshed.initAt).getTime()).toBeGreaterThan(new Date("2026-01-01T00:00:00.000Z").getTime());
+    } finally {
+      if (prev === undefined) delete process.env.OPENCLAW_STATE_DIR;
+      else process.env.OPENCLAW_STATE_DIR = prev;
+    }
+  });
+});
