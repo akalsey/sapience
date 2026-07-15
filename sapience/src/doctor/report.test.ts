@@ -28,6 +28,7 @@ function healthy(): DoctorInputs {
     ],
     pluginToolsAllowedGlobally: false,
     cronListing: { available: true },
+    pendingProposals: { count: 0 },
     versions: [],
     corruptFiles: [],
     files: [
@@ -368,6 +369,28 @@ describe("buildSuiteDoctorReport", () => {
     i.versions = [{ pluginId: "sapience", running: "0.2.7", onDisk: "0.2.7", registryLatest: "0.2.7" }];
     const r = buildSuiteDoctorReport(i);
     expect(byId(r, "version:sapience")?.severity).toBe("ok");
+  });
+
+  // "The human was unresponsive" — while the human had no idea anything was
+  // queued. The doctor now shows the outstanding queue so silence is visible.
+  it("warns when proposals have been pending for days", () => {
+    const i = healthy();
+    i.pendingProposals = { count: 2340, oldestAt: new Date(NOW - 4 * 24 * 60 * 60 * 1000).toISOString() };
+    const r = buildSuiteDoctorReport(i);
+    const f = byId(r, "paths:pending-proposals");
+    expect(f?.severity).toBe("warn");
+    expect(f?.message).toContain("2340");
+    expect(f?.detail?.toLowerCase()).toContain("next main-session message");
+  });
+
+  it("shows a fresh pending queue as ok and an empty one not at all", () => {
+    const i = healthy();
+    i.pendingProposals = { count: 3, oldestAt: new Date(NOW - 60 * 60 * 1000).toISOString() };
+    let r = buildSuiteDoctorReport(i);
+    expect(byId(r, "paths:pending-proposals")?.severity).toBe("ok");
+    i.pendingProposals = { count: 0 };
+    r = buildSuiteDoctorReport(i);
+    expect(byId(r, "paths:pending-proposals")).toBeUndefined();
   });
 
   it("warns about quarantined corrupt state files", () => {

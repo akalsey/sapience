@@ -96,6 +96,16 @@ export async function deliverItems(
       });
       continue;
     }
+    // Positive receipt: without it, "queued and waiting for the human's next
+    // turn" was indistinguishable from "nothing was ever sent".
+    await appendEvent(config.output.eventsPath, {
+      plugin: "sapience",
+      type: "item_delivered",
+      proposal_id: item.id,
+      tier: item.tier,
+      domain: item.domain,
+      priority: item.priority,
+    });
 
     // Initiative: high-priority act/propose items wake the agent to deliver
     // through the last active channel instead of waiting for the user's next

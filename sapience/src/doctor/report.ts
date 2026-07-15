@@ -165,6 +165,20 @@ function pathsSection(i: DoctorInputs): Section {
     }
   }
 
+  if (i.pendingProposals.count > 0) {
+    const oldestMs = i.pendingProposals.oldestAt ? Date.parse(i.pendingProposals.oldestAt) : undefined;
+    const stale = oldestMs !== undefined && i.nowMs - oldestMs > 48 * 60 * 60 * 1000;
+    findings.push({
+      id: "paths:pending-proposals",
+      severity: stale ? "warn" : "ok",
+      source: "fs",
+      message: `${i.pendingProposals.count} proposal(s) pending your response${oldestMs ? ` (oldest ${ageStr(i.nowMs, oldestMs)})` : ""}`,
+      detail: stale
+        ? "Proposals surface on your next main-session message; priority 4+ push through the channel. A days-old queue means they aren't reaching you — check push settings and item_delivered/push_requested events."
+        : undefined,
+    });
+  }
+
   if (i.corruptFiles.length > 0) {
     findings.push({ id: "paths:corrupt-files", severity: "warn", source: "fs",
       message: `${i.corruptFiles.length} quarantined state file(s) found`,

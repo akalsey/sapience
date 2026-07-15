@@ -149,6 +149,23 @@ export async function readLegacyRootPins(stateBase: string, pluginIds: readonly 
   return out;
 }
 
+// Outstanding proposal queue: count + oldest pending record from the outcome
+// tracker, so the doctor can show the human what's silently waiting on them.
+export async function readPendingProposals(workspaceDir: string): Promise<{ count: number; oldestAt?: string }> {
+  try {
+    const raw = JSON.parse(await readFile(join(workspaceDir, "proactive-thinking", "outcomes.json"), "utf-8"));
+    const pending = Object.values(raw as Record<string, { state?: string; created_at?: string }>)
+      .filter((r) => r?.state === "pending");
+    const oldest = pending
+      .map((r) => r.created_at)
+      .filter((t): t is string => typeof t === "string")
+      .sort()[0];
+    return { count: pending.length, ...(oldest ? { oldestAt: oldest } : {}) };
+  } catch {
+    return { count: 0 };
+  }
+}
+
 // safe-json quarantines unparseable state files as <name>.corrupt-<ts> —
 // durable evidence a state file was corrupted and reset.
 export async function findCorruptFiles(workspaceDir: string): Promise<string[]> {
@@ -245,11 +262,12 @@ export async function gatherInputs(deps: { api: any; config: any; env?: NodeJS.P
   const files = await Promise.all(SUITE_FILES.map((f) => fileObservation(f.label, workspace.resolved, f.staleAfterMs)));
 
   const stateBase = resolveStateBase(env);
-  const [onDisk, legacyPins, registry, corruptFiles] = await Promise.all([
+  const [onDisk, legacyPins, registry, corruptFiles, pendingProposals] = await Promise.all([
     scanInstalledVersions(stateBase, SUITE_PLUGINS),
     readLegacyRootPins(stateBase, SUITE_PLUGINS),
     fetchRegistryVersions(SUITE_PLUGINS),
     findCorruptFiles(workspace.resolved),
+    readPendingProposals(workspace.resolved),
   ]);
   const versions: VersionObservation[] = SUITE_PLUGINS.map((id) => ({
     pluginId: id,
@@ -269,6 +287,7 @@ export async function gatherInputs(deps: { api: any; config: any; env?: NodeJS.P
     pluginToolsAllowedGlobally: pluginToolsAllowedGlobally(config),
     versions,
     corruptFiles,
+    pendingProposals,
     workspace,
     files,
     memory: memoryObservation(config),

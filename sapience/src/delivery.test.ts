@@ -98,14 +98,30 @@ describe("deliverItems", () => {
     };
     const item = { ...base, tier: "act" as const, confidence: 0.9 };
     await deliverItems([item], fakeApi, config);
-    const ev = JSON.parse((await readFile(eventsPath, "utf-8")).trim());
-    expect(ev.type).toBe("action_logged");
+    const events = (await readFile(eventsPath, "utf-8")).trim().split("\n").map((l) => JSON.parse(l));
+    const ev = events.find((e) => e.type === "action_logged");
+    expect(ev).toBeDefined();
     expect(ev.plugin).toBe("sapience");
     expect(ev.domain).toBe(item.domain);
     expect(ev.confidence).toBe(0.9);
   });
 
-  it("emits no event for non-act tiers", async () => {
+  it("emits an item_delivered receipt for every successful injection", async () => {
+    const eventsPath = join(dir, "events.jsonl");
+    const config = {
+      ...DEFAULT_CONFIG,
+      push: { ...DEFAULT_CONFIG.push, enabled: false },
+      output: { ...DEFAULT_CONFIG.output, actionLogPath: join(dir, "action-log.md"), eventsPath },
+    };
+    await deliverItems([{ ...base, tier: "learning" as const, priority: 5 }], fakeApi, config);
+    const events = (await readFile(eventsPath, "utf-8")).trim().split("\n").map((l) => JSON.parse(l));
+    const receipt = events.find((e) => e.type === "item_delivered");
+    expect(receipt).toBeDefined();
+    expect(receipt.tier).toBe("learning");
+    expect(receipt.priority).toBe(5);
+  });
+
+  it("emits no delivery events for non-act tiers other than the receipt", async () => {
     const eventsPath = join(dir, "events.jsonl");
     const config = {
       ...DEFAULT_CONFIG,
@@ -116,9 +132,10 @@ describe("deliverItems", () => {
         eventsPath,
       },
     };
-    const item = { ...base, tier: "propose" as const, confidence: 0.5 };
+    const item = { ...base, tier: "propose" as const, confidence: 0.5, priority: 2 };
     await deliverItems([item], fakeApi, config);
-    await expect(readFile(eventsPath, "utf-8")).rejects.toThrow();
+    const events = (await readFile(eventsPath, "utf-8")).trim().split("\n").map((l) => JSON.parse(l));
+    expect(events.every((e) => e.type === "item_delivered")).toBe(true);
   });
 
   it("requests a channel push for high-priority act items, within the daily budget", async () => {

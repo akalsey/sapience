@@ -119,6 +119,8 @@ export interface DoctorInputs {
   // Quarantined state files (*.corrupt-*) found in the workspace — evidence
   // that a state file was corrupted and reset.
   corruptFiles: string[];
+  // Outstanding proposal queue from the outcome tracker.
+  pendingProposals: { count: number; oldestAt?: string };
   workspace: WorkspaceObservation;
   files: FileObservation[];
   memory: MemoryObservation;

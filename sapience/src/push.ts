@@ -22,9 +22,6 @@ export interface PushState {
   count: number;
 }
 
-// Only initiative-worthy tiers push; ambient tiers (ask/explore/learning) wait
-// for the user's next turn.
-const PUSH_TIERS = new Set(["act", "propose"]);
 
 export function localDateIn(timezone: string, now: Date = new Date()): string {
   const parts = new Intl.DateTimeFormat("en-US", {
@@ -34,6 +31,11 @@ export function localDateIn(timezone: string, now: Date = new Date()): string {
   return `${get("year")}-${get("month")}-${get("day")}`;
 }
 
+// Priority gates the push, not tier: on a young install everything routes to
+// the learning tier (no calibration yet), and a tier-based rule silently
+// exempted exactly the P5 "needs human attention today" items from the
+// channel — the human heard nothing while passes escalated about being
+// ignored. The daily budget is the noise control.
 export function shouldPush(
   item: { tier: string; priority: number },
   policy: PushPolicy,
@@ -41,7 +43,6 @@ export function shouldPush(
   localDate: string
 ): boolean {
   if (!policy.enabled) return false;
-  if (!PUSH_TIERS.has(item.tier)) return false;
   if (item.priority < policy.minPriority) return false;
   const spentToday = state.date === localDate ? state.count : 0;
   return spentToday < policy.maxPerDay;

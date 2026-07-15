@@ -10,10 +10,20 @@ describe("shouldPush", () => {
     expect(shouldPush({ tier: "propose", priority: 4 }, policy, fresh, "2026-07-05")).toBe(true);
   });
 
-  it("never pushes low-priority or ambient tiers", () => {
+  it("never pushes below the priority threshold", () => {
     expect(shouldPush({ tier: "propose", priority: 3 }, policy, fresh, "2026-07-05")).toBe(false);
-    expect(shouldPush({ tier: "explore", priority: 5 }, policy, fresh, "2026-07-05")).toBe(false);
-    expect(shouldPush({ tier: "learning", priority: 5 }, policy, fresh, "2026-07-05")).toBe(false);
+    expect(shouldPush({ tier: "learning", priority: 3 }, policy, fresh, "2026-07-05")).toBe(false);
+  });
+
+  // Priority gates the push, not tier. On a young install EVERYTHING routes
+  // to the learning tier (no calibration yet), and the old act/propose-only
+  // rule silently exempted exactly the P5 "needs human attention today"
+  // items from the channel — the human heard nothing while the passes
+  // escalated about being ignored.
+  it("pushes any tier at or above the priority threshold", () => {
+    expect(shouldPush({ tier: "learning", priority: 5 }, policy, fresh, "2026-07-05")).toBe(true);
+    expect(shouldPush({ tier: "explore", priority: 4 }, policy, fresh, "2026-07-05")).toBe(true);
+    expect(shouldPush({ tier: "ask", priority: 5 }, policy, fresh, "2026-07-05")).toBe(true);
   });
 
   it("respects the daily budget and resets it on a new day", () => {
