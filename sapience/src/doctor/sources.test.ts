@@ -117,3 +117,23 @@ describe("pluginToolsAllowedGlobally", () => {
     expect(pluginToolsAllowedGlobally({ tools: { profile: "coding", allow: ["group:plugins"] } })).toBe(true);
   });
 });
+
+describe("parseCronListJson noise tolerance", () => {
+  // Defense in depth: CLI startup noise (migration warnings, banners) around
+  // the JSON payload must not turn a healthy listing into "no jobs".
+  it("extracts the JSON object from surrounding noise", () => {
+    const noisy = '18:53:59 [state-migrations] Legacy state migration warnings:\n- left in place\n{"jobs":[{"name":"sapience-thinking","enabled":true}]}\nbye';
+    const jobs = parseCronListJson(noisy);
+    expect(jobs).toHaveLength(1);
+    expect(jobs[0].name).toBe("sapience-thinking");
+  });
+
+  it("extracts a bare array from surrounding noise", () => {
+    const jobs = parseCronListJson('banner\n[{"name":"a"}]');
+    expect(jobs).toHaveLength(1);
+  });
+
+  it("still returns [] for pure garbage", () => {
+    expect(parseCronListJson("no json here at all")).toEqual([]);
+  });
+});

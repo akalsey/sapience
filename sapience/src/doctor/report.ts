@@ -32,8 +32,8 @@ function pluginFinding(p: PluginObservation, nowMs: number): Finding {
   const initMs = Date.parse(p.artifact.initAt);
   if (nowMs - initMs > ARTIFACT_STALE_MS) {
     return { id, severity: "warn", source: "artifact",
-      message: `${p.id} v${p.artifact.version} — status artifact is stale (${ageStr(nowMs, initMs)})`,
-      detail: "The gateway may not have reloaded this plugin recently." };
+      message: `${p.id} v${p.artifact.version} — no liveness signal for ${ageStr(nowMs, initMs)}`,
+      detail: "Plugins refresh their status artifact on every cron run. A stale one means the plugin isn't loaded, its cron isn't firing, or the plugin predates the heartbeat (update it)." };
   }
   if (p.artifact.captureMode === "command-only") {
     return { id, severity: "warn", source: "artifact",
@@ -59,7 +59,7 @@ function cronFinding(c: CronObservation, allowlist: string[], pluginToolsGlobal:
   if (j.lastStatus === "error" || (j.consecutiveErrors ?? 0) > 0) {
     return { id, severity: "error", source: "cron",
       message: `cron ${j.name} last run failed (${j.consecutiveErrors ?? 0} consecutive errors)`,
-      detail: "Inspect with `openclaw cron get`." };
+      detail: `Inspect with \`openclaw cron get ${j.id ?? "<job-id from cron list>"}\` (it takes the job id, not the name).` };
   }
   if (!pluginToolsGlobal && !j.toolsAllow?.length) {
     return { id, severity: "error", source: "cron",
@@ -213,9 +213,19 @@ function memorySection(i: DoctorInputs): Section {
 }
 
 export function buildSuiteDoctorReport(i: DoctorInputs): DoctorReport {
+  // When the listing itself failed we could not observe crons at all — one
+  // honest error, no per-cron "not registered" assertions, no autofix bait.
+  const cronFindings: Finding[] = i.cronListing.available
+    ? i.crons.map((c) => cronFinding(c, i.modelAllowlist, i.pluginToolsAllowedGlobally))
+    : [{
+        id: "cron:listing", severity: "error", source: "cron",
+        message: "could not list cron jobs — cron state is unverified this run",
+        detail: `\`openclaw cron list --all --json\` failed: ${i.cronListing.error ?? "unknown error"}. Run the doctor where the gateway is reachable (e.g. inside the container: docker compose exec openclaw openclaw sapience doctor).`,
+      }];
+
   const sections: Section[] = [
     { title: "PLUGINS", findings: i.plugins.map((p) => pluginFinding(p, i.nowMs)) },
-    { title: "CRONS", findings: i.crons.map((c) => cronFinding(c, i.modelAllowlist, i.pluginToolsAllowedGlobally)) },
+    { title: "CRONS", findings: cronFindings },
     pathsSection(i),
     memorySection(i),
   ];

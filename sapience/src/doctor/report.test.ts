@@ -27,6 +27,7 @@ function healthy(): DoctorInputs {
       { base: "sapience-goals-check", job: { name: "sapience-goals-check", enabled: true, lastStatus: "ok", consecutiveErrors: 0, toolsAllow: ["check_goals"] } },
     ],
     pluginToolsAllowedGlobally: false,
+    cronListing: { available: true },
     versions: [],
     corruptFiles: [],
     files: [
@@ -81,7 +82,7 @@ describe("buildSuiteDoctorReport", () => {
     expect(f?.message.toLowerCase()).toContain("init");
   });
 
-  it("warns on a stale status artifact", () => {
+  it("warns on a stale status artifact (no liveness heartbeat)", () => {
     const i = healthy();
     i.plugins[1]!.artifact!.initAt = new Date(NOW - 5 * 60 * 60 * 1000).toISOString();
     const r = buildSuiteDoctorReport(i);
@@ -206,6 +207,46 @@ describe("buildSuiteDoctorReport", () => {
     i.files = i.files.map((f, idx) => (idx === 0 ? f : { label: f.label, path: f.path, exists: false }));
     const r = buildSuiteDoctorReport(i);
     expect(byId(r, "paths:no-output")).toBeUndefined();
+  });
+
+  // The production incident: `openclaw cron list --json` failed in the
+  // doctor's child process (dockerized gateway unreachable from the exec
+  // context), the catch swallowed it into [], and the doctor asserted all
+  // three crons "not registered" — offering --fix actions that would have
+  // minted duplicate jobs. Observation failure must never read as absence.
+  it("reports a single listing-failure error (with the exec error) when crons cannot be observed", () => {
+    const i = healthy();
+    i.crons = [];
+    i.cronListing = { available: false, error: "GatewayCredentialsRequiredError: gateway cron.list requires credentials" };
+    const r = buildSuiteDoctorReport(i);
+    const f = byId(r, "cron:listing");
+    expect(f?.severity).toBe("error");
+    expect(f?.message.toLowerCase()).toContain("could not list");
+    expect(f?.detail).toContain("GatewayCredentialsRequiredError");
+    expect(f?.fix).toBeUndefined();
+    // No per-cron "not registered" assertions, no autofix bait.
+    expect(byId(r, "cron:sapience-thinking")).toBeUndefined();
+    expect(all(r).every((x) => x.fix?.kind !== "cron-register")).toBe(true);
+  });
+
+  it("does not raise the no-output contradiction or staleness when the listing failed", () => {
+    const i = healthy();
+    i.crons = [];
+    i.cronListing = { available: false, error: "boom" };
+    i.files = i.files.map((f) => ({ label: f.label, path: f.path, exists: false }));
+    const r = buildSuiteDoctorReport(i);
+    expect(byId(r, "paths:no-output")).toBeUndefined();
+  });
+
+  it("includes the job id in the failed-run inspect advice", () => {
+    const i = healthy();
+    i.crons[0]!.job!.id = "40128baf-be90-4a17-8d44-0153bce8c4a1";
+    i.crons[0]!.job!.lastStatus = "error";
+    i.crons[0]!.job!.consecutiveErrors = 2;
+    const r = buildSuiteDoctorReport(i);
+    const f = byId(r, "cron:sapience-thinking");
+    expect(f?.severity).toBe("error");
+    expect(f?.detail).toContain("openclaw cron get 40128baf-be90-4a17-8d44-0153bce8c4a1");
   });
 
   it("warns about legacy duplicate cron jobs that can shadow the real one", () => {

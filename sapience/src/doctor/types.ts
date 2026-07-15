@@ -58,6 +58,7 @@ export interface PluginObservation {
 export interface CronObservation {
   base: string;                     // expected base name, e.g. "sapience-thinking"
   job?: {
+    id?: string;                    // gateway job id — `openclaw cron get` wants this, not the name
     name: string;
     enabled: boolean;
     payloadModel?: string;
@@ -108,6 +109,9 @@ export interface DoctorInputs {
   // True when the gateway config exposes plugin tools to every session (no
   // restrictive tools.profile, or group:plugins in tools.allow/alsoAllow).
   pluginToolsAllowedGlobally: boolean;
+  // Whether `openclaw cron list --json` actually succeeded. When it didn't,
+  // crons is empty because we COULDN'T LOOK — not because nothing exists.
+  cronListing: { available: boolean; error?: string };
   versions: VersionObservation[];
   // Quarantined state files (*.corrupt-*) found in the workspace — evidence
   // that a state file was corrupted and reset.

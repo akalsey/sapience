@@ -52,20 +52,40 @@ export function parseCronListJson(stdout: string): any[] {
     const parsed = JSON.parse(stdout);
     if (Array.isArray(parsed)) return parsed;
     return parsed?.jobs ?? [];
-  } catch {
-    return [];
+  } catch { /* fall through to noise-tolerant extraction */ }
+
+  // CLI startup noise (migration warnings, banners) can wrap the payload:
+  // extract from each JSON opener to its last closer, but only accept a slice
+  // that actually yields a job list — noise like "[state-migrations]" or a
+  // jobs-less object fragment must not read as an empty listing.
+  for (const [open, close] of [["{", "}"], ["[", "]"]] as const) {
+    const start = stdout.indexOf(open);
+    const end = stdout.lastIndexOf(close);
+    if (start === -1 || end <= start) continue;
+    try {
+      const parsed = JSON.parse(stdout.slice(start, end + 1));
+      if (Array.isArray(parsed)) return parsed;
+      if (Array.isArray(parsed?.jobs)) return parsed.jobs;
+    } catch { /* try the other opener */ }
   }
+  return [];
 }
 
 // The cron *service* (api.runtime.cron) is only wired in the running gateway, not
 // in the standalone CLI process the doctor runs in. Shell out to the CLI command,
 // which talks to the gateway — the same path the user runs by hand.
-async function listCronJobs(): Promise<any[]> {
+// Failure here must stay distinguishable from "no jobs": the production
+// incident was this exec failing (gateway unreachable from the doctor's exec
+// context) and an empty catch turning that into "not registered" for every
+// cron — with --fix then offering to mint duplicates.
+async function listCronJobs(): Promise<{ ok: true; jobs: any[] } | { ok: false; error: string }> {
   try {
     const { stdout } = await exec("openclaw", ["cron", "list", "--all", "--json"]);
-    return parseCronListJson(stdout);
-  } catch {
-    return [];
+    return { ok: true, jobs: parseCronListJson(stdout) };
+  } catch (err) {
+    const e = err as { stderr?: string; stdout?: string; message?: string };
+    const detail = [e.stderr?.trim(), e.stdout?.trim(), e.message].filter(Boolean).join(" | ").slice(0, 500);
+    return { ok: false, error: detail || String(err) };
   }
 }
 
@@ -81,6 +101,7 @@ export function toCronObservation(base: string, jobs: any[]): CronObservation {
   return {
     base,
     job: {
+      ...(typeof job.id === "string" ? { id: job.id } : {}),
       name: job.name,
       enabled: job.enabled !== false,
       payloadModel: job.payload?.model,
@@ -212,7 +233,8 @@ function memoryObservation(config: any): MemoryObservation {
 export async function gatherInputs(deps: { api: any; config: any; env?: NodeJS.ProcessEnv; nowMs: number }): Promise<DoctorInputs> {
   const { api, config, env, nowMs } = deps;
   const artifacts = await readStatusArtifacts(env);
-  const jobs = await listCronJobs();
+  const listing = await listCronJobs();
+  const jobs = listing.ok ? listing.jobs : [];
 
   const plugins: PluginObservation[] = SUITE_PLUGINS.map((id) => {
     const artifact = artifacts[id];
@@ -241,7 +263,8 @@ export async function gatherInputs(deps: { api: any; config: any; env?: NodeJS.P
   return {
     nowMs,
     plugins,
-    crons: SUITE_CRON_BASES.map((base) => toCronObservation(base, jobs)),
+    crons: listing.ok ? SUITE_CRON_BASES.map((base) => toCronObservation(base, jobs)) : [],
+    cronListing: listing.ok ? { available: true } : { available: false, error: listing.error },
     modelAllowlist: modelAllowlist(config),
     pluginToolsAllowedGlobally: pluginToolsAllowedGlobally(config),
     versions,
