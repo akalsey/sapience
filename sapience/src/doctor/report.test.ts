@@ -82,11 +82,43 @@ describe("buildSuiteDoctorReport", () => {
     expect(f?.message.toLowerCase()).toContain("init");
   });
 
-  it("warns on a stale status artifact (no liveness heartbeat)", () => {
+  it("warns on a stale status artifact when the whole suite is quiet", () => {
     const i = healthy();
-    i.plugins[1]!.artifact!.initAt = new Date(NOW - 5 * 60 * 60 * 1000).toISOString();
+    // Everything stale together: gateway may simply be stopped — warn, not error.
+    for (const p of i.plugins) p.artifact!.initAt = new Date(NOW - 5 * 60 * 60 * 1000).toISOString();
     const r = buildSuiteDoctorReport(i);
     expect(byId(r, "plugin:sapience")?.severity).toBe("warn");
+  });
+
+  // The production signature: right after a restart three plugins write fresh
+  // artifacts and one sits at 228h — the gateway is demonstrably up and
+  // loading suite plugins, so THAT plugin is not initializing. That's an
+  // error with a load-failure diagnosis, not a shrugging "may not have
+  // reloaded recently" warn. Include the on-disk version so "vunknown" in the
+  // stale artifact doesn't read as "not installed".
+  it("errors when one plugin is stale while its siblings are alive (not loading)", () => {
+    const i = healthy();
+    const feedback = i.plugins.find((p) => p.id === "sapience-feedback")!;
+    feedback.artifact!.initAt = new Date(NOW - 228 * 60 * 60 * 1000).toISOString();
+    feedback.artifact!.version = "unknown";
+    i.versions = [{ pluginId: "sapience-feedback", onDisk: "0.5.0", registryLatest: "0.5.0" }];
+    const r = buildSuiteDoctorReport(i);
+    const f = byId(r, "plugin:sapience-feedback");
+    expect(f?.severity).toBe("error");
+    expect(f?.message).toContain("has not initialized");
+    expect(f?.message).toContain("v0.5.0 on disk");
+    expect(f?.detail).toContain("logs");
+  });
+
+  it("surfaces a recorded register() failure with its error", () => {
+    const i = healthy();
+    const feedback = i.plugins.find((p) => p.id === "sapience-feedback")!;
+    feedback.artifact!.initError = "TypeError: api.runtime.agent.resolveAgentWorkspaceDir is not a function";
+    const r = buildSuiteDoctorReport(i);
+    const f = byId(r, "plugin:sapience-feedback");
+    expect(f?.severity).toBe("error");
+    expect(f?.message).toContain("register() failed");
+    expect(f?.detail).toContain("resolveAgentWorkspaceDir");
   });
 
   it("errors on a missing cron and offers a cron-register fix", () => {

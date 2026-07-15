@@ -34,7 +34,24 @@ export default definePluginEntry({
     let workspaceDir: string;
     try {
       workspaceDir = (api.runtime.agent.resolveAgentWorkspaceDir as (cfg: unknown) => string)(api.pluginConfig);
-    } catch { return; }
+    } catch (err) {
+      // In CLI-collection context the runtime is empty and this bail is
+      // expected — stay silent. In a REAL gateway runtime a failure here is
+      // exactly the silent death that left a plugin "vunknown" for 9 days;
+      // record it so the doctor can say why.
+      if (api?.runtime?.agent) {
+        void writeStatusArtifact({
+          pluginId: "sapience-feedback",
+          version: resolvePluginVersion(),
+          agentId: "unknown",
+          resolvedWorkspaceDir: "",
+          outputPaths: {},
+          initError: String(err),
+          initAt: new Date().toISOString(),
+        }).catch(() => {});
+      }
+      return;
+    }
     const config = mergeConfig(api.pluginConfig as Record<string, unknown>, workspaceDir);
     const llm = getLlmClient(api);
     const extraDomains = compileExtraDomains((api.pluginConfig as Record<string, unknown>)?.domains);

@@ -45,6 +45,9 @@ export interface StatusArtifact {
   // sapience-feedback only: "message-hook" when passive capture registered,
   // "command-only" when the gateway lacks the hook surface.
   captureMode?: "message-hook" | "command-only";
+  // Set when register() failed in a real gateway runtime — the error that
+  // would otherwise vanish into a silent bail.
+  initError?: string;
   initAt: string;
 }
 

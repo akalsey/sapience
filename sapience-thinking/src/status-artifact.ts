@@ -25,6 +25,8 @@ export interface StatusArtifact {
   agentId: string;
   resolvedWorkspaceDir: string;
   outputPaths: Record<string, string>;
+  // Set when register() failed in a real gateway runtime.
+  initError?: string;
   initAt: string;
 }
 

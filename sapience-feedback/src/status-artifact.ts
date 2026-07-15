@@ -28,6 +28,8 @@ export interface StatusArtifact {
   // How passive feedback capture registered: "message-hook" when the gateway
   // exposes registerHook, "command-only" when only /feedback works.
   captureMode?: "message-hook" | "command-only";
+  // Set when register() failed in a real gateway runtime.
+  initError?: string;
   initAt: string;
 }
 

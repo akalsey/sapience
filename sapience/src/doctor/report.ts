@@ -9,6 +9,10 @@ import type {
 } from "./types.js";
 import { MEMORY_SETTINGS, ARTIFACT_STALE_MS, SUITE_CRONS } from "./inventory.js";
 
+function durationStr(nowMs: number, thenMs: number): string {
+  return ageStr(nowMs, thenMs).replace(/ ago$/, "");
+}
+
 function ageStr(nowMs: number, mtimeMs?: number): string {
   if (mtimeMs === undefined) return "unknown";
   const s = Math.max(0, Math.round((nowMs - mtimeMs) / 1000));
@@ -18,7 +22,11 @@ function ageStr(nowMs: number, mtimeMs?: number): string {
   return `${Math.round(m / 60)}h ago`;
 }
 
-function pluginFinding(p: PluginObservation, nowMs: number): Finding {
+function pluginFinding(
+  p: PluginObservation,
+  nowMs: number,
+  ctx: { siblingAlive: boolean; onDisk?: string }
+): Finding {
   const id = `plugin:${p.id}`;
   if (!p.installed) {
     return { id, severity: "error", source: "config", message: `${p.id} is not installed`,
@@ -29,11 +37,26 @@ function pluginFinding(p: PluginObservation, nowMs: number): Finding {
       message: `${p.id} is installed but did not initialize`,
       detail: "No status artifact written — register() likely bailed. Check `openclaw doctor` / gateway logs." };
   }
+  if (p.artifact.initError) {
+    return { id, severity: "error", source: "artifact",
+      message: `${p.id} register() failed in the gateway`,
+      detail: `${p.artifact.initError} (recorded ${ageStr(nowMs, Date.parse(p.artifact.initAt))})` };
+  }
   const initMs = Date.parse(p.artifact.initAt);
   if (nowMs - initMs > ARTIFACT_STALE_MS) {
+    const versionNote = ctx.onDisk && (p.artifact.version === "unknown" || p.artifact.version !== ctx.onDisk)
+      ? ` (v${ctx.onDisk} on disk has never initialized; the artifact is from ${p.artifact.version === "unknown" ? "an older build" : `v${p.artifact.version}`})`
+      : "";
+    if (ctx.siblingAlive) {
+      // Other suite plugins are heartbeating, so the gateway is up and loading
+      // plugins — this one specifically is not initializing.
+      return { id, severity: "error", source: "artifact",
+        message: `${p.id} has not initialized in ${durationStr(nowMs, initMs)} while other suite plugins are alive${versionNote}`,
+        detail: "The gateway is not loading this plugin. Check startup logs (e.g. `docker compose logs openclaw | grep -i " + p.id + "`) and `openclaw plugins inspect " + p.id + "`." };
+    }
     return { id, severity: "warn", source: "artifact",
-      message: `${p.id} v${p.artifact.version} — no liveness signal for ${ageStr(nowMs, initMs)}`,
-      detail: "Plugins refresh their status artifact on every cron run. A stale one means the plugin isn't loaded, its cron isn't firing, or the plugin predates the heartbeat (update it)." };
+      message: `${p.id} v${p.artifact.version} — no liveness signal in ${durationStr(nowMs, initMs)}${versionNote}`,
+      detail: "Plugins refresh their status artifact on every cron run. All suite artifacts are quiet — the gateway may simply be stopped, or the plugins predate the heartbeat (update them)." };
   }
   if (p.artifact.captureMode === "command-only") {
     return { id, severity: "warn", source: "artifact",
@@ -223,8 +246,18 @@ export function buildSuiteDoctorReport(i: DoctorInputs): DoctorReport {
         detail: `\`openclaw cron list --all --json\` failed: ${i.cronListing.error ?? "unknown error"}. Run the doctor where the gateway is reachable (e.g. inside the container: docker compose exec openclaw openclaw sapience doctor).`,
       }];
 
+  const onDiskByPlugin = new Map(i.versions.map((v) => [v.pluginId, v.onDisk]));
+  const freshIds = new Set(
+    i.plugins
+      .filter((p) => p.artifact && !p.artifact.initError && i.nowMs - Date.parse(p.artifact.initAt) <= ARTIFACT_STALE_MS)
+      .map((p) => p.id)
+  );
+
   const sections: Section[] = [
-    { title: "PLUGINS", findings: i.plugins.map((p) => pluginFinding(p, i.nowMs)) },
+    { title: "PLUGINS", findings: i.plugins.map((p) => pluginFinding(p, i.nowMs, {
+      siblingAlive: [...freshIds].some((fid) => fid !== p.id),
+      onDisk: onDiskByPlugin.get(p.id),
+    })) },
     { title: "CRONS", findings: cronFindings },
     pathsSection(i),
     memorySection(i),
