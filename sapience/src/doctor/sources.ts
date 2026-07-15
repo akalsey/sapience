@@ -17,10 +17,10 @@ import type {
 
 const exec = promisify(execFile);
 
-// Reads a dotted "plugins.<id>.<rest>" path against the real OpenClawConfig shape
-// (config.plugins.entries.<id>.config.<rest>). Returns undefined if absent.
+// Reads a dotted "plugins.entries.<id>.config.<rest>" path (the same canonical
+// shape `openclaw config set` accepts) against the loaded config object.
 function readPluginConfig(config: any, dotted: string): unknown {
-  const m = /^plugins\.([^.]+)\.(.+)$/.exec(dotted);
+  const m = /^plugins\.entries\.([^.]+)\.config\.(.+)$/.exec(dotted);
   if (!m) return undefined;
   const [, id, rest] = m;
   let node = config?.plugins?.entries?.[id!]?.config;

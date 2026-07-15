@@ -137,8 +137,11 @@ describe("buildSuiteDoctorReport", () => {
     const f = byId(r, "memory:bridgeEnabled");
     expect(f?.severity).toBe("warn");
     expect(f?.fix?.kind).toBe("config-set");
-    expect(f?.fix?.payload?.path).toBe("plugins.memory-wiki.bridge.enabled");
+    // Must be the REAL config path shape — `openclaw config set` takes
+    // plugins.entries.<id>.config.<key>; the short form is rejected.
+    expect(f?.fix?.payload?.path).toBe("plugins.entries.memory-wiki.config.bridge.enabled");
     expect(f?.fix?.payload?.value).toBe(true);
+    expect(f?.fix?.description).toContain("plugins.entries.memory-wiki.config.bridge.enabled");
   });
 
   it("warns when memory-wiki is absent and skips wiki-only settings", () => {

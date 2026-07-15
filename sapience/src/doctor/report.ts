@@ -196,7 +196,7 @@ function memorySection(i: DoctorInputs): Section {
   }
 
   for (const s of MEMORY_SETTINGS) {
-    const isWikiOnly = s.path.startsWith("plugins.memory-wiki");
+    const isWikiOnly = s.path.startsWith("plugins.entries.memory-wiki.");
     if (isWikiOnly && !m.wikiInstalled) continue; // moot without the plugin
     const actual = m[s.key];
     const id = `memory:${s.key}`;

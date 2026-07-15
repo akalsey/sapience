@@ -44,8 +44,8 @@ Keep `<workspace>/sapience/calibration.json` if you might reinstall: it's the le
 The installer may have enabled memory settings for the suite. They're generally useful beyond sapience, but to revert:
 
 ```bash
-openclaw config set plugins.memory-core.dreaming.enabled false --strict-json
-openclaw config set plugins.memory-wiki.bridge.enabled false --strict-json
+openclaw config set plugins.entries.memory-core.config.dreaming.enabled false --strict-json
+openclaw config set plugins.entries.memory-wiki.config.bridge.enabled false --strict-json
 ```
 
 And if you installed memory-wiki solely for the suite:

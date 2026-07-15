@@ -63,10 +63,13 @@ export const MEMORY_SETTINGS: ReadonlyArray<{
   expected: string | boolean;
   label: string;
 }> = [
-  { key: "dreamingEnabled", path: "plugins.memory-core.dreaming.enabled", expected: true, label: "memory-core dreaming" },
-  { key: "vaultMode", path: "plugins.memory-wiki.vaultMode", expected: "bridge", label: "memory-wiki vaultMode" },
-  { key: "bridgeEnabled", path: "plugins.memory-wiki.bridge.enabled", expected: true, label: "memory-wiki bridge" },
-  { key: "searchCorpus", path: "plugins.memory-wiki.search.corpus", expected: "all", label: "memory-wiki search corpus" },
+  // Paths are the REAL `openclaw config set` shape (plugins.entries.<id>.config.<key>);
+  // a short form like plugins.memory-wiki.vaultMode is rejected by the CLI and
+  // shipped as broken advice/fixes for weeks before anyone caught it.
+  { key: "dreamingEnabled", path: "plugins.entries.memory-core.config.dreaming.enabled", expected: true, label: "memory-core dreaming" },
+  { key: "vaultMode", path: "plugins.entries.memory-wiki.config.vaultMode", expected: "bridge", label: "memory-wiki vaultMode" },
+  { key: "bridgeEnabled", path: "plugins.entries.memory-wiki.config.bridge.enabled", expected: true, label: "memory-wiki bridge" },
+  { key: "searchCorpus", path: "plugins.entries.memory-wiki.config.search.corpus", expected: "all", label: "memory-wiki search corpus" },
 ];
 
 // A status artifact older than this is treated as stale (plugin may not be loading).

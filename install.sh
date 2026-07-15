@@ -301,11 +301,13 @@ if [[ "$MEMORY_WIKI_AVAILABLE" == "true" ]]; then
   CONFIG_KEYS_ORDER+=(vault_mode bridge_enabled corpus)
 fi
 
+# The real config path shape: plugins.entries.<id>.config.<key> — the CLI
+# rejects shorter forms, so gets read nothing and sets write orphan keys.
 declare -A CONFIG_PATHS=(
-  [dreaming]="plugins.memory-core.dreaming.enabled"
-  [vault_mode]="plugins.memory-wiki.vaultMode"
-  [bridge_enabled]="plugins.memory-wiki.bridge.enabled"
-  [corpus]="plugins.memory-wiki.search.corpus"
+  [dreaming]="plugins.entries.memory-core.config.dreaming.enabled"
+  [vault_mode]="plugins.entries.memory-wiki.config.vaultMode"
+  [bridge_enabled]="plugins.entries.memory-wiki.config.bridge.enabled"
+  [corpus]="plugins.entries.memory-wiki.config.search.corpus"
 )
 
 declare -A CONFIG_EXPECTED=(
@@ -316,10 +318,10 @@ declare -A CONFIG_EXPECTED=(
 )
 
 declare -A CONFIG_SET_CMDS=(
-  [dreaming]="openclaw config set plugins.memory-core.dreaming.enabled true --strict-json"
-  [vault_mode]="openclaw config set plugins.memory-wiki.vaultMode '\"bridge\"'"
-  [bridge_enabled]="openclaw config set plugins.memory-wiki.bridge.enabled true --strict-json"
-  [corpus]="openclaw config set plugins.memory-wiki.search.corpus '\"all\"'"
+  [dreaming]="openclaw config set plugins.entries.memory-core.config.dreaming.enabled true --strict-json"
+  [vault_mode]="openclaw config set plugins.entries.memory-wiki.config.vaultMode '\"bridge\"'"
+  [bridge_enabled]="openclaw config set plugins.entries.memory-wiki.config.bridge.enabled true --strict-json"
+  [corpus]="openclaw config set plugins.entries.memory-wiki.config.search.corpus '\"all\"'"
 )
 
 CONFIGS_TO_FIX=()

@@ -133,10 +133,10 @@ The *write* goes through `api.memory.add` — the same API OpenClaw itself uses 
 
 | Setting | Value | Why |
 |---|---|---|
-| `plugins.memory-core.dreaming.enabled` | `true` | Background consolidation of memories |
-| `plugins.memory-wiki.vaultMode` | `"bridge"` | Wiki operates in bridge mode |
-| `plugins.memory-wiki.bridge.enabled` | `true` | Bridges `memory-core` ↔ wiki so writes become recallable |
-| `plugins.memory-wiki.search.corpus` | `"all"` | Recall searches across the whole corpus |
+| `plugins.entries.memory-core.config.dreaming.enabled` | `true` | Background consolidation of memories |
+| `plugins.entries.memory-wiki.config.vaultMode` | `"bridge"` | Wiki operates in bridge mode |
+| `plugins.entries.memory-wiki.config.bridge.enabled` | `true` | Bridges `memory-core` ↔ wiki so writes become recallable |
+| `plugins.entries.memory-wiki.config.search.corpus` | `"all"` | Recall searches across the whole corpus |
 
 The suite installer (`install.sh`) checks for `memory-wiki` and offers to install it and apply these settings. Without them, corrections are written but may never persist or resurface across sessions — the calibration profile still updates, but the behavioral reminders won't reliably come back.
 
