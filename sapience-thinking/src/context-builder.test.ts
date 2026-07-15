@@ -239,3 +239,55 @@ describe("buildHypothesesContext", () => {
     expect(await buildHypothesesContext(join(tmpDir, "nope.json"))).toBe("");
   });
 });
+
+describe("machine-session exclusion", () => {
+  // Production incident: with little human activity in the lookback window,
+  // thinking-pass context was dominated by the suite's own cron session
+  // transcripts — so passes diagnosed their own 15-minute cadence as a P5
+  // defect and escalated it for four consecutive passes. The suite observing
+  // itself is noise, never signal.
+  it("excludes sessions whose first user message is a suite cron prompt", async () => {
+    const sessionDir = join(tmpDir, "sessions");
+    await mkdir(sessionDir, { recursive: true });
+    await writeFile(join(sessionDir, "cron.jsonl"), [
+      transcriptLine("user", "You are running a scheduled thinking pass. Call get_thinking_context() to receive your context and instructions."),
+      transcriptLine("assistant", "The sapience-thinking cron fires every 15 minutes, which seems critically misconfigured."),
+    ].join("\n") + "\n");
+    await writeFile(join(sessionDir, "human.jsonl"),
+      transcriptLine("user", "can you pull the churn report for me") + "\n");
+
+    const bundle = await buildContextFromDirs(config, sessionDir, [join(tmpDir, "memory")]);
+    expect(bundle.recentActivity).toContain("churn report");
+    expect(bundle.recentActivity).not.toContain("critically misconfigured");
+  });
+
+  it("excludes routing, goals, investigation, act, and watch sessions", async () => {
+    const sessionDir = join(tmpDir, "sessions");
+    await mkdir(sessionDir, { recursive: true });
+    const machineOpeners = [
+      "You are the sapience routing agent. Call process_proposals() to route new thinking pass proposals.",
+      "You are the goals tracking agent. Call check_goals() to process new goals.",
+      "You are running a bounded, READ-ONLY investigation of a hypothesis a thinking pass produced.",
+      "You are executing a pre-approved autonomous action (the user's calibration profile authorizes this domain at the act tier).",
+      "You are performing a READ-ONLY metric check. Do not modify anything.",
+    ];
+    for (const [i, opener] of machineOpeners.entries()) {
+      await writeFile(join(sessionDir, `m${i}.jsonl`),
+        transcriptLine("user", opener) + "\n" + transcriptLine("assistant", `machine chatter ${i}`) + "\n");
+    }
+    const bundle = await buildContextFromDirs(config, sessionDir, [join(tmpDir, "memory")]);
+    expect(bundle.recentActivity).toContain("No recent session activity");
+  });
+
+  it("keeps a human session that RECEIVED an injected sapience tier prompt", async () => {
+    const sessionDir = join(tmpDir, "sessions");
+    await mkdir(sessionDir, { recursive: true });
+    await writeFile(join(sessionDir, "main.jsonl"), [
+      transcriptLine("user", "morning, what's on deck today"),
+      transcriptLine("user", "[SAPIENCE: PROPOSE] A thinking pass identified this as worth doing."),
+      transcriptLine("assistant", "A proposal came in about the salesforce duplicates."),
+    ].join("\n") + "\n");
+    const bundle = await buildContextFromDirs(config, sessionDir, [join(tmpDir, "memory")]);
+    expect(bundle.recentActivity).toContain("salesforce duplicates");
+  });
+});

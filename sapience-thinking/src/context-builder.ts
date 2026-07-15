@@ -40,6 +40,33 @@ function isTranscriptFile(name: string): boolean {
   return name.endsWith(".jsonl") && !name.includes(".trajectory.");
 }
 
+// Openers of the suite's own machine sessions (cron prompts and sapience
+// subagent prompts). Sessions that START with one of these are the suite
+// talking to itself — feeding them back into thinking context created a
+// feedback loop where passes diagnosed their own 15-minute cadence as a
+// critical defect. Matched against the FIRST user message only: a human
+// session that merely RECEIVED an injected [SAPIENCE:] prompt stays in.
+const MACHINE_SESSION_OPENERS = [
+  "You are running a scheduled thinking pass",
+  "You are the sapience routing agent",
+  "You are the goals tracking agent",
+  "You are running a bounded, READ-ONLY investigation",
+  "You are executing a pre-approved autonomous action",
+  "You are performing a READ-ONLY metric check",
+];
+
+function isMachineSession(lines: string[]): boolean {
+  for (const raw of lines.slice(0, 10)) {
+    let parsed: TranscriptLine;
+    try { parsed = JSON.parse(raw) as TranscriptLine; } catch { continue; }
+    const msg = extractMessage(parsed);
+    if (!msg) continue;
+    if (msg.role !== "user") return false; // first message wasn't a machine opener
+    return MACHINE_SESSION_OPENERS.some((opener) => msg.text.startsWith(opener));
+  }
+  return false;
+}
+
 // Summarize in-flight goals from the sapience-goals workspace file so thinking
 // passes can ask "what would advance these?" instead of only "what happened?".
 // Completed/abandoned goals are noise and excluded.
@@ -128,6 +155,7 @@ export async function buildContextFromDirs(
     for (const file of files) {
       if (usedTokens >= transcriptBudget) break;
       const lines = (await readFile(join(sessionDir, file.name), "utf-8")).trim().split("\n").filter(Boolean);
+      if (isMachineSession(lines)) continue;
       for (const raw of lines.slice(-50).reverse()) {
         let parsed: TranscriptLine;
         try { parsed = JSON.parse(raw) as TranscriptLine; } catch { continue; }

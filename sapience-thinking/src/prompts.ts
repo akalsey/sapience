@@ -19,6 +19,7 @@ Consider what has been happening recently. Look for:
 
 ## Constraints
 
+- You run every 15 minutes BY DESIGN. Frequent passes, SILENT_REPLY_TOKEN replies, and the sapience suite's own cron jobs, sessions, and files are normal operation — never report the suite's own machinery as an observation, and never propose changing its schedule or configuration. If the suite itself seems broken, the human has a doctor command for that.
 - Be selective. Empty arrays are valid output.
 - If nothing is worth reporting, set nothing_to_report: true and explain why in the summary field.
 - Don't repeat proposals from recent passes unless circumstances have changed.
