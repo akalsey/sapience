@@ -90,6 +90,9 @@ export interface ContextBundle {
   activeGoals?: string;
   // Open cases from the hypothesis ledger, for opportunistic re-testing.
   openHypotheses?: string;
+  // Non-empty when recent proposal deliveries failed: tells the pass the user
+  // never saw its output, so silence must not be read as unresponsiveness.
+  deliveryWarning?: string;
   tokenEstimate: number;
 }
 

@@ -22,6 +22,12 @@ function formatSignal(signal: SignalReport): string {
 export function buildPrompt(bundle: ContextBundle, signal: SignalReport | null, playbooks?: Playbook[]): string {
   const sections: string[] = [THINKING_PROMPT];
 
+  // Ahead of everything else the pass will read — especially its own
+  // unacknowledged proposals — so silence can't be misread as user neglect.
+  if (bundle.deliveryWarning) {
+    sections.push(["## Delivery Status — Read Before Interpreting Silence", "", bundle.deliveryWarning].join("\n"));
+  }
+
   sections.push(["## Recent Activity Context", "", bundle.recentActivity].join("\n"));
 
   if (playbooks && playbooks.length > 0) {

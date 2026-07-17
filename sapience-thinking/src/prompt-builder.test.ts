@@ -57,6 +57,23 @@ describe("buildPrompt", () => {
   });
 });
 
+describe("delivery-aware prompt", () => {
+  it("surfaces the delivery warning ahead of the pass history so silence is not misread", async () => {
+    const warned: ContextBundle = {
+      ...bundle,
+      deliveryWarning: "Delivery has been FAILING: 6 recent proposals never reached the user.",
+    };
+    const prompt = await buildPrompt(warned, null);
+    expect(prompt).toContain("never reached the user");
+    expect(prompt.indexOf("never reached the user")).toBeLessThan(prompt.indexOf("Old pass."));
+  });
+
+  it("omits the section when there is no warning", async () => {
+    const prompt = await buildPrompt(bundle, null);
+    expect(prompt).not.toContain("Delivery Status");
+  });
+});
+
 describe("goal-aware prompt", () => {
   it("includes an Active Goals section when the bundle carries goals", async () => {
     const prompt = await buildPrompt({ ...bundle, activeGoals: "- Reduce churn [active]\n  approach: outreach" }, null);

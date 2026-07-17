@@ -23,6 +23,12 @@ import { dedupeProposals } from "./dedup.js";
 import { loadPlaybooks } from "./playbooks.js";
 import { scheduleAudit } from "./audit-scheduler.js";
 import { TurnWatcher, buildNoticerPrompt, parseNoticedObservations, recordNoticedObservations } from "./noticer.js";
+import { readDeliveryStatus, formatDeliveryWarning } from "./delivery-status.js";
+
+// How far back unresolved delivery failures still color a pass's view of user
+// silence. Longer than the context lookback: a pipe that died yesterday still
+// explains why today's proposals sit unacknowledged.
+const DELIVERY_STATUS_LOOKBACK_MS = 24 * 60 * 60 * 1000;
 
 function mergeConfig(raw: Record<string, unknown>, workspaceDir: string): PluginConfig {
   return {
@@ -173,6 +179,8 @@ export default definePluginEntry({
             loadPlaybooks(join(workspaceDir, "sapience", "playbooks.json")),
           ]);
           bundle.recentPasses = recentPasses;
+          const deliveryStatus = await readDeliveryStatus(config.output.eventsPath, Date.now() - DELIVERY_STATUS_LOOKBACK_MS);
+          bundle.deliveryWarning = formatDeliveryWarning(deliveryStatus);
           const signal = config.learning.adjustPromptBasedOnSignal ? computeSignal(outcomes, config) : null;
           const prompt = buildPrompt(bundle, signal, playbooks);
           return { content: [{ type: "text", text: prompt }] };
