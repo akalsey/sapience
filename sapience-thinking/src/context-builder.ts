@@ -2,36 +2,16 @@ import { readdir, readFile, stat } from "fs/promises";
 import { join } from "path";
 import { homedir } from "os";
 import type { ContextBundle, PluginConfig } from "./types.js";
-import { estimateTokens, resolvePath } from "./utils.js";
+import { estimateTokens, resolvePath, extractTranscriptMessage } from "./utils.js";
 
 // OpenClaw session transcript line: role/content nested under `message`, with
 // content as a string or an array of {type:"text", text} blocks. Legacy
 // top-level {role, content} is accepted too. Everything else (session,
 // model_change, custom, trajectory records) is ignored.
 interface TranscriptLine {
-  type?: string;
   role?: string;
   content?: unknown;
   message?: { role?: string; content?: unknown };
-}
-
-function extractContent(content: unknown): string {
-  if (typeof content === "string") return content;
-  if (Array.isArray(content)) {
-    return content
-      .filter((c) => c && typeof c === "object" && (c as { type?: string }).type === "text")
-      .map((c) => (c as { text?: string }).text ?? "")
-      .join(" ");
-  }
-  return "";
-}
-
-function extractMessage(line: TranscriptLine): { role: string; text: string } | null {
-  const src = line.message && typeof line.message === "object" ? line.message : line;
-  const role = src.role;
-  if (role !== "user" && role !== "assistant") return null;
-  const text = extractContent(src.content);
-  return text ? { role, text } : null;
 }
 
 // A session transcript is `<sessionId>.jsonl`; `<sessionId>.trajectory.jsonl`
@@ -55,13 +35,23 @@ const MACHINE_SESSION_OPENERS = [
   "You are performing a READ-ONLY metric check",
 ];
 
+// The gateway's periodic poll into its main session. A session that OPENS with
+// one is the heartbeat loop, not a conversation; individual polls inside human
+// sessions are cadence noise either way.
+const HEARTBEAT_POLL_RE = /^\[openclaw heartbeat/i;
+
+function isHeartbeatPoll(text: string): boolean {
+  return HEARTBEAT_POLL_RE.test(text.trim());
+}
+
 function isMachineSession(lines: string[]): boolean {
   for (const raw of lines.slice(0, 10)) {
     let parsed: TranscriptLine;
     try { parsed = JSON.parse(raw) as TranscriptLine; } catch { continue; }
-    const msg = extractMessage(parsed);
+    const msg = extractTranscriptMessage(parsed);
     if (!msg) continue;
     if (msg.role !== "user") return false; // first message wasn't a machine opener
+    if (isHeartbeatPoll(msg.text)) return true;
     return MACHINE_SESSION_OPENERS.some((opener) => msg.text.startsWith(opener));
   }
   return false;
@@ -152,6 +142,11 @@ export async function buildContextFromDirs(
     }
     files.sort((a, b) => b.mtimeMs - a.mtimeMs);
 
+    // A wedged session repeating one reply verbatim (a production main session
+    // answered 646 straight heartbeat polls with the same failure paragraph)
+    // must not fill the whole context budget: keep only the first sighting of
+    // any exact message text.
+    const seenChunks = new Set<string>();
     for (const file of files) {
       if (usedTokens >= transcriptBudget) break;
       const lines = (await readFile(join(sessionDir, file.name), "utf-8")).trim().split("\n").filter(Boolean);
@@ -159,9 +154,12 @@ export async function buildContextFromDirs(
       for (const raw of lines.slice(-50).reverse()) {
         let parsed: TranscriptLine;
         try { parsed = JSON.parse(raw) as TranscriptLine; } catch { continue; }
-        const msg = extractMessage(parsed);
+        const msg = extractTranscriptMessage(parsed);
         if (!msg) continue;
+        if (isHeartbeatPoll(msg.text)) continue;
         const chunk = `[${msg.role}]: ${msg.text.slice(0, 500)}`;
+        if (seenChunks.has(chunk)) continue;
+        seenChunks.add(chunk);
         const tokens = estimateTokens(chunk);
         if (usedTokens + tokens > transcriptBudget) break;
         chunks.push(chunk);
@@ -213,10 +211,9 @@ export interface ContextDirs {
   memoryDirs: string[];
 }
 
-// Resolve where sessions and memory actually live, via the runtime when
-// available. The previous implementation hardcoded ~/.openclaw/agents/<id>/
-// {sessions,memory} — the memory dir doesn't exist on real installs (memory
-// lives in the memory-core store and the wiki vault), so passes ran blind.
+// Resolve where sessions and memory actually live via the runtime when
+// available, with ~/.openclaw fallbacks. Memory lives in the memory-core store
+// and the wiki vault, not in the agent's own directory.
 export function resolveContextDirs(api: any, agentId: string): ContextDirs {
   let stateDir: string;
   try {

@@ -118,6 +118,49 @@ describe("buildContextFromDirs", () => {
       .toBeLessThan(bundle.recentActivity.indexOf("Old wiki note"));
   });
 
+  it("excludes sessions opened by a heartbeat poll (gateway main session)", async () => {
+    const sessionDir = join(tmpDir, "sessions");
+    await mkdir(sessionDir, { recursive: true });
+    await writeFile(join(sessionDir, "heartbeat-session.jsonl"), [
+      JSON.stringify({ type: "session", id: "s", version: 1 }),
+      transcriptLine("user", "[OpenClaw heartbeat poll]"),
+      transcriptLine("assistant", "I am experiencing critical and widespread tool failures."),
+    ].join("\n") + "\n");
+    await writeFile(join(sessionDir, "human.jsonl"), transcriptLine("user", "how was the demo received?") + "\n");
+
+    const bundle = await buildContextFromDirs(config, sessionDir, [join(tmpDir, "memory")]);
+    expect(bundle.recentActivity).toContain("how was the demo received?");
+    expect(bundle.recentActivity).not.toContain("widespread tool failures");
+  });
+
+  it("skips heartbeat poll messages inside otherwise human sessions", async () => {
+    const sessionDir = join(tmpDir, "sessions");
+    await mkdir(sessionDir, { recursive: true });
+    await writeFile(join(sessionDir, "mixed.jsonl"), [
+      transcriptLine("user", "what's on my calendar today?"),
+      transcriptLine("assistant", "Two meetings and a dentist appointment."),
+      transcriptLine("user", "[OpenClaw heartbeat poll]"),
+    ].join("\n") + "\n");
+
+    const bundle = await buildContextFromDirs(config, sessionDir, [join(tmpDir, "memory")]);
+    expect(bundle.recentActivity).toContain("dentist appointment");
+    expect(bundle.recentActivity).not.toContain("heartbeat poll");
+  });
+
+  it("collapses repeated identical messages so a stuck session cannot dominate context", async () => {
+    const sessionDir = join(tmpDir, "sessions");
+    await mkdir(sessionDir, { recursive: true });
+    const stuck = "I am still experiencing critical tool failures and cannot perform any tasks.";
+    const lines = [transcriptLine("user", "let's review the quarterly numbers together")];
+    for (let i = 0; i < 20; i++) lines.push(transcriptLine("assistant", stuck));
+    await writeFile(join(sessionDir, "stuck.jsonl"), lines.join("\n") + "\n");
+
+    const bundle = await buildContextFromDirs(config, sessionDir, [join(tmpDir, "memory")]);
+    const occurrences = bundle.recentActivity.split("critical tool failures").length - 1;
+    expect(occurrences).toBe(1);
+    expect(bundle.recentActivity).toContain("quarterly numbers");
+  });
+
   it("tolerates missing memory dirs", async () => {
     const sessionDir = join(tmpDir, "sessions");
     await mkdir(sessionDir, { recursive: true });
