@@ -2,6 +2,7 @@ import { randomUUID } from "crypto";
 import { appendStructuredProposals } from "./log-writer.js";
 import { loadOutcomes, saveOutcomes, addProposals } from "./outcome-tracker.js";
 import { dedupeProposals } from "./dedup.js";
+import { extractTranscriptMessage } from "./utils.js";
 import type { Observation, ProposalSet } from "./types.js";
 
 // Post-task incidental noticing: humans notice things IN PASSING, during
@@ -24,22 +25,19 @@ interface WatcherOptions {
   onTurn: (sessionKey: string, turnText: string) => void;
 }
 
-function extractText(message: unknown): { role: string; text: string } | null {
-  const line = message as { message?: { role?: string; content?: unknown }; role?: string; content?: unknown } | undefined;
-  if (!line || typeof line !== "object") return null;
-  const src = line.message && typeof line.message === "object" ? line.message : line;
-  const role = src.role;
-  if (role !== "user" && role !== "assistant") return null;
-  const content = src.content;
-  let text = "";
-  if (typeof content === "string") text = content;
-  else if (Array.isArray(content)) {
-    text = content
-      .filter((c) => c && typeof c === "object" && (c as { type?: string }).type === "text")
-      .map((c) => (c as { text?: string }).text ?? "")
-      .join(" ");
-  }
-  return text ? { role, text } : null;
+// Gateway subsystems whose sessions are machine-driven even though their keys
+// have a channel-like extra segment.
+const MACHINE_SUBSYSTEMS = new Set(["cron", "subagent"]);
+
+// Only watch sessions bound to a user-facing channel. Gateway session keys are
+// `agent:<agentId>:<rest>`; a channel session's rest has at least two segments
+// (`telegram:direct:<peer>`, `slack:channel:<id>`), while machine sessions are
+// either single-segment (`main`, `current`, custom labels like
+// `dreaming-narrative-rem-<id>`) or namespaced under cron/subagent.
+export function isNoticeableSession(key: string): boolean {
+  const parts = key.split(":");
+  if (parts.length < 4 || parts[0] !== "agent") return false;
+  return !MACHINE_SUBSYSTEMS.has(parts[2]!);
 }
 
 export class TurnWatcher {
@@ -50,11 +48,9 @@ export class TurnWatcher {
 
   observe(update: TranscriptUpdate): void {
     const key = update.sessionKey ?? "";
-    // Never watch the suite's own machine sessions — a noticer noticing its
-    // own investigations would recurse forever.
-    if (!key || key.startsWith("sapience-")) return;
+    if (!isNoticeableSession(key)) return;
 
-    const msg = extractText(update.message);
+    const msg = extractTranscriptMessage(update.message);
     if (!msg) return;
 
     const buffer = this.buffers.get(key) ?? [];
