@@ -39,8 +39,6 @@ describe("enqueueMainSessionInjection", () => {
   });
 
   it("reports failure when the gateway declines the injection", async () => {
-    // The gateway silently returns enqueued:false on bad input or when a
-    // hook policy blocks injection — the old code ignored the result.
     const api = {
       config,
       session: { workflow: { enqueueNextTurnInjection: async (inj: any) => ({ enqueued: false, id: "", sessionKey: inj.sessionKey }) } },
@@ -54,6 +52,39 @@ describe("enqueueMainSessionInjection", () => {
     const result = await enqueueMainSessionInjection({ config }, "hello");
     expect(result.enqueued).toBe(false);
     expect(result.reason).toContain("unavailable");
+  });
+
+  it("does not probe when the first enqueue succeeds", async () => {
+    let calls = 0;
+    const api = {
+      config,
+      session: { workflow: { enqueueNextTurnInjection: async (inj: any) => { calls++; return { enqueued: true, id: "1", sessionKey: inj.sessionKey }; } } },
+    };
+    await enqueueMainSessionInjection(api, "hello");
+    expect(calls).toBe(1);
+  });
+
+  it("diagnoses an unwired noop handler: the probe's untrimmed key comes back verbatim", async () => {
+    // openclaw's noop stub echoes injection.sessionKey untouched; the real
+    // implementation trims it. A trailing-space probe tells them apart.
+    const api = {
+      config,
+      session: { workflow: { enqueueNextTurnInjection: async (inj: any) => ({ enqueued: false, id: "", sessionKey: inj.sessionKey }) } },
+    };
+    const result = await enqueueMainSessionInjection(api, "hello");
+    expect(result.enqueued).toBe(false);
+    expect(result.reason).toContain("not wired");
+  });
+
+  it("diagnoses a store miss: the real gateway trims the probe key but still declines", async () => {
+    const api = {
+      config,
+      session: { workflow: { enqueueNextTurnInjection: async (inj: any) => ({ enqueued: false, id: "", sessionKey: String(inj.sessionKey).trim() }) } },
+    };
+    const result = await enqueueMainSessionInjection(api, "hello");
+    expect(result.enqueued).toBe(false);
+    expect(result.reason).toContain("no session entry");
+    expect(result.reason).toContain("agent:main:main");
   });
 
   it("reports failure instead of throwing when the enqueue call throws", async () => {
