@@ -38,10 +38,10 @@ describe("enqueueMainSessionInjection", () => {
     expect(received).toEqual({ sessionKey: "agent:main:main", text: "hello" });
   });
 
-  it("reports failure when the gateway declines the injection", async () => {
+  it("reports failure when the gateway returns no result at all", async () => {
     const api = {
       config,
-      session: { workflow: { enqueueNextTurnInjection: async (inj: any) => ({ enqueued: false, id: "", sessionKey: inj.sessionKey }) } },
+      session: { workflow: { enqueueNextTurnInjection: async () => undefined } },
     };
     const result = await enqueueMainSessionInjection(api, "hello");
     expect(result.enqueued).toBe(false);
@@ -85,6 +85,21 @@ describe("enqueueMainSessionInjection", () => {
     expect(result.enqueued).toBe(false);
     expect(result.reason).toContain("no session entry");
     expect(result.reason).toContain("agent:main:main");
+  });
+
+  it("includes the raw results when the probe matches neither known decline shape", async () => {
+    // A sessionKey that is neither the verbatim probe key nor the trimmed key
+    // can only come from the gateway's found-but-declined path, which returns
+    // the store's canonical key — surface both raw results so the event log
+    // shows exactly what came back.
+    const api = {
+      config,
+      session: { workflow: { enqueueNextTurnInjection: async () => ({ enqueued: false, id: "", sessionKey: "agent:main:current" }) } },
+    };
+    const result = await enqueueMainSessionInjection(api, "hello");
+    expect(result.enqueued).toBe(false);
+    expect(result.reason).toContain('"agent:main:current"');
+    expect(result.reason).toContain("canonical");
   });
 
   it("reports failure instead of throwing when the enqueue call throws", async () => {

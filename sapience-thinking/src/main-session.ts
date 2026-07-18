@@ -34,7 +34,8 @@ export interface InjectionResult {
 // declined — and its echo identifies which side failed.
 async function diagnoseDecline(
   enqueue: (inj: { sessionKey: string; text: string }) => Promise<{ sessionKey?: string } | undefined>,
-  sessionKey: string
+  sessionKey: string,
+  firstResult: unknown
 ): Promise<string> {
   try {
     const probeKey = `${sessionKey} `;
@@ -45,7 +46,11 @@ async function diagnoseDecline(
     if (probe?.sessionKey === sessionKey) {
       return `gateway ran but found no session entry for "${sessionKey}" in its store`;
     }
-  } catch { /* fall through to the generic reason */ }
+    // Any other echoed key is the gateway's found-but-declined path, which
+    // returns the store's canonical key (duplicate idempotency key or the
+    // per-plugin injection queue cap). Surface the raw shapes.
+    return `gateway found the session under canonical key ${JSON.stringify(probe?.sessionKey)} but declined (queue cap or duplicate); firstResult=${JSON.stringify(firstResult)} probeResult=${JSON.stringify(probe)}`;
+  } catch { /* probe threw; return the generic reason below */ }
   return "gateway declined the injection";
 }
 
@@ -58,7 +63,7 @@ export async function enqueueMainSessionInjection(api: any, text: string): Promi
   try {
     const result = await enqueue({ sessionKey, text });
     if (result?.enqueued === true) return { enqueued: true };
-    return { enqueued: false, reason: await diagnoseDecline(enqueue, sessionKey) };
+    return { enqueued: false, reason: await diagnoseDecline(enqueue, sessionKey, result) };
   } catch (err) {
     return { enqueued: false, reason: String(err) };
   }
