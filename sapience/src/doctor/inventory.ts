@@ -8,6 +8,17 @@ export const SUITE_PLUGINS = [
   "sapience-goals",
 ] as const;
 
+// Plugins whose cron-driven tools refresh their status artifact on every run,
+// so an old initAt IS a load-failure signal. Plugins absent from this set
+// (sapience-feedback is hook-driven) write their artifact only at register();
+// their initAt ages past ARTIFACT_STALE_MS in normal operation and must not
+// be treated as stale.
+export const CRON_REFRESHED_PLUGINS: ReadonlySet<string> = new Set([
+  "sapience-thinking",
+  "sapience",
+  "sapience-goals",
+]);
+
 // Cron jobs the installer registers (multi-agent installs append "-<agent>";
 // the doctor matches a job whose name equals the base or starts with "<base>-").
 // `tools` becomes the job's payload.toolsAllow — isolated cron sessions only see

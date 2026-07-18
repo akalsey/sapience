@@ -91,6 +91,31 @@ describe("buildSuiteDoctorReport", () => {
     expect(byId(r, "plugin:sapience")?.severity).toBe("warn");
   });
 
+  // sapience-feedback has no cron, so its artifact is only written at
+  // register(): hours after a restart it ages past the staleness window while
+  // its cron-refreshed siblings stay fresh. When the artifact is clean and its
+  // version matches the on-disk build, that's normal operation — flagging it
+  // as "not loading" contradicted `openclaw plugins inspect` showing loaded.
+  it("accepts a stale artifact from a plugin with no cron heartbeat when its version matches disk", () => {
+    const i = healthy();
+    const feedback = i.plugins.find((p) => p.id === "sapience-feedback")!;
+    feedback.artifact!.initAt = new Date(NOW - 5 * 60 * 60 * 1000).toISOString();
+    feedback.artifact!.version = "0.5.2";
+    i.versions = [{ pluginId: "sapience-feedback", onDisk: "0.5.2", registryLatest: "0.5.2" }];
+    const r = buildSuiteDoctorReport(i);
+    const f = byId(r, "plugin:sapience-feedback");
+    expect(f?.severity).toBe("ok");
+    expect(f?.message).toContain("no cron refreshes it");
+  });
+
+  it("accepts a stale no-cron artifact when there is no on-disk version to contradict it", () => {
+    const i = healthy();
+    const feedback = i.plugins.find((p) => p.id === "sapience-feedback")!;
+    feedback.artifact!.initAt = new Date(NOW - 5 * 60 * 60 * 1000).toISOString();
+    const r = buildSuiteDoctorReport(i);
+    expect(byId(r, "plugin:sapience-feedback")?.severity).toBe("ok");
+  });
+
   // The production signature: right after a restart three plugins write fresh
   // artifacts and one sits at 228h — the gateway is demonstrably up and
   // loading suite plugins, so THAT plugin is not initializing. That's an

@@ -7,7 +7,7 @@ import type {
   PluginObservation,
   VersionObservation,
 } from "./types.js";
-import { MEMORY_SETTINGS, ARTIFACT_STALE_MS, SUITE_CRONS } from "./inventory.js";
+import { MEMORY_SETTINGS, ARTIFACT_STALE_MS, SUITE_CRONS, CRON_REFRESHED_PLUGINS } from "./inventory.js";
 
 function durationStr(nowMs: number, thenMs: number): string {
   return ageStr(nowMs, thenMs).replace(/ ago$/, "");
@@ -44,6 +44,14 @@ function pluginFinding(
   }
   const initMs = Date.parse(p.artifact.initAt);
   if (nowMs - initMs > ARTIFACT_STALE_MS) {
+    // onDisk absent means no version evidence contradicts the artifact; treat
+    // it as matching rather than raising a spurious stale error.
+    const versionMatchesDisk = !ctx.onDisk || p.artifact.version === ctx.onDisk;
+    if (!CRON_REFRESHED_PLUGINS.has(p.id) && versionMatchesDisk) {
+      return { id, severity: "ok", source: "artifact",
+        message: `${p.id} v${p.artifact.version} initialized (artifact from register, ${ageStr(nowMs, initMs)}; no cron refreshes it)`,
+        detail: `For live status: \`openclaw plugins inspect ${p.id}\`.` };
+    }
     const versionNote = ctx.onDisk && (p.artifact.version === "unknown" || p.artifact.version !== ctx.onDisk)
       ? ` (v${ctx.onDisk} on disk has never initialized; the artifact is from ${p.artifact.version === "unknown" ? "an older build" : `v${p.artifact.version}`})`
       : "";
