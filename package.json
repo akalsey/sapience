@@ -1,0 +1,20 @@
+{
+  "name": "sapience-suite",
+  "private": true,
+  "workspaces": [
+    "sapience",
+    "sapience-thinking",
+    "sapience-goals",
+    "sapience-feedback"
+  ],
+  "scripts": {
+    "test": "npm run test --workspaces",
+    "typecheck": "npm run typecheck --workspaces",
+    "changeset": "changeset",
+    "version": "changeset version && node scripts/sync-plugin-versions.mjs",
+    "release": "changeset publish"
+  },
+  "devDependencies": {
+    "@changesets/cli": "^2.27.0"
+  }
+}

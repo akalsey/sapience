@@ -43,7 +43,13 @@ Each plugin is a standalone npm package with its own `package.json`, `tsconfig.j
 
 **Commits:** Small and frequent. One logical change per commit.
 
-**Versioning:** Monorepo with independent per-plugin versioning. Use `changesets` when setting up release tooling — only bump packages that actually changed.
+**Versioning:** Monorepo with independent per-plugin versioning via [changesets](https://github.com/changesets/changesets) (npm workspaces at the root). Only packages that actually changed get bumped. Do not hand-edit version fields.
+
+Release workflow:
+
+1. After landing a change, run `npx changeset` at the root — pick the affected package(s), a bump level (almost always `patch`), and write a one-line summary. Commit the generated `.changeset/*.md` with (or right after) the change.
+2. To cut a release: `npm run version` — applies pending changesets to each `package.json`, writes `CHANGELOG.md` entries, and syncs `openclaw.plugin.json` versions (scripts/sync-plugin-versions.mjs). Commit the result as `chore: version packages`.
+3. `npm run release` — builds (each package's `prepublishOnly`) and publishes only the packages whose versions aren't already on the registry. Then `git push --follow-tags`.
 
 ---
 
