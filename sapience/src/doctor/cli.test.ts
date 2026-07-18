@@ -71,7 +71,7 @@ describe("cronRegisterArgs", () => {
 describe("SUITE_CRONS messages", () => {
   it("tell the agent to bail silently when its tool is unavailable, instead of improvising", () => {
     for (const c of SUITE_CRONS) {
-      expect(c.message).toContain("If the tool is not available, reply SILENT_REPLY_TOKEN and stop.");
+      expect(c.message).toContain("If the tool is not available, reply NO_REPLY and stop.");
     }
   });
 });

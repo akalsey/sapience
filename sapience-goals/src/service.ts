@@ -338,7 +338,7 @@ export default definePluginEntry({
           if (!isWithinActiveHours(config.activeHours)) {
             await logSkipOnce(skipStatePath, "outside_hours", () =>
               appendEvent(config.output.eventsPath, { plugin: "goals", type: "check_skipped", reason: "outside_hours" }));
-            return toolText("SILENT_REPLY_TOKEN");
+            return toolText("NO_REPLY");
           }
           await clearSkipState(skipStatePath).catch(() => {});
 
@@ -393,7 +393,7 @@ export default definePluginEntry({
           if (newDescriptions.length === 0 && delivered === 0) {
             await appendEvent(config.output.eventsPath, { plugin: "goals", type: "check_skipped", reason: "nothing_due" });
           }
-          return toolText("SILENT_REPLY_TOKEN");
+          return toolText("NO_REPLY");
         } catch (err) {
           return toolText(`[goals] check_goals error: ${String(err)}`);
         }

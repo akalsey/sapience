@@ -92,7 +92,16 @@ describe("buildHeartbeatPrompt", () => {
     const prompt = await buildHeartbeatPrompt("- fix the flux capacitor");
     expect(prompt).toContain("- fix the flux capacitor");
     expect(prompt).not.toContain("[PROPOSALS LIST]");
-    expect(prompt).toContain("SILENT_REPLY_TOKEN");
+  });
+
+  it("instructs silence with openclaw's recognized NO_REPLY token, not the legacy invented one", async () => {
+    // openclaw only treats the literal "NO_REPLY" as a valid silent completion
+    // (auto-reply/tokens.ts). Prompting an unrecognized token left runs ending
+    // in empty responses, which cron flagged as "Agent couldn't generate a
+    // response" on every quiet pass.
+    const prompt = await buildHeartbeatPrompt("- item");
+    expect(prompt).toContain("NO_REPLY");
+    expect(prompt).not.toContain("SILENT_REPLY_TOKEN");
   });
 });
 

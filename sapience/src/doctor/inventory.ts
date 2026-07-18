@@ -19,19 +19,19 @@ export const SUITE_CRONS: ReadonlyArray<{ base: string; tools: readonly string[]
     base: "sapience-thinking",
     tools: ["get_thinking_context", "record_thinking_output"],
     message:
-      "You are running a scheduled thinking pass. Call get_thinking_context() to receive your context and instructions. If it returns {status:skip}, reply with SILENT_REPLY_TOKEN and stop. Otherwise review the context carefully, then call record_thinking_output() with your proposals. Do not produce any other output. If the tool is not available, reply SILENT_REPLY_TOKEN and stop.",
+      "You are running a scheduled thinking pass. Call get_thinking_context() to receive your context and instructions. If it returns {status:skip}, reply with NO_REPLY and stop. Otherwise review the context carefully, then call record_thinking_output() with your proposals. Do not produce any other output. If the tool is not available, reply NO_REPLY and stop.",
   },
   {
     base: "sapience-routing",
     tools: ["process_proposals"],
     message:
-      "You are the sapience routing agent. Call process_proposals() to route new thinking pass proposals. Reply SILENT_REPLY_TOKEN after the tool call. If the tool is not available, reply SILENT_REPLY_TOKEN and stop.",
+      "You are the sapience routing agent. Call process_proposals() to route new thinking pass proposals. Reply NO_REPLY after the tool call. If the tool is not available, reply NO_REPLY and stop.",
   },
   {
     base: "sapience-goals-check",
     tools: ["check_goals"],
     message:
-      "You are the goals tracking agent. Call check_goals() to process new goals and deliver weekly status updates. Reply SILENT_REPLY_TOKEN after the tool call. If the tool is not available, reply SILENT_REPLY_TOKEN and stop.",
+      "You are the goals tracking agent. Call check_goals() to process new goals and deliver weekly status updates. Reply NO_REPLY after the tool call. If the tool is not available, reply NO_REPLY and stop.",
   },
 ];
 

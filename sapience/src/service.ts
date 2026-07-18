@@ -211,7 +211,7 @@ export default definePluginEntry({
             await logSkipOnce(skipStatePath, "outside_hours", () =>
               appendEvent(config.output.eventsPath, { plugin: "sapience", type: "routing_skipped", reason: "outside_hours" }));
             await generateDashboard(config).catch(() => {});
-            return { content: [{ type: "text", text: "SILENT_REPLY_TOKEN" }] };
+            return { content: [{ type: "text", text: "NO_REPLY" }] };
           }
 
           // Overlapping routing runs double-deliver and clobber each other's
@@ -219,7 +219,7 @@ export default definePluginEntry({
           const acquired = await acquireLock(lockFile);
           if (!acquired) {
             await appendEvent(config.output.eventsPath, { plugin: "sapience", type: "routing_skipped", reason: "already_running" });
-            return { content: [{ type: "text", text: "SILENT_REPLY_TOKEN" }] };
+            return { content: [{ type: "text", text: "NO_REPLY" }] };
           }
 
           try {
@@ -339,7 +339,7 @@ export default definePluginEntry({
             await releaseLock(lockFile);
           }
 
-          return { content: [{ type: "text", text: "SILENT_REPLY_TOKEN" }] };
+          return { content: [{ type: "text", text: "NO_REPLY" }] };
         } catch (err) {
           return { content: [{ type: "text", text: `[sapience] process_proposals error: ${String(err)}` }] };
         }

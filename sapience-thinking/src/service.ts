@@ -307,7 +307,7 @@ export default definePluginEntry({
         } finally {
           await releaseLock(lockFile);
         }
-        return { content: [{ type: "text", text: "SILENT_REPLY_TOKEN" }] };
+        return { content: [{ type: "text", text: "NO_REPLY" }] };
       },
     });
 
