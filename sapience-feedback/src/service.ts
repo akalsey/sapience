@@ -63,6 +63,8 @@ export default definePluginEntry({
     // never registered.)
     const hookCapture = typeof api.registerHook === "function";
     if (hookCapture) {
+      // The gateway requires a unique opts.name (typed optional, enforced at
+      // runtime) — registering without one throws and kills the whole plugin.
       api.registerHook("message", async (event: { action?: string; context?: Record<string, unknown> }) => {
         if (event?.action !== "received") return;
         const content = event?.context?.content;
@@ -75,7 +77,7 @@ export default definePluginEntry({
         } catch {
           // don't let feedback processing errors disrupt message handling
         }
-      });
+      }, { name: "sapience-feedback-capture", description: "Passive feedback capture from received messages" });
     }
 
     // Record what this plugin actually resolved, for `openclaw sapience doctor`.

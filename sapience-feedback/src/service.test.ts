@@ -12,7 +12,7 @@ afterEach(async () => { await rm(dir, { recursive: true, force: true }); });
 // api.session.onMessage — an API that doesn't exist — so the plugin's headline
 // feature silently never registered. This pins capture to the real hook API.
 function makeApi() {
-  const hooks: Array<{ events: string | string[]; handler: (event: any) => Promise<void> | void }> = [];
+  const hooks: Array<{ events: string | string[]; handler: (event: any) => Promise<void> | void; opts?: { name?: string } }> = [];
   const commands: any[] = [];
   return {
     hooks,
@@ -20,17 +20,23 @@ function makeApi() {
     pluginConfig: { semanticDetection: { enabled: false } },
     config: {},
     runtime: { agent: { resolveAgentWorkspaceDir: () => dir } },
-    registerHook: (events: string | string[], handler: any) => { hooks.push({ events, handler }); },
+    // Mirrors the gateway's registry: a hook registration without opts.name
+    // throws "hook registration missing name" and kills the whole register().
+    registerHook: (events: string | string[], handler: any, opts?: { name?: string }) => {
+      if (!opts?.name?.trim()) throw new Error("hook registration missing name");
+      hooks.push({ events, handler, opts });
+    },
     registerCommand: (cmd: any) => { commands.push(cmd); },
   };
 }
 
 describe("sapience-feedback registration", () => {
-  it("registers a message hook for passive capture", () => {
+  it("registers a named message hook for passive capture", () => {
     const api = makeApi();
     service.register(api as any);
     const messageHook = api.hooks.find((h) => h.events === "message" || (Array.isArray(h.events) && h.events.includes("message")));
     expect(messageHook).toBeDefined();
+    expect(messageHook!.opts?.name).toBeTruthy();
   });
 
   it("persists a regex-detectable correction from a received message", async () => {
