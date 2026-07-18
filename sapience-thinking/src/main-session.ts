@@ -55,13 +55,34 @@ async function diagnoseDecline(
 }
 
 export async function enqueueMainSessionInjection(api: any, text: string): Promise<InjectionResult> {
-  const enqueue = api?.session?.workflow?.enqueueNextTurnInjection;
+  const facade = api?.session?.workflow?.enqueueNextTurnInjection;
+  const direct = api?.enqueueNextTurnInjection;
+  const enqueue = facade ?? direct;
   if (typeof enqueue !== "function") {
     return { enqueued: false, reason: "injection API unavailable" };
   }
   const sessionKey = resolveMainSessionKey(api?.config);
   try {
     const result = await enqueue({ sessionKey, text });
+    // Every known gateway implementation (real, noop, hook-policy block)
+    // resolves to an object — undefined means an unidentified wrapper sits
+    // between us and the gateway. Retry on the flat method (same underlying
+    // implementation), and if that can't settle it either, capture the
+    // wrapper's source so the event log identifies it.
+    if (result === undefined) {
+      if (enqueue !== direct && typeof direct === "function") { // facade was used; try the flat method
+        const directResult = await direct({ sessionKey, text });
+        if (directResult?.enqueued === true) return { enqueued: true };
+        return {
+          enqueued: false,
+          reason: `facade resolved undefined (fn=${String(enqueue).slice(0, 180)}); flat api.enqueueNextTurnInjection ${directResult === undefined ? "also returned undefined" : `returned ${JSON.stringify(directResult)}`}`,
+        };
+      }
+      return {
+        enqueued: false,
+        reason: `facade resolved undefined (fn=${String(enqueue).slice(0, 180)}); flat api.enqueueNextTurnInjection is missing`,
+      };
+    }
     if (result?.enqueued === true) return { enqueued: true };
     return { enqueued: false, reason: await diagnoseDecline(enqueue, sessionKey, result) };
   } catch (err) {

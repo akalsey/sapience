@@ -38,16 +38,6 @@ describe("enqueueMainSessionInjection", () => {
     expect(received).toEqual({ sessionKey: "agent:main:main", text: "hello" });
   });
 
-  it("reports failure when the gateway returns no result at all", async () => {
-    const api = {
-      config,
-      session: { workflow: { enqueueNextTurnInjection: async () => undefined } },
-    };
-    const result = await enqueueMainSessionInjection(api, "hello");
-    expect(result.enqueued).toBe(false);
-    expect(result.reason).toBeDefined();
-  });
-
   it("reports failure when the injection API is missing entirely", async () => {
     const result = await enqueueMainSessionInjection({ config }, "hello");
     expect(result.enqueued).toBe(false);
@@ -100,6 +90,44 @@ describe("enqueueMainSessionInjection", () => {
     expect(result.enqueued).toBe(false);
     expect(result.reason).toContain('"agent:main:current"');
     expect(result.reason).toContain("canonical");
+  });
+
+  it("falls back to the flat api.enqueueNextTurnInjection when the facade resolves undefined", async () => {
+    // Production: the session.workflow facade resolved undefined on every call
+    // even though every known gateway implementation returns an object. The
+    // flat method is the same underlying implementation — try it before
+    // declaring failure.
+    let directCalled = false;
+    const api = {
+      config,
+      enqueueNextTurnInjection: async (inj: any) => { directCalled = true; return { enqueued: true, id: "1", sessionKey: inj.sessionKey }; },
+      session: { workflow: { enqueueNextTurnInjection: async () => undefined } },
+    };
+    const result = await enqueueMainSessionInjection(api, "hello");
+    expect(result.enqueued).toBe(true);
+    expect(directCalled).toBe(true);
+  });
+
+  it("captures the facade function's source when both facade and flat calls return undefined", async () => {
+    const api = {
+      config,
+      enqueueNextTurnInjection: async () => undefined,
+      session: { workflow: { enqueueNextTurnInjection: async () => undefined } },
+    };
+    const result = await enqueueMainSessionInjection(api, "hello");
+    expect(result.enqueued).toBe(false);
+    expect(result.reason).toContain("fn=");
+    expect(result.reason).toContain("also returned undefined");
+  });
+
+  it("reports a missing flat method when the facade resolves undefined and there is no fallback", async () => {
+    const api = {
+      config,
+      session: { workflow: { enqueueNextTurnInjection: async () => undefined } },
+    };
+    const result = await enqueueMainSessionInjection(api, "hello");
+    expect(result.enqueued).toBe(false);
+    expect(result.reason).toContain("missing");
   });
 
   it("reports failure instead of throwing when the enqueue call throws", async () => {
