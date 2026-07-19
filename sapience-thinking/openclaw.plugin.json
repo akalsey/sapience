@@ -1,7 +1,7 @@
 {
   "id": "sapience-thinking",
   "name": "Sapience Thinking",
-  "version": "0.4.9",
+  "version": "0.4.10",
   "description": "Periodic isolated thinking passes that produce structured proposals",
   "contracts": {
     "tools": [

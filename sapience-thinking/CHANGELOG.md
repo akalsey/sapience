@@ -1,5 +1,11 @@
 # @akalsey/sapience-thinking
 
+## 0.4.10
+
+### Patch Changes
+
+- f58c099: When both the facade and the flat injection API resolve `undefined`, the `delivery_failed` reason now also embeds the flat function's source (`flatFn=`) — every published openclaw build wires an object-returning implementation there, so its body identifies which unexpected implementation production is actually calling.
+
 ## 0.4.9
 
 ### Patch Changes
