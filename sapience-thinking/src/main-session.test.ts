@@ -108,10 +108,31 @@ describe("enqueueMainSessionInjection", () => {
     expect(directCalled).toBe(true);
   });
 
-  it("captures both functions' sources when facade and flat calls return undefined", async () => {
+  it("delivers via scheduleSessionTurn when the closed api guard eats the injection", async () => {
+    // openclaw's registration guard makes enqueueNextTurnInjection return
+    // undefined after register() completes; scheduleSessionTurn is on the
+    // late-callable allowlist and stays live.
+    let scheduled: any;
     const api = {
       config,
       enqueueNextTurnInjection: async () => undefined,
+      scheduleSessionTurn: async (params: any) => { scheduled = params; return { id: "job-1", pluginId: "p", sessionKey: params.sessionKey, kind: "session-turn" }; },
+      session: { workflow: { enqueueNextTurnInjection: async () => undefined } },
+    };
+    const result = await enqueueMainSessionInjection(api, "hello");
+    expect(result.enqueued).toBe(true);
+    expect(scheduled.sessionKey).toBe("agent:main:main");
+    expect(scheduled.message).toBe("hello");
+    expect(scheduled.deleteAfterRun).toBe(true);
+    expect(scheduled.delayMs).toBe(0);
+    expect(scheduled.deliveryMode).toBe("announce");
+  });
+
+  it("captures both functions' sources when every delivery path comes back empty", async () => {
+    const api = {
+      config,
+      enqueueNextTurnInjection: async () => undefined,
+      scheduleSessionTurn: async () => undefined,
       session: { workflow: { enqueueNextTurnInjection: async () => undefined } },
     };
     const result = await enqueueMainSessionInjection(api, "hello");
@@ -119,6 +140,7 @@ describe("enqueueMainSessionInjection", () => {
     expect(result.reason).toContain("fn=");
     expect(result.reason).toContain("also returned undefined");
     expect(result.reason).toContain("flatFn=");
+    expect(result.reason).toContain("scheduleSessionTurn");
   });
 
   it("reports a missing flat method when the facade resolves undefined and there is no fallback", async () => {

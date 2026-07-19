@@ -64,23 +64,37 @@ export async function enqueueMainSessionInjection(api: any, text: string): Promi
   const sessionKey = resolveMainSessionKey(api?.config);
   try {
     const result = await enqueue({ sessionKey, text });
-    // Every known gateway implementation (real, noop, hook-policy block)
-    // resolves to an object — undefined means an unidentified wrapper sits
-    // between us and the gateway. Retry on the flat method (same underlying
-    // implementation), and if that can't settle it either, capture the
-    // wrapper's source so the event log identifies it.
+    // An undefined result is openclaw's registration guard: after register()
+    // completes, the guard proxy silently voids every api method not on its
+    // late-callable allowlist, and enqueueNextTurnInjection isn't on it
+    // (api-lifecycle.ts PLUGIN_API_METHOD_POLICIES). scheduleSessionTurn IS
+    // late-callable — deliver by scheduling an immediate one-shot agent turn
+    // in the main session instead.
     if (result === undefined) {
-      if (enqueue !== direct && typeof direct === "function") { // facade was used; try the flat method
+      const schedule = api?.session?.workflow?.scheduleSessionTurn ?? api?.scheduleSessionTurn;
+      if (typeof schedule === "function") {
+        const handle = await schedule({
+          sessionKey,
+          message: text,
+          delayMs: 0,
+          deleteAfterRun: true,
+          deliveryMode: "announce",
+          name: "sapience-delivery",
+        });
+        if (handle?.id) return { enqueued: true };
+      }
+      const scheduleStatus = `scheduleSessionTurn ${typeof schedule === "function" ? "returned no handle" : "unavailable"}`;
+      if (enqueue !== direct && typeof direct === "function") { // facade returned undefined; try the flat method
         const directResult = await direct({ sessionKey, text });
         if (directResult?.enqueued === true) return { enqueued: true };
         return {
           enqueued: false,
-          reason: `facade resolved undefined (fn=${String(enqueue).slice(0, 180)}); flat api.enqueueNextTurnInjection ${directResult === undefined ? "also returned undefined" : `returned ${JSON.stringify(directResult)}`} (flatFn=${String(direct).slice(0, 300)})`,
+          reason: `facade resolved undefined (fn=${String(enqueue).slice(0, 180)}); ${scheduleStatus}; flat api.enqueueNextTurnInjection ${directResult === undefined ? "also returned undefined" : `returned ${JSON.stringify(directResult)}`} (flatFn=${String(direct).slice(0, 300)})`,
         };
       }
       return {
         enqueued: false,
-        reason: `facade resolved undefined (fn=${String(enqueue).slice(0, 180)}); flat api.enqueueNextTurnInjection is missing`,
+        reason: `facade resolved undefined (fn=${String(enqueue).slice(0, 180)}); ${scheduleStatus}; flat api.enqueueNextTurnInjection is missing`,
       };
     }
     if (result?.enqueued === true) return { enqueued: true };
