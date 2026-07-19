@@ -201,6 +201,21 @@ declare -A CRON_DELIVER_FLAG=(
   [delivery]="--announce"
 )
 
+# Announce's default "last" target resolves from the MAIN session's delivery
+# context. On installs where DMs are scoped to per-peer sessions
+# (session.dmScope per-channel-peer), the main session never gains a route and
+# announce fails closed. Set these to pin the delivery cron to an explicit
+# destination, e.g. SAPIENCE_DELIVERY_CHANNEL=telegram SAPIENCE_DELIVERY_TO=<chatId>.
+SAPIENCE_DELIVERY_CHANNEL="${SAPIENCE_DELIVERY_CHANNEL:-}"
+SAPIENCE_DELIVERY_TO="${SAPIENCE_DELIVERY_TO:-}"
+
+delivery_target_args() {
+  local key="$1"
+  if [[ "$key" == "delivery" && -n "$SAPIENCE_DELIVERY_TO" ]]; then
+    echo "--channel ${SAPIENCE_DELIVERY_CHANNEL:-telegram} --to $SAPIENCE_DELIVERY_TO"
+  fi
+}
+
 declare -A CRON_MESSAGES=(
   [thinking]="You are running a scheduled thinking pass. Call get_thinking_context() to receive your context and instructions. If it returns {status:skip}, reply with NO_REPLY and stop. Otherwise review the context carefully, then call record_thinking_output() with your proposals. Do not produce any other output. If the tool is not available, reply NO_REPLY and stop."
   [routing]="You are the sapience routing agent. Call process_proposals() to route new thinking pass proposals. Reply NO_REPLY after the tool call. If the tool is not available, reply NO_REPLY and stop."
@@ -254,12 +269,14 @@ if [[ ${#CRONS_TO_ADD[@]} -gt 0 ]]; then
       message="${CRON_MESSAGES[$key]}"
       tools="${CRON_TOOLS[$key]}"
       echo "  Registering $name (agent: $agent)..."
+      # shellcheck disable=SC2046 — delivery_target_args intentionally splits
       openclaw cron add \
         --name "$name" \
         --cron "$CRON_SCHEDULE" \
         --session isolated \
         --agent "$agent" \
         "${CRON_DELIVER_FLAG[$key]}" \
+        $(delivery_target_args "$key") \
         --tools "$tools" \
         --message "$message" \
         --timeout-seconds 120
