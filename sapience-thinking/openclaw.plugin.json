@@ -6,7 +6,8 @@
   "contracts": {
     "tools": [
       "get_thinking_context",
-      "record_thinking_output"
+      "record_thinking_output",
+      "record_outcome"
     ]
   },
   "activation": {

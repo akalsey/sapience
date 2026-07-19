@@ -6,7 +6,12 @@
   "contracts": {
     "tools": [
       "goal_submit",
-      "check_goals"
+      "check_goals",
+      "goal_select_approach",
+      "goal_update",
+      "goal_progress",
+      "goal_blocker",
+      "goal_set_metric"
     ]
   },
   "activation": {
