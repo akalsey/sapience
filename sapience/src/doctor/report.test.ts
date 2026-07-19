@@ -108,6 +108,19 @@ describe("buildSuiteDoctorReport", () => {
     expect(f?.message).toContain("no cron refreshes it");
   });
 
+  it("warns when a freshly-heartbeating plugin is older than the installed build (gateway not restarted)", () => {
+    const i = healthy();
+    const sapience = i.plugins.find((p) => p.id === "sapience")!;
+    sapience.artifact!.version = "0.4.11";
+    i.versions = [{ pluginId: "sapience", onDisk: "0.4.12", registryLatest: "0.4.12" }];
+    const r = buildSuiteDoctorReport(i);
+    const f = byId(r, "plugin:sapience");
+    expect(f?.severity).toBe("warn");
+    expect(f?.message).toContain("v0.4.11 loaded");
+    expect(f?.message).toContain("v0.4.12 installed");
+    expect(f?.detail?.toLowerCase()).toContain("restart");
+  });
+
   it("accepts a stale no-cron artifact when there is no on-disk version to contradict it", () => {
     const i = healthy();
     const feedback = i.plugins.find((p) => p.id === "sapience-feedback")!;

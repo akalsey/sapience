@@ -66,6 +66,15 @@ function pluginFinding(
       message: `${p.id} v${p.artifact.version} — no liveness signal in ${durationStr(nowMs, initMs)}${versionNote}`,
       detail: "Plugins refresh their status artifact on every cron run. All suite artifacts are quiet — the gateway may simply be stopped, or the plugins predate the heartbeat (update them)." };
   }
+  // A fresh artifact reporting an older version than the on-disk build means
+  // the plugin was updated but the gateway never reloaded it — tools and fixes
+  // from the new build silently aren't running (a delivery cron once failed
+  // with "no registered tools matched" in exactly this state).
+  if (ctx.onDisk && p.artifact.version !== "unknown" && p.artifact.version !== ctx.onDisk) {
+    return { id, severity: "warn", source: "artifact",
+      message: `${p.id} v${p.artifact.version} loaded, v${ctx.onDisk} installed`,
+      detail: "The gateway is still running the old build. Restart the gateway to load the update." };
+  }
   if (p.artifact.captureMode === "command-only") {
     return { id, severity: "warn", source: "artifact",
       message: `${p.id} v${p.artifact.version} — passive capture degraded to command-only`,
