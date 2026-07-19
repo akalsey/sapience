@@ -86,7 +86,8 @@ export async function deliverItems(
         confidence: item.confidence,
       });
     }
-    const result = await enqueueMainSessionInjection(api, buildTierPrompt(item));
+    const prompt = buildTierPrompt(item);
+    const result = await enqueueMainSessionInjection(api, prompt);
     if (!result.enqueued) {
       // The sapience-delivery cron drains this queue through cron announce
       // delivery, so a dead injection path degrades to ≤15-minute latency
@@ -94,7 +95,7 @@ export async function deliverItems(
       const queued = await addPendingDelivery(config.output.pendingDeliveriesPath, {
         id: item.id,
         kind: "item",
-        prompt: buildTierPrompt(item),
+        prompt,
       }).catch(() => false);
       await appendEvent(config.output.eventsPath, {
         plugin: "sapience",
