@@ -108,7 +108,7 @@ describe("enqueueMainSessionInjection", () => {
     expect(directCalled).toBe(true);
   });
 
-  it("captures the facade function's source when both facade and flat calls return undefined", async () => {
+  it("captures both functions' sources when facade and flat calls return undefined", async () => {
     const api = {
       config,
       enqueueNextTurnInjection: async () => undefined,
@@ -118,6 +118,7 @@ describe("enqueueMainSessionInjection", () => {
     expect(result.enqueued).toBe(false);
     expect(result.reason).toContain("fn=");
     expect(result.reason).toContain("also returned undefined");
+    expect(result.reason).toContain("flatFn=");
   });
 
   it("reports a missing flat method when the facade resolves undefined and there is no fallback", async () => {

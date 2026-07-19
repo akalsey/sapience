@@ -75,7 +75,7 @@ export async function enqueueMainSessionInjection(api: any, text: string): Promi
         if (directResult?.enqueued === true) return { enqueued: true };
         return {
           enqueued: false,
-          reason: `facade resolved undefined (fn=${String(enqueue).slice(0, 180)}); flat api.enqueueNextTurnInjection ${directResult === undefined ? "also returned undefined" : `returned ${JSON.stringify(directResult)}`}`,
+          reason: `facade resolved undefined (fn=${String(enqueue).slice(0, 180)}); flat api.enqueueNextTurnInjection ${directResult === undefined ? "also returned undefined" : `returned ${JSON.stringify(directResult)}`} (flatFn=${String(direct).slice(0, 300)})`,
         };
       }
       return {
