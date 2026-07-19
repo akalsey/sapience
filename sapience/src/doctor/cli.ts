@@ -77,7 +77,7 @@ export function cronRegisterArgs(base: string, agentId: string): string[] {
     "--cron", "*/15 * * * *",
     "--session", "isolated",
     "--agent", agentId,
-    "--no-deliver",
+    spec.announce ? "--announce" : "--no-deliver",
     "--tools", spec.tools.join(","),
     "--message", spec.message,
     "--timeout-seconds", "120",

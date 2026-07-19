@@ -10,6 +10,7 @@ import { routeItem } from "./autonomy.js";
 import { readUnprocessedPasses, proposalSetToItems } from "./proposal-adapter.js";
 import { loadProcessedPasses, markPassProcessed, bootstrapProcessedPasses } from "./processed-passes.js";
 import { deliverItems } from "./delivery.js";
+import { addPendingDelivery, drainPendingDeliveries } from "./pending-deliveries.js";
 import { digestDue, buildDigestPrompt } from "./weekly-digest.js";
 import { readJsonSafe, writeJsonAtomic } from "./safe-json.js";
 import { acquireLock, releaseLock, clearLock } from "./lock.js";
@@ -58,6 +59,7 @@ function mergeConfig(raw: Record<string, unknown>, workspaceDir: string): Sapien
       investigationStatePath: resolveDataPath((raw as any).output?.investigationStatePath, workspaceDir, DEFAULT_CONFIG.output.investigationStatePath),
       hypothesesPath: resolveDataPath((raw as any).output?.hypothesesPath, workspaceDir, DEFAULT_CONFIG.output.hypothesesPath),
       watchesPath: resolveDataPath((raw as any).output?.watchesPath, workspaceDir, DEFAULT_CONFIG.output.watchesPath),
+      pendingDeliveriesPath: resolveDataPath((raw as any).output?.pendingDeliveriesPath, workspaceDir, DEFAULT_CONFIG.output.pendingDeliveriesPath),
     },
   };
 }
@@ -201,6 +203,32 @@ export default definePluginEntry({
     });
 
     api.registerTool({
+      name: "get_pending_deliveries",
+      description: "Drain notifications that could not be delivered through the main-session path. Called by the sapience-delivery cron; the caller composes one message to the user from the returned items.",
+      parameters: { type: "object", properties: {} },
+      async execute(_id: any, _params: any) {
+        try {
+          if (!isWithinActiveHours(config.activeHours)) {
+            return { content: [{ type: "text", text: "NOTHING_PENDING" }] };
+          }
+          const pending = await drainPendingDeliveries(config.output.pendingDeliveriesPath);
+          if (pending.length === 0) {
+            return { content: [{ type: "text", text: "NOTHING_PENDING" }] };
+          }
+          await appendEvent(config.output.eventsPath, {
+            plugin: "sapience", type: "pending_deliveries_drained", count: pending.length,
+          });
+          const body = pending
+            .map((p, i) => `--- pending ${i + 1}/${pending.length} (${p.kind}, queued ${p.queued_at}) ---\n${p.prompt}`)
+            .join("\n\n");
+          return { content: [{ type: "text", text: body }] };
+        } catch (err) {
+          return { content: [{ type: "text", text: `[sapience] get_pending_deliveries error: ${String(err)}` }] };
+        }
+      },
+    });
+
+    api.registerTool({
       name: "process_proposals",
       description: "Process new proposals from the sapience-thinking log and route them through the autonomy tier function. Called by the sapience cron.",
       parameters: { type: "object", properties: {} },
@@ -323,7 +351,16 @@ export default definePluginEntry({
                   requestChannelPush(api, "sapience weekly digest");
                   await appendEvent(config.output.eventsPath, { plugin: "sapience", type: "digest_delivered" });
                 } else {
-                  await appendEvent(config.output.eventsPath, { plugin: "sapience", type: "delivery_failed", what: "digest", reason: digestResult.reason });
+                  // Hand off to the sapience-delivery cron. Marking the date
+                  // stops the every-pass retry; the id keeps the handoff
+                  // idempotent even if the state write races.
+                  const queued = await addPendingDelivery(config.output.pendingDeliveriesPath, {
+                    id: `digest-${localDate}`,
+                    kind: "digest",
+                    prompt,
+                  }).catch(() => false);
+                  if (queued) await writeJsonAtomic(digestStatePath, { lastSentDate: localDate });
+                  await appendEvent(config.output.eventsPath, { plugin: "sapience", type: "delivery_failed", what: "digest", reason: digestResult.reason, queued });
                 }
               }
             }

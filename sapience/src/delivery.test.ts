@@ -85,6 +85,28 @@ describe("buildTierPrompt", () => {
 });
 
 describe("deliverItems", () => {
+  it("queues the item for the delivery cron when the injection is declined", async () => {
+    const eventsPath = join(dir, "events.jsonl");
+    const pendingDeliveriesPath = join(dir, "pending-deliveries.json");
+    const config = {
+      ...DEFAULT_CONFIG,
+      push: { ...DEFAULT_CONFIG.push, enabled: false },
+      output: { ...DEFAULT_CONFIG.output, actionLogPath: join(dir, "action-log.md"), eventsPath, pendingDeliveriesPath },
+    };
+    const item = { ...base, tier: "propose" as const };
+    await deliverItems([item], decliningApi, config);
+
+    const { drainPendingDeliveries } = await import("./pending-deliveries.js");
+    const queued = await drainPendingDeliveries(pendingDeliveriesPath);
+    expect(queued).toHaveLength(1);
+    expect(queued[0]!.id).toBe(item.id);
+    expect(queued[0]!.prompt).toContain(item.text);
+
+    const events = (await readFile(eventsPath, "utf-8")).trim().split("\n").map((l) => JSON.parse(l));
+    const failed = events.find((e) => e.type === "delivery_failed");
+    expect(failed.queued).toBe(true);
+  });
+
   it("emits an action_logged event for act-tier items", async () => {
     const eventsPath = join(dir, "events.jsonl");
     const config = {

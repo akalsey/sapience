@@ -25,7 +25,17 @@ export const CRON_REFRESHED_PLUGINS: ReadonlySet<string> = new Set([
 // plugin tools granted here (or via a global tools.allow/alsoAllow), so a cron
 // registered without its grant runs "ok" while the agent can't call anything.
 // Keep base names, tools, and messages in sync with install.sh.
-export const SUITE_CRONS: ReadonlyArray<{ base: string; tools: readonly string[]; message: string }> = [
+export const SUITE_CRONS: ReadonlyArray<{
+  base: string;
+  tools: readonly string[];
+  message: string;
+  // Cron announce delivery routes the run's final reply to the last active
+  // channel. The delivery cron is the suite's channel-reaching fallback while
+  // main-session injection is voided by the gateway's registration guard
+  // (openclaw PR #111131) — announce is the one delivery path stock openclaw
+  // grants globally-installed plugins.
+  announce?: boolean;
+}> = [
   {
     base: "sapience-thinking",
     tools: ["get_thinking_context", "record_thinking_output"],
@@ -43,6 +53,13 @@ export const SUITE_CRONS: ReadonlyArray<{ base: string; tools: readonly string[]
     tools: ["check_goals"],
     message:
       "You are the goals tracking agent. Call check_goals() to process new goals and deliver weekly status updates. Reply NO_REPLY after the tool call. If the tool is not available, reply NO_REPLY and stop.",
+  },
+  {
+    base: "sapience-delivery",
+    tools: ["get_pending_deliveries"],
+    announce: true,
+    message:
+      "You are the sapience delivery agent. Call get_pending_deliveries() to fetch notifications that could not reach the user through the normal path. If it returns NOTHING_PENDING, reply NO_REPLY and stop. Otherwise compose ONE concise message to the user covering every pending item — lead with the most important, keep it brief, and write as the assistant speaking directly to the user; your final reply is delivered to their chat. If the tool is not available, reply NO_REPLY and stop.",
   },
 ];
 

@@ -2,6 +2,7 @@ import type { RoutedItem, SapienceConfig } from "./types.js";
 import { appendAction } from "./action-log.js";
 import { appendEvent } from "./events.js";
 import { enqueueMainSessionInjection } from "./main-session.js";
+import { addPendingDelivery } from "./pending-deliveries.js";
 import { shouldPush, notePush, requestChannelPush, localDateIn, type PushState } from "./push.js";
 import { readJsonSafe, writeJsonAtomic } from "./safe-json.js";
 
@@ -87,12 +88,21 @@ export async function deliverItems(
     }
     const result = await enqueueMainSessionInjection(api, buildTierPrompt(item));
     if (!result.enqueued) {
+      // The sapience-delivery cron drains this queue through cron announce
+      // delivery, so a dead injection path degrades to ≤15-minute latency
+      // instead of silence.
+      const queued = await addPendingDelivery(config.output.pendingDeliveriesPath, {
+        id: item.id,
+        kind: "item",
+        prompt: buildTierPrompt(item),
+      }).catch(() => false);
       await appendEvent(config.output.eventsPath, {
         plugin: "sapience",
         type: "delivery_failed",
         tier: item.tier,
         domain: item.domain,
         reason: result.reason,
+        queued,
       });
       continue;
     }

@@ -66,6 +66,7 @@ export interface SapienceConfig {
     investigationStatePath: string;
     hypothesesPath: string;
     watchesPath: string;
+    pendingDeliveriesPath: string;
   };
 }
 
@@ -100,5 +101,6 @@ export const DEFAULT_CONFIG: SapienceConfig = {
     investigationStatePath: "sapience/investigation-state.json",
     hypothesesPath: "sapience/hypotheses.json",
     watchesPath: "sapience/watches.json",
+    pendingDeliveriesPath: "sapience/pending-deliveries.json",
   },
 };

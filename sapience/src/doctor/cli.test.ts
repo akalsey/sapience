@@ -66,6 +66,17 @@ describe("cronRegisterArgs", () => {
   it("throws on an unknown cron base", () => {
     expect(() => cronRegisterArgs("nonsense", "main")).toThrow();
   });
+
+  it("registers the delivery cron with announce delivery and the others without", () => {
+    const delivery = cronRegisterArgs("sapience-delivery", "main");
+    expect(delivery).toContain("--announce");
+    expect(delivery).not.toContain("--no-deliver");
+    for (const base of ["sapience-thinking", "sapience-routing", "sapience-goals-check"]) {
+      const args = cronRegisterArgs(base, "main");
+      expect(args).toContain("--no-deliver");
+      expect(args).not.toContain("--announce");
+    }
+  });
 });
 
 describe("SUITE_CRONS messages", () => {

@@ -175,6 +175,7 @@ declare -A CRON_BASE_NAMES=(
   [thinking]="sapience-thinking"
   [routing]="sapience-routing"
   [goals]="sapience-goals-check"
+  [delivery]="sapience-delivery"
 )
 
 # --tools becomes the job's payload.toolsAllow. Isolated cron sessions only see
@@ -186,12 +187,25 @@ declare -A CRON_TOOLS=(
   [thinking]="get_thinking_context,record_thinking_output"
   [routing]="process_proposals"
   [goals]="check_goals"
+  [delivery]="get_pending_deliveries"
+)
+
+# The delivery cron is the only one whose final reply must reach the user's
+# chat: cron announce delivery is the channel path stock openclaw grants
+# globally-installed plugins (main-session injection is voided by the gateway's
+# registration guard — openclaw PR #111131).
+declare -A CRON_DELIVER_FLAG=(
+  [thinking]="--no-deliver"
+  [routing]="--no-deliver"
+  [goals]="--no-deliver"
+  [delivery]="--announce"
 )
 
 declare -A CRON_MESSAGES=(
   [thinking]="You are running a scheduled thinking pass. Call get_thinking_context() to receive your context and instructions. If it returns {status:skip}, reply with NO_REPLY and stop. Otherwise review the context carefully, then call record_thinking_output() with your proposals. Do not produce any other output. If the tool is not available, reply NO_REPLY and stop."
   [routing]="You are the sapience routing agent. Call process_proposals() to route new thinking pass proposals. Reply NO_REPLY after the tool call. If the tool is not available, reply NO_REPLY and stop."
   [goals]="You are the goals tracking agent. Call check_goals() to process new goals and deliver weekly status updates. Reply NO_REPLY after the tool call. If the tool is not available, reply NO_REPLY and stop."
+  [delivery]="You are the sapience delivery agent. Call get_pending_deliveries() to fetch notifications that could not reach the user through the normal path. If it returns NOTHING_PENDING, reply NO_REPLY and stop. Otherwise compose ONE concise message to the user covering every pending item — lead with the most important, keep it brief, and write as the assistant speaking directly to the user; your final reply is delivered to their chat. If the tool is not available, reply NO_REPLY and stop."
 )
 
 cron_name() {
@@ -205,7 +219,7 @@ CRON_SCHEDULE="*/15 * * * *"
 CRONS_TO_ADD=()
 
 for agent in "${CRON_AGENTS[@]}"; do
-  for key in thinking routing goals; do
+  for key in thinking routing goals delivery; do
     name=$(cron_name "${CRON_BASE_NAMES[$key]}" "$agent")
     state=$(cron_state "$name" "${CRON_TOOLS[$key]}")
     case "$state" in
@@ -245,7 +259,7 @@ if [[ ${#CRONS_TO_ADD[@]} -gt 0 ]]; then
         --cron "$CRON_SCHEDULE" \
         --session isolated \
         --agent "$agent" \
-        --no-deliver \
+        "${CRON_DELIVER_FLAG[$key]}" \
         --tools "$tools" \
         --message "$message" \
         --timeout-seconds 120
@@ -268,7 +282,7 @@ if [[ ${#CRONS_TO_ADD[@]} -gt 0 ]]; then
       echo "    --cron \"$CRON_SCHEDULE\" \\"
       echo "    --session isolated \\"
       echo "    --agent \"$agent\" \\"
-      echo "    --no-deliver \\"
+      echo "    ${CRON_DELIVER_FLAG[$key]} \\"
       echo "    --tools \"$tools\" \\"
       echo "    --message \"$message\" \\"
       echo "    --timeout-seconds 120"
