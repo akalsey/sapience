@@ -281,6 +281,20 @@ describe("buildHypothesesContext", () => {
   it("returns empty when the ledger is missing or empty", async () => {
     expect(await buildHypothesesContext(join(tmpDir, "nope.json"))).toBe("");
   });
+
+  it("caps the rendered list at the 10 most recently seen so a hoarded ledger cannot flood the pass", async () => {
+    const many = Array.from({ length: 30 }, (_, i) => ({
+      text: `hypothesis number ${i}`, status: "open", sightings: 1,
+      last_seen: new Date(Date.now() - (30 - i) * 60_000).toISOString(),
+    }));
+    const path = join(tmpDir, "hyp.json");
+    await writeFile(path, JSON.stringify(many));
+    const text = await buildHypothesesContext(path);
+    const lines = text.split("\n").filter(Boolean);
+    expect(lines.length).toBeLessThanOrEqual(10);
+    expect(text).toContain("hypothesis number 29");
+    expect(text).not.toContain("hypothesis number 0");
+  });
 });
 
 describe("machine-session exclusion", () => {

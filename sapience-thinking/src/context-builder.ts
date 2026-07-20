@@ -108,7 +108,11 @@ export async function buildHypothesesContext(path: string): Promise<string> {
   } catch {
     return "";
   }
-  const live = list.filter((h) => h.status === "open" || h.status === "supported");
+  const live = list
+    .filter((h) => h.status === "open" || h.status === "supported")
+    // Newest-first, capped: a hoarded ledger must not flood the pass context.
+    .sort((a, b) => Date.parse((b as { last_seen?: string }).last_seen ?? "") - Date.parse((a as { last_seen?: string }).last_seen ?? ""))
+    .slice(0, 10);
   if (live.length === 0) return "";
   return live.map((h) => {
     const latest = h.evidence?.[h.evidence.length - 1];

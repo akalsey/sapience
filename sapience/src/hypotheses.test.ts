@@ -40,6 +40,50 @@ describe("noteSighting", () => {
   });
 });
 
+describe("ledger pruning", () => {
+  const daysAgo = (n: number) => new Date(Date.now() - n * 24 * 60 * 60 * 1000).toISOString();
+  const entry = (id: string, over: Partial<import("./hypotheses.js").Hypothesis>) => ({
+    id, text: `hypothesis ${id} about ${id}`, domain: "d", status: "open" as const,
+    sightings: 1, evidence: [], first_seen: daysAgo(30), last_seen: daysAgo(1), ...over,
+  });
+
+  it("expires live hypotheses not sighted in 14 days on the next write", async () => {
+    const { writeFile } = await import("fs/promises");
+    await writeFile(path, JSON.stringify([
+      entry("stale", { last_seen: daysAgo(20) }),
+      entry("fresh", { last_seen: daysAgo(2) }),
+    ]));
+    await noteSighting(path, hunch);
+    const kept = (await loadHypotheses(path)).map((h) => h.id);
+    expect(kept).not.toContain("stale");
+    expect(kept).toContain("fresh");
+  });
+
+  it("drops refuted hypotheses after 7 days but keeps recent ones for dedup", async () => {
+    const { writeFile } = await import("fs/promises");
+    await writeFile(path, JSON.stringify([
+      entry("old-refuted", { status: "refuted", last_seen: daysAgo(10) }),
+      entry("new-refuted", { status: "refuted", last_seen: daysAgo(2) }),
+    ]));
+    await noteSighting(path, hunch);
+    const kept = (await loadHypotheses(path)).map((h) => h.id);
+    expect(kept).not.toContain("old-refuted");
+    expect(kept).toContain("new-refuted");
+  });
+
+  it("caps live hypotheses, keeping the most recently seen", async () => {
+    const { writeFile } = await import("fs/promises");
+    const many = Array.from({ length: 40 }, (_, i) => entry(`h${i}`, { last_seen: daysAgo(13 - i * 0.2) }));
+    await writeFile(path, JSON.stringify(many));
+    await noteSighting(path, hunch);
+    const live = (await loadHypotheses(path)).filter((h) => h.status !== "refuted");
+    expect(live.length).toBeLessThanOrEqual(25);
+    // The newest sightings survive the cap.
+    expect(live.map((h) => h.id)).toContain("h39");
+    expect(live.map((h) => h.id)).not.toContain("h0");
+  });
+});
+
 describe("recordVerdict", () => {
   it("appends evidence and closes refuted hypotheses", async () => {
     const h = await noteSighting(path, hunch);

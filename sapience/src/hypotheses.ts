@@ -25,6 +25,31 @@ export interface Hypothesis {
 
 const SIMILARITY_THRESHOLD = 0.6;
 
+// Ledger bounds. Without them a production ledger reached 185 live hypotheses
+// — every stale crisis-era suspicion fed every subsequent thinking pass, which
+// kept the crisis narrative alive long after the underlying problems were
+// fixed. A hunch nobody has re-sighted in two weeks is noise, not a case.
+const LIVE_EXPIRY_MS = 14 * 24 * 60 * 60 * 1000;
+const REFUTED_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
+const MAX_LIVE = 25;
+
+function pruneHypotheses(list: Hypothesis[], nowMs: number): Hypothesis[] {
+  const kept = list.filter((h) => {
+    const lastMs = Date.parse(h.last_tested ?? h.last_seen) || 0;
+    if (h.status === "refuted") return nowMs - lastMs <= REFUTED_RETENTION_MS;
+    return nowMs - lastMs <= LIVE_EXPIRY_MS;
+  });
+  const live = kept.filter((h) => h.status !== "refuted");
+  if (live.length <= MAX_LIVE) return kept;
+  const cutoff = new Set(
+    [...live]
+      .sort((a, b) => Date.parse(b.last_seen) - Date.parse(a.last_seen))
+      .slice(MAX_LIVE)
+      .map((h) => h.id)
+  );
+  return kept.filter((h) => !cutoff.has(h.id));
+}
+
 function tokens(text: string): Set<string> {
   // Light plural/verb-form folding ("decays" ≈ "decay") — case matching should
   // be slightly looser than proposal dedup.
@@ -55,7 +80,7 @@ export async function noteSighting(
   path: string,
   hunch: { id: string; text: string; domain: string }
 ): Promise<Hypothesis> {
-  const list = await loadHypotheses(path);
+  const list = pruneHypotheses(await loadHypotheses(path), Date.now());
   const now = new Date().toISOString();
   const existing = list.find((h) => h.status !== "refuted" && similar(h.text, hunch.text));
   if (existing) {
@@ -73,7 +98,7 @@ export async function noteSighting(
     first_seen: now,
     last_seen: now,
   };
-  await writeJsonAtomic(path, [...list, fresh]);
+  await writeJsonAtomic(path, pruneHypotheses([...list, fresh], Date.now()));
   return fresh;
 }
 
