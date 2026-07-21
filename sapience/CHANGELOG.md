@@ -1,5 +1,11 @@
 # @akalsey/sapience
 
+## 0.4.20
+
+### Patch Changes
+
+- 8c97fd0: Every injected prompt (tier proposals, heartbeat digests, goal decomposition/status) now opens by subordinating itself to the user's own message — injections prepend to the user's next turn, and a delivered proposal could hijack the turn entirely (a user submitting a goal got a response to a stale calibration item instead of their goal).
+
 ## 0.4.19
 
 ### Patch Changes

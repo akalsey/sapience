@@ -1,6 +1,6 @@
 {
   "name": "@akalsey/sapience-thinking",
-  "version": "0.4.14",
+  "version": "0.4.15",
   "type": "module",
   "main": "./dist/index.js",
   "exports": {
