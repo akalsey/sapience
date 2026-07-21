@@ -42,6 +42,7 @@ function mergeConfig(raw: Record<string, unknown>, workspaceDir: string): Sapien
     learning: { ...DEFAULT_CONFIG.learning, ...((raw.learning as object) ?? {}) },
     autonomy: { ...DEFAULT_CONFIG.autonomy, ...((raw.autonomy as object) ?? {}) },
     digest: { ...DEFAULT_CONFIG.digest, ...((raw.digest as object) ?? {}) },
+    delivery: { ...DEFAULT_CONFIG.delivery, ...((raw.delivery as object) ?? {}) },
     push: { ...DEFAULT_CONFIG.push, ...((raw.push as object) ?? {}) },
     investigation: { ...DEFAULT_CONFIG.investigation, ...((raw.investigation as object) ?? {}) },
     act: { ...DEFAULT_CONFIG.act, ...((raw.act as object) ?? {}) },

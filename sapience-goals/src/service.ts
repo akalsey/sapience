@@ -355,6 +355,28 @@ export default definePluginEntry({
     });
 
     api.registerTool({
+      name: "goal_list",
+      description: "List all goals with their ids, status, approach, and open todos. Call this to find a goal's id before using the other goal tools.",
+      parameters: { type: "object", properties: {} },
+      async execute(_id: any, _params: any) {
+        try {
+          const goals = await loadGoals(config.output.goalsPath);
+          if (goals.length === 0) return toolText("No goals yet.");
+          const lines = goals.map((g) => {
+            const open = (g.todos ?? []).filter((t) => t.status === "open");
+            const parts = [`${g.id} [${g.status}] ${g.description}`];
+            if (g.active_approach) parts.push(`  approach: ${g.active_approach}`);
+            for (const t of open.slice(0, 5)) parts.push(`  todo: ${t.text}`);
+            return parts.join("\n");
+          });
+          return toolText(lines.join("\n"));
+        } catch (err) {
+          return toolText(`[goals] goal_list error: ${String(err)}`);
+        }
+      },
+    });
+
+    api.registerTool({
       name: "goal_plan",
       description: "Save a goal's compiled plan: standing instructions (installed as a temporary workspace skill, active in every session) plus the initial todo list. Call after the user approves an approach.",
       parameters: {

@@ -13,7 +13,8 @@
       "goal_blocker",
       "goal_set_metric",
       "goal_plan",
-      "goal_todo"
+      "goal_todo",
+      "goal_list"
     ]
   },
   "activation": {

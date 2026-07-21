@@ -143,6 +143,20 @@ describe("decomposition prompt", () => {
   });
 });
 
+describe("goal_list", () => {
+  it("lists goals with ids so the agent can find them in later turns", async () => {
+    const id = await submitGoal("learn what drives the numbers");
+    const text = await call("goal_list", {});
+    expect(text).toContain(id);
+    expect(text).toContain("learn what drives the numbers");
+    expect(text).toContain("decomposing");
+  });
+
+  it("reports when there are no goals", async () => {
+    expect(await call("goal_list", {})).toContain("No goals");
+  });
+});
+
 describe("goal plan and todos", () => {
   it("goal_select_approach instructs compiling standing instructions via goal_plan", async () => {
     const id = await submitGoal("learn what drives the numbers");

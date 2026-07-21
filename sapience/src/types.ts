@@ -46,6 +46,9 @@ export interface SapienceConfig {
     domainFloors: Record<string, "propose" | "ask" | "explore">;
   };
   digest: { enabled: boolean; day: string; time: string };
+  // Per routing cycle, at most this many items are injected directly; the
+  // rest queue for the delivery cron, which composes them into one message.
+  delivery: { maxPerCycle: number };
   // Proactive channel push for initiative-worthy items (act/propose at or
   // above minPriority), budgeted per local day.
   push: { enabled: boolean; maxPerDay: number; minPriority: number };
@@ -86,6 +89,7 @@ export const DEFAULT_CONFIG: SapienceConfig = {
     domainFloors: {},
   },
   digest: { enabled: true, day: "friday", time: "17:00" },
+  delivery: { maxPerCycle: 3 },
   push: { enabled: true, maxPerDay: 6, minPriority: 4 },
   investigation: { enabled: true, maxPerDay: 3, minPriority: 3, timeoutSec: 120 },
   act: { execute: true, timeoutSec: 300 },

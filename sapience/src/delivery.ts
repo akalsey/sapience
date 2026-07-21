@@ -83,10 +83,25 @@ export async function deliverItems(
   config: SapienceConfig
 ): Promise<void> {
   const sorted = [...items].sort((a, b) =>
-    (a.tier === "act" ? 0 : 1) - (b.tier === "act" ? 0 : 1)
+    ((a.tier === "act" ? 0 : 1) - (b.tier === "act" ? 0 : 1)) || (b.priority - a.priority)
   );
 
-  for (const item of sorted) {
+  // A single pass can route many items at once (a productive thinking pass, a
+  // drained backlog); injecting them all buries the user under a wall of
+  // boilerplate in one turn. Inject the top few, queue the rest — the
+  // delivery cron composes queued items into one concise message.
+  const maxPerCycle = config.delivery?.maxPerCycle ?? 3;
+  const overflow = sorted.slice(maxPerCycle);
+  for (const item of overflow) {
+    const queued = await addPendingDelivery(config.output.pendingDeliveriesPath, {
+      id: item.id, kind: "item", prompt: buildTierPrompt(item),
+    }).catch(() => false);
+    await appendEvent(config.output.eventsPath, {
+      plugin: "sapience", type: "item_queued", proposal_id: item.id, tier: item.tier, priority: item.priority, queued,
+    });
+  }
+
+  for (const item of sorted.slice(0, maxPerCycle)) {
     if (item.tier === "act") {
       await appendAction(item, "Queued for immediate execution", config.output.actionLogPath);
       await appendEvent(config.output.eventsPath, {

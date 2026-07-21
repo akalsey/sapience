@@ -95,6 +95,28 @@ describe("buildTierPrompt", () => {
 });
 
 describe("deliverItems", () => {
+  it("delivers at most maxPerCycle items per pass and queues the overflow by priority", async () => {
+    const eventsPath = join(dir, "events.jsonl");
+    const pendingDeliveriesPath = join(dir, "pending-deliveries.json");
+    const config = {
+      ...DEFAULT_CONFIG,
+      push: { ...DEFAULT_CONFIG.push, enabled: false },
+      delivery: { maxPerCycle: 2 },
+      output: { ...DEFAULT_CONFIG.output, actionLogPath: join(dir, "action-log.md"), eventsPath, pendingDeliveriesPath },
+    };
+    const items = [1, 2, 3, 4, 5].map((n) => ({
+      ...base, id: `p${n}`, tier: "learning" as const, priority: (n <= 2 ? 5 : 2) as 5 | 2,
+    }));
+    await deliverItems(items, fakeApi, config);
+    const events = (await readFile(eventsPath, "utf-8")).trim().split("\n").map((l) => JSON.parse(l));
+    const delivered = events.filter((e) => e.type === "item_delivered").map((e) => e.proposal_id);
+    expect(delivered).toEqual(["p1", "p2"]);
+    const { drainPendingDeliveries } = await import("./pending-deliveries.js");
+    const queued = await drainPendingDeliveries(pendingDeliveriesPath);
+    expect(queued.map((q) => q.id).sort()).toEqual(["p3", "p4", "p5"]);
+    expect(events.filter((e) => e.type === "item_queued")).toHaveLength(3);
+  });
+
   it("queues the item for the delivery cron when the injection is declined", async () => {
     const eventsPath = join(dir, "events.jsonl");
     const pendingDeliveriesPath = join(dir, "pending-deliveries.json");
