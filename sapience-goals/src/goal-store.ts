@@ -1,6 +1,6 @@
 import { resolvePath } from "./utils.js";
 import { readJsonSafe, writeJsonAtomic } from "./safe-json.js";
-import type { Goal, GoalMetric, GoalStatus, ProgressNote } from "./types.js";
+import type { Goal, GoalMetric, GoalStatus, ProgressNote, GoalTodo } from "./types.js";
 
 export async function loadGoals(path: string): Promise<Goal[]> {
   return readJsonSafe<Goal[]>(resolvePath(path), []);
@@ -51,4 +51,37 @@ export function setGoalMetric(goals: Goal[], id: string, metric: GoalMetric): Go
 
 export function updateNextDelivery(goals: Goal[], id: string, nextDelivery: string): Goal[] {
   return goals.map(g => g.id === id ? { ...g, next_status_delivery: nextDelivery } : g);
+}
+
+function makeTodo(text: string): GoalTodo {
+  return {
+    id: `todo-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    text,
+    status: "open",
+    added_at: new Date().toISOString(),
+  };
+}
+
+function mutate(goals: Goal[], id: string, fn: (g: Goal) => Goal): Goal[] {
+  return goals.map((g) => (g.id === id ? { ...fn({ ...g, todos: g.todos ?? [] }), updated_at: new Date().toISOString() } : g));
+}
+
+export function setGoalPlan(goals: Goal[], id: string, instructions: string, todos: string[]): Goal[] {
+  return mutate(goals, id, (g) => ({ ...g, instructions, todos: [...g.todos, ...todos.map(makeTodo)] }));
+}
+
+export function addTodo(goals: Goal[], id: string, text: string): Goal[] {
+  return mutate(goals, id, (g) => ({ ...g, todos: [...g.todos, makeTodo(text)] }));
+}
+
+// Accepts a todo id or its exact text — the agent usually has the text.
+export function completeTodo(goals: Goal[], id: string, todoIdOrText: string): Goal[] {
+  return mutate(goals, id, (g) => ({
+    ...g,
+    todos: g.todos.map((t) =>
+      (t.id === todoIdOrText || t.text === todoIdOrText) && t.status === "open"
+        ? { ...t, status: "done" as const, done_at: new Date().toISOString() }
+        : t
+    ),
+  }));
 }

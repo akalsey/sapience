@@ -263,6 +263,24 @@ describe("goal-aware bundle", () => {
   });
 });
 
+describe("goal todos in context", () => {
+  it("renders a goal's open todos so passes work the checklist", async () => {
+    const path = join(tmpDir, "goals.json");
+    await writeFile(path, JSON.stringify([{
+      description: "learn what drives the numbers", status: "active",
+      active_approach: "watch metric questions",
+      todos: [
+        { id: "t1", text: "baseline the weekly numbers", status: "open" },
+        { id: "t2", text: "already finished", status: "done" },
+      ],
+      progress_notes: [], blockers: [],
+    }]));
+    const text = await buildGoalsContext(path);
+    expect(text).toContain("baseline the weekly numbers");
+    expect(text).not.toContain("already finished");
+  });
+});
+
 describe("buildHypothesesContext", () => {
   it("summarizes open and supported hypotheses with their evidence trail", async () => {
     const path = join(tmpDir, "hypotheses.json");

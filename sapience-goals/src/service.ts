@@ -6,9 +6,11 @@ import { validateActiveHours, isWithinActiveHours } from "./active-hours.js";
 import {
   loadGoals, saveGoals, addGoal, updateNextDelivery,
   setActiveApproach, updateGoalStatus, addProgressNote, addBlocker, setGoalMetric,
+  setGoalPlan, addTodo, completeTodo,
 } from "./goal-store.js";
 import { readNewGoals, savePosition } from "./inbox-reader.js";
 import { deliverDecomposition, deliverWeeklyStatus } from "./delivery.js";
+import { writeGoalSkill, removeGoalSkill } from "./skill-file.js";
 import { appendEvent } from "./events.js";
 import { writeStatusArtifact, resolvePluginVersion } from "./status-artifact.js";
 import { logSkipOnce, clearSkipState } from "./skip-log.js";
@@ -35,6 +37,7 @@ function mergeConfig(raw: Record<string, unknown>, workspaceDir: string): GoalsC
       goalsPath: resolveDataPath((raw as any).output?.goalsPath, workspaceDir, DEFAULT_CONFIG.output.goalsPath),
       eventsPath: resolveDataPath((raw as any).output?.eventsPath, workspaceDir, DEFAULT_CONFIG.output.eventsPath),
     },
+    skillsDir: resolveDataPath((raw as any).skillsDir, workspaceDir, "skills"),
     inboxPath: resolveDataPath((raw as any).inboxPath, workspaceDir, DEFAULT_CONFIG.inboxPath),
     inboxPositionPath: resolveDataPath((raw as any).inboxPositionPath, workspaceDir, DEFAULT_CONFIG.inboxPositionPath),
   };
@@ -124,6 +127,7 @@ export default definePluginEntry({
         updated_at: new Date().toISOString(),
         progress_notes: [],
         blockers: [],
+        todos: [],
         next_status_delivery: nextWeeklyDate(
           config.weeklyCheckInDay,
           config.weeklyCheckInTime,
@@ -162,7 +166,15 @@ export default definePluginEntry({
           const err = await mutateGoal(id, (goals) => setActiveApproach(goals, id, approach));
           if (err) return toolText(err);
           await appendEvent(config.output.eventsPath, { plugin: "goals", type: "goal_activated", goal_id: id });
-          return toolText(JSON.stringify({ id, status: "active" }));
+          return toolText([
+            `Approach recorded; goal ${id} is active.`,
+            "Now compile the goal's plan, in this same turn:",
+            "1. Review your memory, skills, and data sources for what is relevant to this goal.",
+            "2. Draft STANDING INSTRUCTIONS for yourself — behavioral rules that apply during normal work (e.g. \"when you access PostHog or Bespin, remember the results; compare new results against what you know; try to explain trends or outliers; don't force conclusions from thin data\").",
+            "3. List the first few TODOS — concrete steps toward the outcome (baselines to gather, patterns to verify).",
+            `4. Save them with goal_plan({id: "${id}", instructions: <the standing instructions>, todos: [<todo texts>]}) — this installs the instructions as a temporary skill active in every session.`,
+            "Then summarize the plan for the user in one short paragraph.",
+          ].join("\n"));
         } catch (err) {
           return toolText(`[goals] goal_select_approach error: ${String(err)}`);
         }
@@ -189,6 +201,12 @@ export default definePluginEntry({
           const err = await mutateGoal(id, (goals) => updateGoalStatus(goals, id, status));
           if (err) return toolText(err);
           await appendEvent(config.output.eventsPath, { plugin: "goals", type: "goal_status_changed", goal_id: id, status });
+          if (status === "completed" || status === "abandoned") {
+            await removeGoalSkill(config.skillsDir, id).catch(() => {});
+            if (status === "completed") {
+              return toolText(`Goal ${id} completed and its temporary skill retired. Only if this goal produced a recurring analysis worth keeping, offer to distill it into a permanent skill — many goals simply end here, and that is fine.`);
+            }
+          }
           return toolText(JSON.stringify({ id, status }));
         } catch (err) {
           return toolText(`[goals] goal_update error: ${String(err)}`);
@@ -332,6 +350,79 @@ export default definePluginEntry({
           ].join("\n"));
         } catch (err) {
           return toolText(`[goals] goal_submit error: ${String(err)}`);
+        }
+      },
+    });
+
+    api.registerTool({
+      name: "goal_plan",
+      description: "Save a goal's compiled plan: standing instructions (installed as a temporary workspace skill, active in every session) plus the initial todo list. Call after the user approves an approach.",
+      parameters: {
+        type: "object",
+        properties: {
+          id: { type: "string", description: "The goal id" },
+          instructions: { type: "string", description: "Standing behavioral instructions the agent should follow during normal work while this goal is active" },
+          todos: { type: "array", items: { type: "string" }, description: "Initial concrete steps toward the outcome" },
+        },
+        required: ["id", "instructions"],
+      },
+      async execute(_id: any, params: any) {
+        try {
+          const id = asTrimmedString(params?.id);
+          const instructions = asTrimmedString(params?.instructions);
+          if (!id || !instructions) return toolText("goal_plan requires id and instructions.");
+          const todos = Array.isArray(params?.todos) ? params.todos.map(asTrimmedString).filter(Boolean) : [];
+          const err = await mutateGoal(id, (goals) => setGoalPlan(goals, id, instructions, todos));
+          if (err) return toolText(err);
+          const goals = await loadGoals(config.output.goalsPath);
+          const goal = goals.find((g) => g.id === id)!;
+          const skillPath = await writeGoalSkill(config.skillsDir, goal);
+          await appendEvent(config.output.eventsPath, { plugin: "goals", type: "goal_planned", goal_id: id, todos: todos.length });
+          return toolText(`Plan saved; standing instructions installed as a temporary skill at ${skillPath}. ${todos.length} todo(s) seeded. Summarize the plan for the user.`);
+        } catch (err) {
+          return toolText(`[goals] goal_plan error: ${String(err)}`);
+        }
+      },
+    });
+
+    api.registerTool({
+      name: "goal_todo",
+      description: "Add a todo to a goal or mark one done. Add todos as new work toward the goal becomes clear; mark them done as they finish. Completing the last open todo starts goal wrap-up.",
+      parameters: {
+        type: "object",
+        properties: {
+          id: { type: "string", description: "The goal id" },
+          action: { type: "string", enum: ["add", "done"], description: "add a new todo, or mark one done" },
+          text: { type: "string", description: "The todo text (for add), or the todo's text/id (for done)" },
+        },
+        required: ["id", "action", "text"],
+      },
+      async execute(_id: any, params: any) {
+        try {
+          const id = asTrimmedString(params?.id);
+          const action = asTrimmedString(params?.action);
+          const text = asTrimmedString(params?.text);
+          if (!id || !text || (action !== "add" && action !== "done")) {
+            return toolText("goal_todo requires id, action ('add' or 'done'), and text.");
+          }
+          const err = await mutateGoal(id, (goals) =>
+            action === "add" ? addTodo(goals, id, text) : completeTodo(goals, id, text));
+          if (err) return toolText(err);
+          const goals = await loadGoals(config.output.goalsPath);
+          const goal = goals.find((g) => g.id === id)!;
+          const open = (goal.todos ?? []).filter((t) => t.status === "open");
+          await appendEvent(config.output.eventsPath, { plugin: "goals", type: "goal_todo", goal_id: id, action, open: open.length });
+          if (action === "done" && open.length === 0 && (goal.todos ?? []).length > 0) {
+            return toolText([
+              "All todos are complete.",
+              "Confirm with the user whether the goal's outcome has been reached.",
+              "If it has: record completion with goal_update — the temporary skill retires automatically. Only when the goal produced a recurring analysis worth repeating should you also offer to distill it into a permanent skill; many goals simply end.",
+              "If not: add the next todos with goal_todo.",
+            ].join("\n"));
+          }
+          return toolText(`ok — ${open.length} open todo(s) on goal ${id}.`);
+        } catch (err) {
+          return toolText(`[goals] goal_todo error: ${String(err)}`);
         }
       },
     });

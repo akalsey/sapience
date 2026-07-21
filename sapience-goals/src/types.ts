@@ -23,6 +23,14 @@ export interface GoalMetric {
   baseline?: number;
 }
 
+export interface GoalTodo {
+  id: string;
+  text: string;
+  status: "open" | "done";
+  added_at: string;
+  done_at?: string;
+}
+
 export interface Goal {
   id: string;
   description: string;
@@ -35,6 +43,11 @@ export interface Goal {
   progress_notes: ProgressNote[];
   blockers: Blocker[];
   next_status_delivery: string;
+  // The goal's compiled plan: standing instructions (mirrored into a
+  // temporary workspace skill) plus the todo list whose completion defines
+  // the end state.
+  instructions?: string;
+  todos: GoalTodo[];
 }
 
 export interface GoalsConfig {
@@ -44,6 +57,8 @@ export interface GoalsConfig {
   weeklyCheckInTime: string;
   inboxPath: string;
   inboxPositionPath: string;
+  // Workspace dir where goal plans install their temporary skills.
+  skillsDir: string;
   output: { goalsPath: string; eventsPath: string };
 }
 
@@ -53,6 +68,7 @@ export const DEFAULT_CONFIG: GoalsConfig = {
   weeklyCheckInDay: "monday",
   weeklyCheckInTime: "09:00",
   inboxPath: "goals/inbox.md",
+  skillsDir: "skills",
   inboxPositionPath: "goals/inbox-position.json",
   output: { goalsPath: "goals/goals.json", eventsPath: "sapience/events.jsonl" },
 };

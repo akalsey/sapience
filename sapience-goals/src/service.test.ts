@@ -143,6 +143,48 @@ describe("decomposition prompt", () => {
   });
 });
 
+describe("goal plan and todos", () => {
+  it("goal_select_approach instructs compiling standing instructions via goal_plan", async () => {
+    const id = await submitGoal("learn what drives the numbers");
+    const text = await call("goal_select_approach", { id, approach: "watch metric questions" });
+    expect(text).toContain("STANDING INSTRUCTIONS");
+    expect(text).toContain("goal_plan");
+    expect(text).toContain("temporary skill");
+  });
+
+  it("goal_plan persists instructions and todos and installs the temporary skill file", async () => {
+    const id = await submitGoal("learn what drives the numbers");
+    await call("goal_select_approach", { id, approach: "watch" });
+    const text = await call("goal_plan", { id, instructions: "When you access PostHog, remember the results.", todos: ["baseline the weekly numbers"] });
+    expect(text).toContain("temporary skill");
+    const [goal] = await storedGoals();
+    expect(goal.instructions).toContain("PostHog");
+    expect(goal.todos).toHaveLength(1);
+    const skill = await readFile(join(dir, "skills", `goal-${id}`, "SKILL.md"), "utf-8");
+    expect(skill).toContain("PostHog");
+  });
+
+  it("completing the last todo starts wrap-up without presuming a permanent skill", async () => {
+    const id = await submitGoal("short investigation");
+    await call("goal_select_approach", { id, approach: "look" });
+    await call("goal_plan", { id, instructions: "watch things", todos: ["the only step"] });
+    const text = await call("goal_todo", { id, action: "done", text: "the only step" });
+    expect(text).toContain("All todos are complete");
+    expect(text).toContain("goal_update");
+    // Skill crystallization is conditional — many goals simply end.
+    expect(text).toContain("Only when");
+    expect(text).toContain("many goals simply end");
+  });
+
+  it("goal_update completed retires the temporary skill file", async () => {
+    const id = await submitGoal("finite goal");
+    await call("goal_select_approach", { id, approach: "x" });
+    await call("goal_plan", { id, instructions: "y", todos: [] });
+    await call("goal_update", { id, status: "completed" });
+    await expect(readFile(join(dir, "skills", `goal-${id}`, "SKILL.md"), "utf-8")).rejects.toThrow();
+  });
+});
+
 describe("goal_set_metric", () => {
   it("attaches a KR that the weekly status will compute from", async () => {
     const id = await submitGoal("reduce churn");

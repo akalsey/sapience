@@ -68,6 +68,7 @@ export async function buildGoalsContext(goalsPath: string): Promise<string> {
     metric?: { name?: string; target?: number; unit?: string };
     progress_notes?: Array<{ timestamp?: string; summary?: string }>;
     blockers?: Array<{ description?: string; waiting_on?: string }>;
+    todos?: Array<{ text?: string; status?: string }>;
   }
   let goals: GoalLite[];
   try {
@@ -87,6 +88,10 @@ export async function buildGoalsContext(goalsPath: string): Promise<string> {
     if (latest?.summary) lines.push(`  latest progress: ${latest.summary}`);
     for (const b of g.blockers ?? []) {
       lines.push(`  blocked: ${b.description ?? ""}${b.waiting_on ? ` (waiting on ${b.waiting_on})` : ""}`);
+    }
+    // The goal's open checklist — passes should propose work that moves these.
+    for (const t of (g.todos ?? []).filter((t) => t.status === "open").slice(0, 5)) {
+      lines.push(`  todo: ${t.text ?? ""}`);
     }
     return lines.join("\n");
   }).join("\n");
