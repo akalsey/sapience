@@ -250,6 +250,9 @@ function memoryObservation(config: any): MemoryObservation {
 // Operator conversations in the session store: agent:<id>:<channel>:<rest...>
 // keys — machine sessions (main/current, cron:*, subagent:*, custom labels)
 // have fewer segments or a machine namespace.
+// Mirrors isNoticeableSession in sapience-thinking/src/noticer.ts — the same
+// structural rule applies (operator vs machine) in a different context (delivery
+// target selection vs turn-watching). No shared lib; the duplication is intentional.
 function isOperatorSessionKey(key: string): boolean {
   const parts = key.split(":");
   if (parts.length < 4 || parts[0] !== "agent") return false;

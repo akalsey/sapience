@@ -221,7 +221,7 @@ function appendDeliveryTargetFinding(findings: Finding[], i: DoctorInputs): void
     return;
   }
   if (!configured) {
-    const newest = [...dt.candidateSessions].sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0))[0];
+    const newest = dt.candidateSessions[0]; // already sorted newest-first by gatherInputs
     if (newest) {
       findings.push({ id, severity: "warn", source: "config",
         message: `the suite doesn't know where to send deliveries — dmScope=${scope} makes the main session machine-only and no delivery.sessionKey is configured`,
