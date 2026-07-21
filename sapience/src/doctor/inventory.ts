@@ -71,16 +71,18 @@ export const SUITE_CRON_BASES = SUITE_CRONS.map((c) => c.base);
 // an old mtime under green crons means the tool handlers aren't executing,
 // which is exactly how the toolsAllow regression stayed invisible on an
 // established install (old files existed, so nothing was "missing").
-export const SUITE_FILES: ReadonlyArray<{ label: string; owner: string; staleAfterMs?: number }> = [
+export const SUITE_FILES: ReadonlyArray<{ label: string; owner: string; staleAfterMs?: number; absentHint?: string }> = [
   { label: "proactive-thinking/log.md", owner: "sapience-thinking", staleAfterMs: 24 * 60 * 60 * 1000 },
   { label: "proactive-thinking/proposals.jsonl", owner: "sapience-thinking", staleAfterMs: 24 * 60 * 60 * 1000 },
   { label: "proactive-thinking/outcomes.json", owner: "sapience-thinking" },
   { label: "sapience/events.jsonl", owner: "sapience", staleAfterMs: 24 * 60 * 60 * 1000 },
   { label: "sapience/dashboard.md", owner: "sapience" },
   { label: "sapience/calibration.json", owner: "sapience" },
-  { label: "sapience/action-log.md", owner: "sapience" },
+  { label: "sapience/action-log.md", owner: "sapience",
+    absentHint: "created when the first act-tier action executes — act requires calibrated confidence built from record_outcome feedback, so a young install won't have one" },
   { label: "sapience/processed-passes.json", owner: "sapience" },
-  { label: "goals/goals.json", owner: "sapience-goals" },
+  { label: "goals/goals.json", owner: "sapience-goals",
+    absentHint: "created on the first goal_submit — absent until someone asks the assistant to track a goal" },
 ];
 
 // Memory config the suite needs, with the config path and required value. Drives

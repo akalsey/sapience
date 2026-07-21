@@ -91,6 +91,18 @@ describe("buildSuiteDoctorReport", () => {
     expect(byId(r, "plugin:sapience")?.severity).toBe("warn");
   });
 
+  it("explains WHICH activity creates an absent cold-start file", () => {
+    const i = healthy();
+    i.files = i.files.map((f) =>
+      f.label === "goals/goals.json" || f.label === "sapience/action-log.md"
+        ? { ...f, exists: false, mtimeMs: undefined }
+        : f
+    );
+    const r = buildSuiteDoctorReport(i);
+    expect(byId(r, "file:goals/goals.json")?.detail).toContain("goal_submit");
+    expect(byId(r, "file:sapience/action-log.md")?.detail).toContain("act-tier");
+  });
+
   describe("delivery target", () => {
     it("warns with an autofix when dmScope isolates DMs and no delivery session is configured", () => {
       const i = healthy();

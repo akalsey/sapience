@@ -7,7 +7,7 @@ import type {
   PluginObservation,
   VersionObservation,
 } from "./types.js";
-import { MEMORY_SETTINGS, ARTIFACT_STALE_MS, SUITE_CRONS, CRON_REFRESHED_PLUGINS } from "./inventory.js";
+import { MEMORY_SETTINGS, ARTIFACT_STALE_MS, SUITE_CRONS, SUITE_FILES, CRON_REFRESHED_PLUGINS } from "./inventory.js";
 
 function durationStr(nowMs: number, thenMs: number): string {
   return ageStr(nowMs, thenMs).replace(/ ago$/, "");
@@ -176,9 +176,10 @@ function pathsSection(i: DoctorInputs): Section {
           message: `${f.label} (found, ${ageStr(i.nowMs, f.mtimeMs)})` });
       }
     } else {
+      const hint = SUITE_FILES.find((sf) => sf.label === f.label)?.absentHint;
       findings.push({ id: `file:${f.label}`, severity: "warn", source: "fs",
         message: `${f.label} not found`,
-        detail: `${f.path} — may be normal if there has been no activity yet.` });
+        detail: `${f.path} — ${hint ?? "may be normal if there has been no activity yet."}` });
     }
   }
 
