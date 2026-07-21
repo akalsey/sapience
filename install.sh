@@ -307,6 +307,66 @@ if [[ ${#CRONS_TO_ADD[@]} -gt 0 ]]; then
   fi
 fi
 
+# ── delivery target ───────────────────────────────────────────────────────────
+# When session.dmScope isolates DMs into per-peer sessions, the agent main
+# session is machine-only: proposals injected there are never seen by a human.
+# Route deliveries into the operator's own conversation instead. The doctor
+# re-checks this ("delivery:target") and can autofix it later — important on
+# fresh installs where no conversation exists yet.
+header "Checking delivery target..."
+
+DM_SCOPE=$(openclaw config get session.dmScope 2>/dev/null | tr -d '"' | tr -d '[:space:]')
+if [[ -z "$DM_SCOPE" || "$DM_SCOPE" == "main" ]]; then
+  ok "DMs share the main session (dmScope ${DM_SCOPE:-default}) — deliveries reach the operator there"
+else
+  EXISTING_TARGET=$(openclaw config get plugins.entries.sapience.config.delivery.sessionKey 2>/dev/null | tr -d '"' | tr -d '[:space:]')
+  if [[ -n "$EXISTING_TARGET" && "$EXISTING_TARGET" != "null" && "$EXISTING_TARGET" != "undefined" ]]; then
+    ok "Deliveries already routed to $EXISTING_TARGET"
+  else
+    # Operator conversations are agent:<id>:<channel>:<rest...> keys; machine
+    # sessions (main/current, cron:*, subagent:*, labels) never match.
+    mapfile -t CANDIDATES < <(python3 - <<'PYEOF' 2>/dev/null
+import json, os, glob
+for store in glob.glob(os.path.expanduser("~/.openclaw/agents/*/sessions/sessions.json")):
+    try:
+        data = json.load(open(store))
+    except Exception:
+        continue
+    rows = []
+    for key, entry in data.items():
+        parts = key.split(":")
+        if len(parts) < 4 or parts[0] != "agent" or parts[2] in ("cron", "subagent"):
+            continue
+        updated = entry.get("updatedAt", 0) if isinstance(entry, dict) else 0
+        rows.append((updated or 0, key))
+    for _, key in sorted(rows, reverse=True)[:5]:
+        print(key)
+PYEOF
+)
+    if [[ ${#CANDIDATES[@]} -eq 0 ]]; then
+      warn "dmScope=$DM_SCOPE makes the main session machine-only, and no operator conversations exist yet"
+      info "Message the assistant once from your chat app, then run: openclaw sapience doctor --fix"
+    elif [[ ${#CANDIDATES[@]} -eq 1 ]]; then
+      if confirm "Route suite deliveries to your conversation ${CANDIDATES[0]}?" y; then
+        for pid in sapience sapience-thinking sapience-goals; do
+          openclaw config set "plugins.entries.${pid}.config.delivery.sessionKey" "${CANDIDATES[0]}"
+        done
+        ok "Deliveries routed to ${CANDIDATES[0]}"
+      fi
+    else
+      info "dmScope=$DM_SCOPE — deliveries should go to the operator's conversation. Recent conversations:"
+      select TARGET in "${CANDIDATES[@]}" "skip"; do
+        [[ "$TARGET" == "skip" || -z "$TARGET" ]] && { info "Skipped — run 'openclaw sapience doctor --fix' later."; break; }
+        for pid in sapience sapience-thinking sapience-goals; do
+          openclaw config set "plugins.entries.${pid}.config.delivery.sessionKey" "$TARGET"
+        done
+        ok "Deliveries routed to $TARGET"
+        break
+      done
+    fi
+  fi
+fi
+
 # ── memory configuration ──────────────────────────────────────────────────────
 header "Checking memory configuration..."
 

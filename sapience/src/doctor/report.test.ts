@@ -91,6 +91,65 @@ describe("buildSuiteDoctorReport", () => {
     expect(byId(r, "plugin:sapience")?.severity).toBe("warn");
   });
 
+  describe("delivery target", () => {
+    it("warns with an autofix when dmScope isolates DMs and no delivery session is configured", () => {
+      const i = healthy();
+      i.deliveryTarget = {
+        dmScope: "per-channel-peer",
+        configuredKeys: {},
+        candidateSessions: [
+          { key: "agent:main:telegram:direct:12345", updatedAt: NOW - 1000 },
+          { key: "agent:main:slack:channel:c9", updatedAt: NOW - 500_000 },
+        ],
+      };
+      const r = buildSuiteDoctorReport(i);
+      const f = byId(r, "delivery:target");
+      expect(f?.severity).toBe("warn");
+      expect(f?.message.toLowerCase()).toContain("doesn't know where to send");
+      expect(f?.fix?.autofixable).toBe(true);
+      expect(f?.fix?.payload?.sessionKey).toBe("agent:main:telegram:direct:12345");
+    });
+
+    it("warns without an autofix when no candidate operator sessions exist yet", () => {
+      const i = healthy();
+      i.deliveryTarget = { dmScope: "per-peer", configuredKeys: {}, candidateSessions: [] };
+      const r = buildSuiteDoctorReport(i);
+      const f = byId(r, "delivery:target");
+      expect(f?.severity).toBe("warn");
+      expect(f?.fix).toBeUndefined();
+      expect(f?.detail?.toLowerCase()).toContain("message");
+    });
+
+    it("warns when a configured delivery session is missing from the store", () => {
+      const i = healthy();
+      i.deliveryTarget = {
+        dmScope: "per-channel-peer",
+        configuredKeys: { sapience: "agent:main:telegram:direct:999" },
+        candidateSessions: [{ key: "agent:main:telegram:direct:12345", updatedAt: NOW }],
+        configuredKeyExists: false,
+      };
+      const r = buildSuiteDoctorReport(i);
+      const f = byId(r, "delivery:target");
+      expect(f?.severity).toBe("warn");
+      expect(f?.message).toContain("agent:main:telegram:direct:999");
+    });
+
+    it("reports ok when configured and present, and stays quiet on main dmScope", () => {
+      const i = healthy();
+      i.deliveryTarget = {
+        dmScope: "per-channel-peer",
+        configuredKeys: { sapience: "agent:main:telegram:direct:12345" },
+        candidateSessions: [{ key: "agent:main:telegram:direct:12345", updatedAt: NOW }],
+        configuredKeyExists: true,
+      };
+      expect(byId(buildSuiteDoctorReport(i), "delivery:target")?.severity).toBe("ok");
+
+      const j = healthy();
+      j.deliveryTarget = { dmScope: "main", configuredKeys: {}, candidateSessions: [] };
+      expect(byId(buildSuiteDoctorReport(j), "delivery:target")?.severity).toBe("ok");
+    });
+  });
+
   // sapience-feedback has no cron, so its artifact is only written at
   // register(): hours after a restart it ages past the staleness window while
   // its cron-refreshed siblings stay fresh. When the artifact is clean and its

@@ -7,9 +7,10 @@ export type FindingSource = "artifact" | "fs" | "resolver" | "config" | "cron";
 export interface FixDescriptor {
   autofixable: boolean;
   description: string;
-  kind: "config-set" | "cron-register" | "plugin-update";
+  kind: "config-set" | "cron-register" | "plugin-update" | "delivery-target-set";
   // For config-set: { path, value }. For cron-register: { base }.
-  // For plugin-update: { pluginId }.
+  // For plugin-update: { pluginId }. For delivery-target-set: { sessionKey }
+  // (applied to every suite plugin's delivery.sessionKey).
   payload?: Record<string, unknown>;
 }
 
@@ -124,5 +125,14 @@ export interface DoctorInputs {
   workspace: WorkspaceObservation;
   files: FileObservation[];
   memory: MemoryObservation;
+  // Where suite deliveries land. On dmScope != main installs the agent main
+  // session is machine-only, so an unconfigured delivery.sessionKey means
+  // proposals are sent where no human converses.
+  deliveryTarget?: {
+    dmScope?: string;
+    configuredKeys: Record<string, string | undefined>;
+    candidateSessions: Array<{ key: string; updatedAt?: number }>;
+    configuredKeyExists?: boolean;
+  };
   nowMs: number;                    // injected for deterministic mtime/staleness math
 }

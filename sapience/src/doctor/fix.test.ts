@@ -48,4 +48,23 @@ describe("applyFixes", () => {
       "updated sapience-thinking (restart the gateway to load it)",
     ]);
   });
+
+  it("routes suite deliveries to a session across all three delivering plugins", async () => {
+    const calls: string[] = [];
+    const eff: FixEffectors = {
+      async setConfig(path, value) { calls.push(`${path}=${String(value)}`); },
+      async registerCron() {},
+      async updatePlugin() {},
+    };
+    const done = await applyFixes(
+      [{ kind: "delivery-target-set", payload: { sessionKey: "agent:main:telegram:direct:1" } }],
+      eff
+    );
+    expect(calls).toEqual([
+      "plugins.entries.sapience.config.delivery.sessionKey=agent:main:telegram:direct:1",
+      "plugins.entries.sapience-thinking.config.delivery.sessionKey=agent:main:telegram:direct:1",
+      "plugins.entries.sapience-goals.config.delivery.sessionKey=agent:main:telegram:direct:1",
+    ]);
+    expect(done).toEqual(["routed suite deliveries to agent:main:telegram:direct:1"]);
+  });
 });

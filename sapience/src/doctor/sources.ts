@@ -247,6 +247,46 @@ function memoryObservation(config: any): MemoryObservation {
   return obs;
 }
 
+// Operator conversations in the session store: agent:<id>:<channel>:<rest...>
+// keys — machine sessions (main/current, cron:*, subagent:*, custom labels)
+// have fewer segments or a machine namespace.
+function isOperatorSessionKey(key: string): boolean {
+  const parts = key.split(":");
+  if (parts.length < 4 || parts[0] !== "agent") return false;
+  return parts[2] !== "cron" && parts[2] !== "subagent";
+}
+
+async function gatherDeliveryTarget(config: any, stateBase: string): Promise<DoctorInputs["deliveryTarget"]> {
+  const dmScope = config?.session?.dmScope;
+  const configuredKeys: Record<string, string | undefined> = {};
+  for (const id of ["sapience", "sapience-thinking", "sapience-goals"]) {
+    const v = readPluginConfig(config, `plugins.entries.${id}.config.delivery.sessionKey`);
+    configuredKeys[id] = typeof v === "string" && v.trim() ? v.trim() : undefined;
+  }
+  const agents: any[] = Array.isArray(config?.agents?.list) ? config.agents.list : [];
+  const agentId = String(agents.find((a) => a?.default)?.id ?? agents[0]?.id ?? "main").toLowerCase();
+  let store: Record<string, { updatedAt?: number } | string> = {};
+  try {
+    store = JSON.parse(await readFile(join(stateBase, "agents", agentId, "sessions", "sessions.json"), "utf-8"));
+  } catch { /* store absent or unreadable — report what we know */ }
+  const keys = Object.keys(store);
+  const candidateSessions = keys
+    .filter(isOperatorSessionKey)
+    .map((key) => {
+      const entry = store[key];
+      return { key, updatedAt: typeof entry === "object" && entry ? entry.updatedAt : undefined };
+    })
+    .sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0))
+    .slice(0, 10);
+  const configured = Object.values(configuredKeys).find((v) => v);
+  return {
+    dmScope: typeof dmScope === "string" ? dmScope : undefined,
+    configuredKeys,
+    candidateSessions,
+    ...(configured && keys.length > 0 ? { configuredKeyExists: keys.includes(configured) } : {}),
+  };
+}
+
 export async function gatherInputs(deps: { api: any; config: any; env?: NodeJS.ProcessEnv; nowMs: number }): Promise<DoctorInputs> {
   const { api, config, env, nowMs } = deps;
   const artifacts = await readStatusArtifacts(env);
@@ -291,5 +331,6 @@ export async function gatherInputs(deps: { api: any; config: any; env?: NodeJS.P
     workspace,
     files,
     memory: memoryObservation(config),
+    deliveryTarget: await gatherDeliveryTarget(config, stateBase),
   };
 }

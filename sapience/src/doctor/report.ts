@@ -201,7 +201,49 @@ function pathsSection(i: DoctorInputs): Section {
       message: `${i.corruptFiles.length} quarantined state file(s) found`,
       detail: `A state file failed to parse and was reset; the original data is preserved at: ${i.corruptFiles.join(", ")}` });
   }
+  appendDeliveryTargetFinding(findings, i);
   return { title: "PATHS", findings };
+}
+
+// Deliveries land in the agent main session by default — which, whenever
+// session.dmScope isolates DMs into per-peer sessions, is a machine-only
+// session no human converses in. Proposals sent there ask questions whose
+// answers can never arrive.
+function appendDeliveryTargetFinding(findings: Finding[], i: DoctorInputs): void {
+  const dt = i.deliveryTarget;
+  if (!dt) return;
+  const id = "delivery:target";
+  const scope = dt.dmScope ?? "main";
+  const configured = Object.values(dt.configuredKeys).find((v) => typeof v === "string" && v);
+  if (scope === "main") {
+    findings.push({ id, severity: "ok", source: "config",
+      message: "deliveries target the main session (dmScope main — DMs share it)" });
+    return;
+  }
+  if (!configured) {
+    const newest = [...dt.candidateSessions].sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0))[0];
+    if (newest) {
+      findings.push({ id, severity: "warn", source: "config",
+        message: `the suite doesn't know where to send deliveries — dmScope=${scope} makes the main session machine-only and no delivery.sessionKey is configured`,
+        detail: `Most recent operator conversation: ${newest.key}. Apply with \`openclaw sapience doctor --fix\` or set plugins.entries.<plugin>.config.delivery.sessionKey for each suite plugin.`,
+        fix: { autofixable: true, kind: "delivery-target-set",
+          description: `route suite deliveries to ${newest.key}`,
+          payload: { sessionKey: newest.key } } });
+      return;
+    }
+    findings.push({ id, severity: "warn", source: "config",
+      message: `the suite doesn't know where to send deliveries — dmScope=${scope} makes the main session machine-only and no delivery.sessionKey is configured`,
+      detail: "No operator conversations found in the session store yet. Message the assistant once from your chat app, then re-run `openclaw sapience doctor --fix`." });
+    return;
+  }
+  if (dt.configuredKeyExists === false) {
+    findings.push({ id, severity: "warn", source: "config",
+      message: `configured delivery session ${configured} is not in the session store`,
+      detail: "Deliveries will fall back to gateway resolution and may go nowhere. Check the key for typos, or re-run `openclaw sapience doctor --fix` after messaging the assistant." });
+    return;
+  }
+  findings.push({ id, severity: "ok", source: "config",
+    message: `deliveries target ${configured}` });
 }
 
 // Lexicographic-numeric semver comparison, good enough for x.y.z strings.

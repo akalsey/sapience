@@ -1,8 +1,8 @@
 import type { DoctorReport, Finding, FixDescriptor } from "./types.js";
 
 export interface FixAction {
-  finding: Finding;
-  kind: "config-set" | "cron-register" | "plugin-update";
+  finding?: Finding;
+  kind: FixDescriptor["kind"];
   payload: Record<string, unknown>;
 }
 
@@ -32,6 +32,14 @@ export async function applyFixes(actions: FixAction[], eff: FixEffectors): Promi
     } else if (a.kind === "cron-register") {
       await eff.registerCron(a.payload.base as string);
       done.push(`registered cron ${a.payload.base}`);
+    } else if (a.kind === "delivery-target-set") {
+      // The three delivering plugins share the delivery.sessionKey convention
+      // (sapience-feedback never injects).
+      const sessionKey = a.payload.sessionKey as string;
+      for (const id of ["sapience", "sapience-thinking", "sapience-goals"]) {
+        await eff.setConfig(`plugins.entries.${id}.config.delivery.sessionKey`, sessionKey);
+      }
+      done.push(`routed suite deliveries to ${sessionKey}`);
     } else if (a.kind === "plugin-update") {
       await eff.updatePlugin(a.payload.pluginId as string);
       done.push(`updated ${a.payload.pluginId} (restart the gateway to load it)`);
