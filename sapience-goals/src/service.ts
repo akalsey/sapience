@@ -316,12 +316,19 @@ export default definePluginEntry({
             const goals = await loadGoals(config.output.goalsPath);
             await saveGoals(addGoal(goals, goal), config.output.goalsPath);
           });
-          const delivery = await deliverDecomposition(goal, api);
-          if (!delivery.enqueued) {
-            await appendEvent(config.output.eventsPath, { plugin: "goals", type: "delivery_failed", what: "decomposition", goal_id: goal.id, reason: delivery.reason });
-          }
           await appendEvent(config.output.eventsPath, { plugin: "goals", type: "goal_created", goal_id: goal.id });
-          return toolText(JSON.stringify({ id: goal.id }));
+          // The tool result scripts the same-turn exchange: users expect a
+          // plan or clarifying questions in the reply to their goal, not a
+          // bare acknowledgment followed by an injected conversation later.
+          // (check_goals still nudges goals stuck in "decomposing".)
+          return toolText([
+            `Goal recorded (id: ${goal.id}).`,
+            "Respond to the user now, in this same turn:",
+            "1. Acknowledge the goal in your own words.",
+            "2. If anything is ambiguous (which metrics, what cadence, what done looks like), ask one or two clarifying questions.",
+            "3. Propose 2-3 concrete, operational approaches — what you would watch, gather, or do, and how often (e.g. \"I'll watch which metric questions you ask so I learn what analysis you care about, then fold that into the weekly gathering\").",
+            `When the user picks or refines an approach, record it with goal_select_approach({id: "${goal.id}", approach: <their choice>}). If they name a measurable target, record it with goal_set_metric.`,
+          ].join("\n"));
         } catch (err) {
           return toolText(`[goals] goal_submit error: ${String(err)}`);
         }

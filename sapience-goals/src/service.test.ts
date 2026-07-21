@@ -46,6 +46,13 @@ beforeEach(async () => {
 });
 afterEach(async () => { await rm(dir, { recursive: true, force: true }); });
 
+async function submitGoal(description: string): Promise<string> {
+  const text = await call("goal_submit", { description });
+  const m = /id: (goal-[\w-]+)/.exec(text);
+  if (!m) throw new Error(`no goal id in: ${text}`);
+  return m[1]!;
+}
+
 describe("goal lifecycle tools", () => {
   // Goals were created as "decomposing" with no registered tool able to move
   // them forward — weekly status could never fire without hand-editing
@@ -56,8 +63,21 @@ describe("goal lifecycle tools", () => {
     }
   });
 
+  it("goal_submit scripts the same-turn conversation: acknowledge, clarify, propose approaches", async () => {
+    // The old return was bare JSON; the model replied "goal recorded" and the
+    // approaches conversation arrived turns later as an injection that could
+    // hijack an unrelated message. The tool result now drives the exchange
+    // the user expects: plan or clarifying questions, immediately.
+    const text = await call("goal_submit", { description: "learn what drives our numbers" });
+    expect(text).toContain("Respond to the user now");
+    expect(text).toContain("clarifying");
+    expect(text).toContain("2-3 concrete");
+    expect(text).toContain("goal_select_approach");
+    expect(text).toMatch(/id: goal-/);
+  });
+
   it("goal_select_approach activates the goal and records the approach", async () => {
-    const { id } = JSON.parse(await call("goal_submit", { description: "learn me a banjo" }));
+    const id = await submitGoal("learn me a banjo");
     await call("goal_select_approach", { id, approach: "weekly lessons" });
     const [goal] = await storedGoals();
     expect(goal.active_approach).toBe("weekly lessons");
@@ -65,7 +85,7 @@ describe("goal lifecycle tools", () => {
   });
 
   it("goal_progress appends a progress note", async () => {
-    const { id } = JSON.parse(await call("goal_submit", { description: "learn me a banjo" }));
+    const id = await submitGoal("learn me a banjo");
     await call("goal_select_approach", { id, approach: "weekly lessons" });
     await call("goal_progress", { id, summary: "booked first lesson", what_changed: "teacher found" });
     const [goal] = await storedGoals();
@@ -74,7 +94,7 @@ describe("goal lifecycle tools", () => {
   });
 
   it("goal_update changes status and rejects unknown statuses", async () => {
-    const { id } = JSON.parse(await call("goal_submit", { description: "learn me a banjo" }));
+    const id = await submitGoal("learn me a banjo");
     await call("goal_update", { id, status: "paused" });
     expect((await storedGoals())[0].status).toBe("paused");
     const err = await call("goal_update", { id, status: "procrastinating" });
@@ -83,7 +103,7 @@ describe("goal lifecycle tools", () => {
   });
 
   it("goal_blocker records a blocker", async () => {
-    const { id } = JSON.parse(await call("goal_submit", { description: "learn me a banjo" }));
+    const id = await submitGoal("learn me a banjo");
     await call("goal_blocker", { id, description: "no banjo", waiting_on: "delivery" });
     expect((await storedGoals())[0].blockers[0].waiting_on).toBe("delivery");
   });
@@ -105,17 +125,22 @@ describe("goal_submit validation", () => {
 });
 
 describe("decomposition prompt", () => {
-  it("carries the goal id and instructs the agent to record the selection", async () => {
-    const { id } = JSON.parse(await call("goal_submit", { description: "learn me a banjo" }));
-    expect(api.injections).toHaveLength(1);
-    expect(api.injections[0]).toContain(id);
-    expect(api.injections[0]).toContain("goal_select_approach");
+  it("no longer injects on submit — the tool result scripts the same-turn exchange", async () => {
+    await submitGoal("learn me a banjo");
+    expect(api.injections).toHaveLength(0);
+  });
+
+  it("still carries the goal id and selection instruction for check_goals nudges", async () => {
+    const { buildDecompositionPrompt } = await import("./delivery.js");
+    const prompt = buildDecompositionPrompt("learn me a banjo", "goal-123");
+    expect(prompt).toContain("goal-123");
+    expect(prompt).toContain("goal_select_approach");
   });
 });
 
 describe("goal_set_metric", () => {
   it("attaches a KR that the weekly status will compute from", async () => {
-    const { id } = JSON.parse(await call("goal_submit", { description: "reduce churn" }));
+    const id = await submitGoal("reduce churn");
     await call("goal_set_metric", { id, name: "SMB churn rate", target: 2.5, unit: "%", query_hint: "PostHog churn insight" });
     const [goal] = await storedGoals();
     expect(goal.metric.name).toBe("SMB churn rate");
