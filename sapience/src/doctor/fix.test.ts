@@ -67,4 +67,16 @@ describe("applyFixes", () => {
     ]);
     expect(done).toEqual(["routed suite deliveries to agent:main:telegram:direct:1"]);
   });
+
+  it("patches the in-memory config so a post-fix re-report reflects applied fixes", async () => {
+    const { patchConfigForAppliedFixes } = await import("./fix.js");
+    const config: any = { plugins: { entries: { sapience: { enabled: true } } } };
+    patchConfigForAppliedFixes(config, [
+      { kind: "delivery-target-set", payload: { sessionKey: "agent:main:telegram:direct:1" } },
+      { kind: "config-set", payload: { path: "plugins.entries.memory-wiki.config.bridge.enabled", value: true } },
+    ]);
+    expect(config.plugins.entries.sapience.config.delivery.sessionKey).toBe("agent:main:telegram:direct:1");
+    expect(config.plugins.entries["sapience-thinking"].config.delivery.sessionKey).toBe("agent:main:telegram:direct:1");
+    expect(config.plugins.entries["memory-wiki"].config.bridge.enabled).toBe(true);
+  });
 });

@@ -4,7 +4,7 @@ import { promisify } from "util";
 import { gatherInputs, parseCronListJson } from "./sources.js";
 import { buildSuiteDoctorReport } from "./report.js";
 import { renderReport, renderJson } from "./render.js";
-import { planFixes, applyFixes, type FixEffectors } from "./fix.js";
+import { planFixes, applyFixes, patchConfigForAppliedFixes, type FixEffectors } from "./fix.js";
 import { SUITE_CRONS } from "./inventory.js";
 import { runThinkingProbe, type ProbeEffects } from "./probe.js";
 import { readStatusArtifacts } from "../status-artifact.js";
@@ -136,7 +136,11 @@ export function registerSapienceDoctorCli(api: any): void {
               console.log("\n  Restart the gateway (`openclaw gateway restart`) for updated plugins to take effect.");
             }
             console.log("");
-            // Re-gather so the printed report reflects the applied fixes.
+            // Re-gather so the printed report reflects the applied fixes. The
+            // config writes went to disk via `openclaw config set`; mirror them
+            // onto the loaded config object or the re-report re-asserts the
+            // pre-fix findings.
+            patchConfigForAppliedFixes(config, actions);
             report = buildSuiteDoctorReport(await gatherInputs({ api, config, env: process.env, nowMs: Date.now() }));
           }
         }

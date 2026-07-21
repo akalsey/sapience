@@ -225,7 +225,7 @@ function appendDeliveryTargetFinding(findings: Finding[], i: DoctorInputs): void
     if (newest) {
       findings.push({ id, severity: "warn", source: "config",
         message: `the suite doesn't know where to send deliveries — dmScope=${scope} makes the main session machine-only and no delivery.sessionKey is configured`,
-        detail: `Most recent operator conversation: ${newest.key}. Apply with \`openclaw sapience doctor --fix\` or set plugins.entries.<plugin>.config.delivery.sessionKey for each suite plugin.`,
+        detail: `Most recent operator conversation: ${newest.key}. The fix below routes all three delivering plugins there; to choose a different target, set plugins.entries.<plugin>.config.delivery.sessionKey for each suite plugin.`,
         fix: { autofixable: true, kind: "delivery-target-set",
           description: `route suite deliveries to ${newest.key}`,
           payload: { sessionKey: newest.key } } });

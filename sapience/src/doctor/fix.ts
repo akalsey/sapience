@@ -47,3 +47,30 @@ export async function applyFixes(actions: FixAction[], eff: FixEffectors): Promi
   }
   return done;
 }
+
+// After fixes are applied via `openclaw config set`, the on-disk config has
+// changed but the loaded config object hasn't — a re-gathered report would
+// re-assert the pre-fix findings. Mirror the applied config writes onto the
+// in-memory object so the post-fix report reflects reality.
+export function patchConfigForAppliedFixes(config: any, actions: FixAction[]): void {
+  const setPath = (dotted: string, value: unknown) => {
+    // "plugins.entries.<id>.config.<rest>" — <id> may contain dashes; the
+    // remaining segments are plain keys.
+    const parts = dotted.split(".");
+    let node = config;
+    for (const key of parts.slice(0, -1)) {
+      if (typeof node[key] !== "object" || node[key] === null) node[key] = {};
+      node = node[key];
+    }
+    node[parts[parts.length - 1]!] = value;
+  };
+  for (const a of actions) {
+    if (a.kind === "config-set") {
+      setPath(a.payload.path as string, a.payload.value);
+    } else if (a.kind === "delivery-target-set") {
+      for (const id of ["sapience", "sapience-thinking", "sapience-goals"]) {
+        setPath(`plugins.entries.${id}.config.delivery.sessionKey`, a.payload.sessionKey);
+      }
+    }
+  }
+}
