@@ -74,6 +74,11 @@ describe("goal lifecycle tools", () => {
     expect(text).toContain("2-3 concrete");
     expect(text).toContain("goal_select_approach");
     expect(text).toMatch(/id: goal-/);
+    // Long-horizon framing: without it the model treats the goal as a task
+    // and starts executing immediately instead of aligning on an approach.
+    expect(text).toContain("long-running");
+    expect(text).toContain("Do not start working");
+    expect(text).toContain("thinking passes");
   });
 
   it("goal_select_approach activates the goal and records the approach", async () => {

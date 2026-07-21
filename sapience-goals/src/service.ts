@@ -323,11 +323,12 @@ export default definePluginEntry({
           // (check_goals still nudges goals stuck in "decomposing".)
           return toolText([
             `Goal recorded (id: ${goal.id}).`,
+            "This is a long-running goal: the suite's scheduled thinking passes will pursue the chosen approach across weeks, learning and iterating as evidence accumulates. It is NOT a task to complete now — Do not start working on it in this turn.",
             "Respond to the user now, in this same turn:",
-            "1. Acknowledge the goal in your own words.",
+            "1. Acknowledge the goal in your own words, as an ongoing commitment rather than a to-do.",
             "2. If anything is ambiguous (which metrics, what cadence, what done looks like), ask one or two clarifying questions.",
-            "3. Propose 2-3 concrete, operational approaches — what you would watch, gather, or do, and how often (e.g. \"I'll watch which metric questions you ask so I learn what analysis you care about, then fold that into the weekly gathering\").",
-            `When the user picks or refines an approach, record it with goal_select_approach({id: "${goal.id}", approach: <their choice>}). If they name a measurable target, record it with goal_set_metric.`,
+            "3. Propose 2-3 concrete, operational approaches — what you would watch, gather, or do on a recurring basis (e.g. \"I'll watch which metric questions you ask so I learn what analysis you care about, then fold that into the weekly gathering\"). Present them as options and wait for the user's pick.",
+            `When the user picks or refines an approach, record it with goal_select_approach({id: "${goal.id}", approach: <their choice>}) — that is what steers the recurring background work. If they name a measurable target, record it with goal_set_metric.`,
           ].join("\n"));
         } catch (err) {
           return toolText(`[goals] goal_submit error: ${String(err)}`);
