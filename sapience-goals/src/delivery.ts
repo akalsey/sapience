@@ -2,7 +2,7 @@ import type { Goal } from "./types.js";
 import { enqueueMainSessionInjection, type InjectionResult } from "./main-session.js";
 
 export function buildDecompositionPrompt(description: string, goalId: string): string {
-  return `[GOALS: DECOMPOSE] A new goal was submitted. Decompose it into candidate approaches and present them to the user for selection.
+  return `(If the user's own message accompanies this note, the user's message takes priority — respond to it first and fully, then surface this briefly or hold it for a natural moment.)\n\n[GOALS: DECOMPOSE] A new goal was submitted. Decompose it into candidate approaches and present them to the user for selection.
 
 Goal (id: ${goalId}): "${description}"
 
@@ -32,7 +32,7 @@ export function buildWeeklyStatusPrompt(goal: Goal): string {
 Before writing the status, fetch the current value${goal.metric.query_hint ? ` (hint: ${goal.metric.query_hint})` : ""} and LEAD with it: current value, percent of target, and whether the pace to target is on track.\n`
     : "";
 
-  return `[GOALS: WEEKLY STATUS] Deliver a weekly status update for this goal.
+  return `(If the user's own message accompanies this note, the user's message takes priority — respond to it first and fully, then surface this briefly or hold it for a natural moment.)\n\n[GOALS: WEEKLY STATUS] Deliver a weekly status update for this goal.
 
 Goal: "${goal.description}"
 Active approach: ${goal.active_approach || "(not yet selected)"}

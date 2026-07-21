@@ -76,6 +76,16 @@ describe("buildTierPrompt", () => {
     }
   });
 
+  it("every tier prompt subordinates itself to the user's own message", () => {
+    // Injections prepend to the user's next turn. Without an explicit
+    // priority rule, a delivered proposal can hijack the turn: the agent
+    // answers the injection and drops the user's actual request.
+    for (const tier of ["act", "propose", "ask", "explore", "learning"] as const) {
+      const p = buildTierPrompt({ ...base, tier });
+      expect(p, tier).toContain("user's message takes priority");
+    }
+  });
+
   it("the act prompt records acted_on after execution; propose offers the reaction set", () => {
     expect(buildTierPrompt({ ...base, tier: "act" })).toContain('"acted_on"');
     const propose = buildTierPrompt({ ...base, tier: "propose" });

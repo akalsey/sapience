@@ -13,7 +13,18 @@ function outcomeInstruction(item: RoutedItem, guidance: string): string {
   return `${guidance} record_outcome({ proposal_id: "${item.id}", outcome: <outcome>, domain: "${item.domain}", action_class: "${item.action_class}" }).`;
 }
 
+// Injections prepend to whatever turn comes next — often the user's own
+// message. The note must never win that priority fight: a delivered proposal
+// once hijacked the turn where the user was submitting a goal, and the agent
+// answered the proposal instead of the user.
+const USER_FIRST =
+  "(If the user's own message accompanies this note, the user's message takes priority — respond to it first and fully, then surface this briefly or hold it for a natural moment.)\n\n";
+
 export function buildTierPrompt(item: RoutedItem): string {
+  return USER_FIRST + tierPromptBody(item);
+}
+
+function tierPromptBody(item: RoutedItem): string {
   switch (item.tier) {
     case "act":
       return `[SAPIENCE: ACT] High-confidence action — execute immediately without asking the user for approval, then notify them briefly.

@@ -45,7 +45,9 @@ Call record_thinking_output() with a JSON object of EXACTLY this shape. All four
 
 No preamble, no text outside the tool call.`;
 
-export const HEARTBEAT_PROMPT = `A scheduled thinking pass produced high-priority proposals worth surfacing:
+export const HEARTBEAT_PROMPT = `(If the user's own message accompanies this note, the user's message takes priority — respond to it first and fully, then surface this briefly or hold it for a natural moment.)
+
+A scheduled thinking pass produced high-priority proposals worth surfacing:
 
 [PROPOSALS LIST]
 
