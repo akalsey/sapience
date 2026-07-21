@@ -61,7 +61,14 @@ export async function enqueueMainSessionInjection(api: any, text: string): Promi
   if (typeof enqueue !== "function") {
     return { enqueued: false, reason: "injection API unavailable" };
   }
-  const sessionKey = resolveMainSessionKey(api?.config);
+  // Multi-user installs keep the main session machine-only; a configured
+  // delivery.sessionKey routes proposals into the operator's own conversation,
+  // where their replies actually land (plugins.entries.<id>.config.delivery.sessionKey).
+  const configured = api?.pluginConfig?.delivery?.sessionKey;
+  const sessionKey =
+    typeof configured === "string" && configured.trim()
+      ? configured.trim().toLowerCase()
+      : resolveMainSessionKey(api?.config);
   try {
     const result = await enqueue({ sessionKey, text });
     // An undefined result is openclaw's registration guard: after register()

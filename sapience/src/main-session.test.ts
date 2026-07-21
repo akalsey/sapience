@@ -44,6 +44,21 @@ describe("enqueueMainSessionInjection", () => {
     expect(result.reason).toContain("unavailable");
   });
 
+  it("targets a configured delivery session instead of the main session when set", async () => {
+    // Multi-user installs keep the main session machine-only (heartbeats);
+    // proposals must land in the operator's conversation, where their replies
+    // actually arrive.
+    let received: any;
+    const api = {
+      config,
+      pluginConfig: { delivery: { sessionKey: "agent:main:telegram:direct:12345" } },
+      session: { workflow: { enqueueNextTurnInjection: async (inj: any) => { received = inj; return { enqueued: true, id: "1", sessionKey: inj.sessionKey }; } } },
+    };
+    const result = await enqueueMainSessionInjection(api, "hello");
+    expect(result.enqueued).toBe(true);
+    expect(received.sessionKey).toBe("agent:main:telegram:direct:12345");
+  });
+
   it("does not probe when the first enqueue succeeds", async () => {
     let calls = 0;
     const api = {
