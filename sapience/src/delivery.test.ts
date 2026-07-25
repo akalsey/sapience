@@ -101,7 +101,7 @@ describe("deliverItems", () => {
     const config = {
       ...DEFAULT_CONFIG,
       push: { ...DEFAULT_CONFIG.push, enabled: false },
-      delivery: { maxPerCycle: 2 },
+      delivery: { ...DEFAULT_CONFIG.delivery, maxPerCycle: 2 },
       output: { ...DEFAULT_CONFIG.output, actionLogPath: join(dir, "action-log.md"), eventsPath, pendingDeliveriesPath },
     };
     const items = [1, 2, 3, 4, 5].map((n) => ({

@@ -116,4 +116,15 @@ describe("buildClassifierMessages", () => {
     expect(system?.content).toMatch(/confirmation/i);
     expect(system?.content).toMatch(/tier_adjustment/i);
   });
+
+  it("excludes one-time directives from method feedback, with a worked example", () => {
+    // A one-time cleanup directive was once classified as method feedback and
+    // became a permanent playbook, which thinking passes then re-proposed as an
+    // unexecuted user mandate every 15 minutes. The prompt must teach the
+    // distinction: method = standing rule; one-time task list = not method.
+    const system = buildClassifierMessages("anything").find(m => m.role === "system");
+    expect(system?.content).toMatch(/one-time/i);
+    expect(system?.content).toContain("NOT method feedback");
+    expect(system?.content).toContain("Do the following now");
+  });
 });

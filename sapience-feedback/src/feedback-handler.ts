@@ -59,10 +59,15 @@ export async function persistSignal(signal: DetectedSignal, ctx: PersistContext)
   // Method feedback teaches HOW to analyze, not how much autonomy to take —
   // it amends the shared playbook library instead of moving confidence.
   if (signal.type === "method") {
-    const playbook = await addPlaybook(ctx.config.playbooksPath, signal.raw_text);
+    const result = await addPlaybook(ctx.config.playbooksPath, signal.raw_text);
+    const eventType =
+      result.status === "added" ? "playbook_added" :
+      result.status === "duplicate" ? "playbook_duplicate" : "playbook_rejected";
     await appendEvent(ctx.config.eventsPath, {
       plugin: "feedback",
-      type: playbook ? "playbook_added" : "playbook_duplicate",
+      type: eventType,
+      ...(result.status === "rejected_too_long" ? { reason: "too_long" } :
+          result.status === "rejected_empty" ? { reason: "empty" } : {}),
       domain: signal.domain,
       source: signal.source ?? "regex",
     });

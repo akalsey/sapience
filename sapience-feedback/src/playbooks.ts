@@ -58,14 +58,26 @@ function normalize(instruction: string): string {
   return instruction.trim().toLowerCase().replace(/\s+/g, " ");
 }
 
-// Returns null when an equivalent playbook already exists.
-export async function addPlaybook(path: string, instruction: string, title?: string): Promise<Playbook | null> {
-  const trimmed = instruction.trim();
-  if (!trimmed) return null;
-  const existing = await loadPlaybooks(path);
-  if (existing.some((p) => normalize(p.instruction) === normalize(trimmed))) return null;
+// A playbook is ONE analytical move; the builtins top out around 250 chars.
+// Longer text is a task list or a one-time directive, not a method — one such
+// directive stored here was re-proposed by every thinking pass as an
+// unexecuted user mandate until it was manually removed.
+export const MAX_PLAYBOOK_CHARS = 400;
 
+export type AddPlaybookResult =
+  | { status: "added"; playbook: Playbook }
+  | { status: "duplicate" }
+  | { status: "rejected_empty" }
+  | { status: "rejected_too_long" };
+
+export async function addPlaybook(path: string, instruction: string, title?: string): Promise<AddPlaybookResult> {
+  const trimmed = instruction.trim();
+  if (!trimmed) return { status: "rejected_empty" };
+  if (trimmed.length > MAX_PLAYBOOK_CHARS) return { status: "rejected_too_long" };
   const user = await readJsonSafe<Playbook[]>(path, []);
+  const existing = [...BUILTIN_PLAYBOOKS, ...(Array.isArray(user) ? user : [])];
+  if (existing.some((p) => normalize(p.instruction) === normalize(trimmed))) return { status: "duplicate" };
+
   const playbook: Playbook = {
     id: `taught-${Date.now().toString(36)}`,
     title: title ?? trimmed.slice(0, 60),
@@ -74,7 +86,7 @@ export async function addPlaybook(path: string, instruction: string, title?: str
     added_at: new Date().toISOString(),
   };
   await writeJsonAtomic(path, [...user, playbook]);
-  return playbook;
+  return { status: "added", playbook };
 }
 
 export function renderPlaybooks(playbooks: Playbook[]): string {

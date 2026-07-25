@@ -17,6 +17,8 @@ Four signal types:
 
 4. "method" — the user is teaching the agent HOW to analyze or check something, as a standing rule rather than a one-off correction: "whenever you look at churn, segment by plan tier", "always check for outliers before reporting an average", "compare against the same weekday when you report metrics". These become analytical playbooks.
 
+Method feedback must be a STANDING rule that applies to future analyses indefinitely, usually phrased conditionally ("whenever…", "always…", "before you…"). A one-time directive or task list — "do the following now", "delete these files", "remove that hypothesis", "correct your memory about X" — is NOT method feedback, even when the same message also corrects behavior. A one-time directive stored as a standing rule gets re-executed forever. For such messages, classify only the correction (if any); never emit "method".
+
 A message is NOT feedback if it is: a fresh task request, a technical question about code or systems, a code snippet, conversational filler, or status unrelated to the agent's behavior.
 
 When unsure, prefer empty output — false positives are worse than misses.
@@ -53,6 +55,9 @@ Response: {"signals":[{"type":"confirmation","domain":"general","action_class":"
 
 Message: "whenever you report on usage, break it out by plan tier first"
 Response: {"signals":[{"type":"method","domain":"general","action_class":"general","suggested_tier":null,"confidence":0.9}]}
+
+Message: "The delivery failure you keep reporting is a misreading. Do the following now: delete tmp/status.md, remove the outdated delivery hypothesis, and correct your June memory about the cron jobs"
+Response: {"signals":[{"type":"correction","domain":"general","action_class":"general","suggested_tier":null,"confidence":0.85}]}
 
 Message: "what does this regex match"
 Response: {"signals":[]}

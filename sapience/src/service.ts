@@ -10,6 +10,7 @@ import { routeItem } from "./autonomy.js";
 import { readUnprocessedPasses, proposalSetToItems } from "./proposal-adapter.js";
 import { loadProcessedPasses, markPassProcessed, bootstrapProcessedPasses } from "./processed-passes.js";
 import { deliverItems } from "./delivery.js";
+import { dedupeDelivered } from "./delivered-ledger.js";
 import { addPendingDelivery, drainPendingDeliveries } from "./pending-deliveries.js";
 import { digestDue, buildDigestPrompt } from "./weekly-digest.js";
 import { readJsonSafe, writeJsonAtomic } from "./safe-json.js";
@@ -61,6 +62,7 @@ function mergeConfig(raw: Record<string, unknown>, workspaceDir: string): Sapien
       hypothesesPath: resolveDataPath((raw as any).output?.hypothesesPath, workspaceDir, DEFAULT_CONFIG.output.hypothesesPath),
       watchesPath: resolveDataPath((raw as any).output?.watchesPath, workspaceDir, DEFAULT_CONFIG.output.watchesPath),
       pendingDeliveriesPath: resolveDataPath((raw as any).output?.pendingDeliveriesPath, workspaceDir, DEFAULT_CONFIG.output.pendingDeliveriesPath),
+      deliveredLedgerPath: resolveDataPath((raw as any).output?.deliveredLedgerPath, workspaceDir, DEFAULT_CONFIG.output.deliveredLedgerPath),
     },
   };
 }
@@ -283,7 +285,18 @@ export default definePluginEntry({
             const byTier: Record<string, number> = {};
 
             for (const pass of newPasses) {
-              const items = proposalSetToItems(pass, extraDomains);
+              const allItems = proposalSetToItems(pass, extraDomains);
+              // The thinking model can re-emit the same proposal under a fresh
+              // uuid every pass; pass-id dedupe never catches that. Suppress
+              // items whose text was already delivered within the window.
+              const { fresh: items, duplicates } = await dedupeDelivered(
+                config.output.deliveredLedgerPath, allItems, config.delivery.dedupeWindowHours);
+              for (const dup of duplicates) {
+                await appendEvent(config.output.eventsPath, {
+                  plugin: "sapience", type: "item_suppressed", proposal_id: dup.id,
+                  domain: dup.domain, reason: "recently_delivered",
+                });
+              }
               // Route against the DECAYED view: trust earned months ago and
               // never reinforced should not still authorize autonomy.
               const routed = items.map(item => routeItem(item, decayProfile(workingProfile), config));
