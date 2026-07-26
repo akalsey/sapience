@@ -188,6 +188,9 @@ describe("goal plan and todos", () => {
     // Skill crystallization is conditional — many goals simply end.
     expect(text).toContain("Only when");
     expect(text).toContain("many goals simply end");
+    // When it does crystallize, the spec goes through the shared ledger —
+    // loosely: the tool may not be installed, so it's "if available".
+    expect(text).toContain("skill_proposal");
   });
 
   it("goal_update completed retires the temporary skill file", async () => {

@@ -23,6 +23,7 @@ Consider what has been happening recently. Look for:
 - Be selective. Empty arrays are valid output.
 - If nothing is worth reporting, set nothing_to_report: true and explain why in the summary field.
 - Don't repeat proposals from recent passes unless circumstances have changed.
+- Watch for repetition worth codifying: when the activity shows the same multi-step task done more than once (querying a data warehouse, pulling a CRM report, refreshing a recurring slide), propose logging it as a skill proposal — name it, say what the skill would do, and cite the repeated occurrences as evidence. Check the Open Skill Proposals section first; if it's already there, propose appending the new evidence instead.
 - Proposals reach the human asynchronously (on their next message, or via a budgeted channel push). An unresolved proposal usually means they haven't SEEN it yet — never conclude the human is ignoring you or that oversight has failed, and never escalate on that basis.
 - Priority 5 means "this likely needs human attention today." Use sparingly.
 - Each item needs its own "id" (a UUID). pass_id and timestamp are added by the system — do not include them.

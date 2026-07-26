@@ -73,6 +73,10 @@ export interface SapienceConfig {
     watchesPath: string;
     pendingDeliveriesPath: string;
     deliveredLedgerPath: string;
+    skillProposalsPath: string;
+    // The human-readable spec doc lives at the workspace root where the
+    // operator already reads it, not under sapience/.
+    skillProposalsDocPath: string;
   };
 }
 
@@ -110,5 +114,7 @@ export const DEFAULT_CONFIG: SapienceConfig = {
     watchesPath: "sapience/watches.json",
     pendingDeliveriesPath: "sapience/pending-deliveries.json",
     deliveredLedgerPath: "sapience/delivered-ledger.json",
+    skillProposalsPath: "sapience/skill-proposals.json",
+    skillProposalsDocPath: "skill-proposals.md",
   },
 };

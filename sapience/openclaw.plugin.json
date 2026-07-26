@@ -1,14 +1,17 @@
 {
   "id": "sapience",
   "name": "Sapience",
-  "version": "0.4.21",
+  "version": "0.4.22",
   "description": "Autonomy layer: routes sapience-thinking proposals through tier function, calibrates to human preferences, delivers weekly digest",
   "contracts": {
     "tools": [
       "process_proposals",
       "get_pending_deliveries",
       "watch_metric",
-      "watch_remove"
+      "watch_remove",
+      "skill_proposal",
+      "skill_proposal_update",
+      "skill_proposal_list"
     ]
   },
   "commandAliases": [

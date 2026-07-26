@@ -26,6 +26,7 @@ import { investigateHunches } from "./investigation.js";
 import { executeActItems } from "./act-executor.js";
 import { checkDueWatches } from "./watch-checker.js";
 import { addWatch, removeWatch, loadWatches, renderWatches, type DeltaPolicy } from "./watches.js";
+import { upsertProposal, updateProposalStatus, loadProposals, renderProposalsList, type SkillProposalStatus } from "./skill-proposals.js";
 import { compileExtraDomains } from "./domains.js";
 import { handleProfileCommand } from "./profile-command.js";
 import { registerSapienceDoctorCli } from "./doctor/cli.js";
@@ -63,6 +64,8 @@ function mergeConfig(raw: Record<string, unknown>, workspaceDir: string): Sapien
       watchesPath: resolveDataPath((raw as any).output?.watchesPath, workspaceDir, DEFAULT_CONFIG.output.watchesPath),
       pendingDeliveriesPath: resolveDataPath((raw as any).output?.pendingDeliveriesPath, workspaceDir, DEFAULT_CONFIG.output.pendingDeliveriesPath),
       deliveredLedgerPath: resolveDataPath((raw as any).output?.deliveredLedgerPath, workspaceDir, DEFAULT_CONFIG.output.deliveredLedgerPath),
+      skillProposalsPath: resolveDataPath((raw as any).output?.skillProposalsPath, workspaceDir, DEFAULT_CONFIG.output.skillProposalsPath),
+      skillProposalsDocPath: resolveDataPath((raw as any).output?.skillProposalsDocPath, workspaceDir, DEFAULT_CONFIG.output.skillProposalsDocPath),
     },
   };
 }
@@ -227,6 +230,111 @@ export default definePluginEntry({
           return { content: [{ type: "text", text: body }] };
         } catch (err) {
           return { content: [{ type: "text", text: `[sapience] get_pending_deliveries error: ${String(err)}` }] };
+        }
+      },
+    });
+
+    api.registerTool({
+      name: "skill_proposal",
+      description: "Log (or add evidence to) a skill proposal. Call this whenever you notice you've done the same multi-step task more than once — querying a data warehouse, pulling a CRM report, refreshing a recurring slide. Include the concrete queries, scripts, and examples you used: the entry doubles as the spec for building the skill. Never build or install the skill yourself; this surfaces the pattern to the human.",
+      parameters: {
+        type: "object",
+        properties: {
+          name: { type: "string", description: "Short skill name, e.g. 'weekly-usage-divergence-analysis'" },
+          summary: { type: "string", description: "One line: what the skill would do" },
+          spec_markdown: { type: "string", description: "Markdown spec detail: what it would do, what triggered this, queries/scripts/examples used, cadence, output shape, dependencies" },
+        },
+        required: ["name", "summary", "spec_markdown"],
+      },
+      async execute(_id: any, params: any) {
+        try {
+          const name = typeof params?.name === "string" ? params.name.trim() : "";
+          const summary = typeof params?.summary === "string" ? params.summary.trim() : "";
+          const spec = typeof params?.spec_markdown === "string" ? params.spec_markdown.trim() : "";
+          if (!name || !summary || !spec) {
+            return { content: [{ type: "text", text: "skill_proposal requires name, summary, and spec_markdown." }] };
+          }
+          const { created, proposal } = await upsertProposal(
+            config.output.skillProposalsPath, config.output.skillProposalsDocPath,
+            { name, summary, spec_markdown: spec }
+          );
+          await appendEvent(config.output.eventsPath, {
+            plugin: "sapience",
+            type: created ? "skill_proposal_created" : "skill_proposal_evidence",
+            proposal_id: proposal.id,
+            evidence_count: proposal.evidence_count,
+          });
+          if (created) {
+            // The operator hears about new proposals through the normal
+            // delivery path; evidence appends stay quiet (the digest covers
+            // drift). A failed injection degrades to the pending queue.
+            const note = `[SAPIENCE: SKILL PROPOSAL] The assistant logged a new skill proposal: "${proposal.name}" — ${proposal.summary}\n\nMention this briefly to the user: the spec is in skill-proposals.md, and nothing gets built unless they ask.`;
+            const result = await enqueueMainSessionInjection(api, note);
+            if (!result.enqueued) {
+              await addPendingDelivery(config.output.pendingDeliveriesPath, {
+                id: `skill-proposal-${proposal.id}`, kind: "item", prompt: note,
+              }).catch(() => {});
+            }
+          }
+          return {
+            content: [{
+              type: "text",
+              text: created
+                ? `Logged skill proposal "${proposal.name}" [${proposal.id}]. Spec appended to skill-proposals.md; the user will be notified.`
+                : `Added evidence to "${proposal.name}" [${proposal.id}] (×${proposal.evidence_count}).`,
+            }],
+          };
+        } catch (err) {
+          return { content: [{ type: "text", text: `[sapience] skill_proposal error: ${String(err)}` }] };
+        }
+      },
+    });
+
+    api.registerTool({
+      name: "skill_proposal_update",
+      description: "Update a skill proposal's status after the human decides: 'building' (they asked for it), 'installed' (it exists now), or 'declined'.",
+      parameters: {
+        type: "object",
+        properties: {
+          ref: { type: "string", description: "The proposal id or exact name" },
+          status: { type: "string", enum: ["proposed", "building", "installed", "declined"] },
+        },
+        required: ["ref", "status"],
+      },
+      async execute(_id: any, params: any) {
+        try {
+          const ref = typeof params?.ref === "string" ? params.ref.trim() : "";
+          const status = params?.status as SkillProposalStatus;
+          if (!ref || !["proposed", "building", "installed", "declined"].includes(status)) {
+            return { content: [{ type: "text", text: "skill_proposal_update requires ref and a valid status." }] };
+          }
+          const updated = await updateProposalStatus(
+            config.output.skillProposalsPath, config.output.skillProposalsDocPath, ref, status
+          );
+          if (!updated) {
+            const list = await loadProposals(config.output.skillProposalsPath);
+            return { content: [{ type: "text", text: `No skill proposal matching "${ref}".\n${renderProposalsList(list)}` }] };
+          }
+          await appendEvent(config.output.eventsPath, {
+            plugin: "sapience", type: "skill_proposal_updated", proposal_id: updated.id, status,
+          });
+          return { content: [{ type: "text", text: `"${updated.name}" → ${status}.` }] };
+        } catch (err) {
+          return { content: [{ type: "text", text: `[sapience] skill_proposal_update error: ${String(err)}` }] };
+        }
+      },
+    });
+
+    api.registerTool({
+      name: "skill_proposal_list",
+      description: "List skill proposals with ids, status, and evidence counts.",
+      parameters: { type: "object", properties: {} },
+      async execute(_id: any, _params: any) {
+        try {
+          const list = await loadProposals(config.output.skillProposalsPath);
+          return { content: [{ type: "text", text: renderProposalsList(list) }] };
+        } catch (err) {
+          return { content: [{ type: "text", text: `[sapience] skill_proposal_list error: ${String(err)}` }] };
         }
       },
     });

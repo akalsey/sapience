@@ -126,6 +126,35 @@ export async function buildHypothesesContext(path: string): Promise<string> {
   }).join("\n");
 }
 
+// Open skill proposals from the sapience ledger (absent on standalone
+// installs — that's fine, this returns ""). Passes see what has already been
+// proposed so they append evidence instead of re-proposing.
+export async function buildSkillProposalsContext(path: string): Promise<string> {
+  interface ProposalLite {
+    id?: string;
+    name?: string;
+    summary?: string;
+    status?: string;
+    evidence_count?: number;
+    updated_at?: string;
+  }
+  let list: ProposalLite[];
+  try {
+    const parsed = JSON.parse(await readFile(path, "utf-8"));
+    list = Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return "";
+  }
+  const open = list
+    .filter((p) => p.status === "proposed" || p.status === "building")
+    .sort((a, b) => Date.parse(b.updated_at ?? "") - Date.parse(a.updated_at ?? ""))
+    .slice(0, 10);
+  if (open.length === 0) return "";
+  return open
+    .map((p) => `- [${p.id ?? "?"}] ${p.name ?? ""} — ${p.summary ?? ""} (${p.status}, evidence ×${p.evidence_count ?? 1})`)
+    .join("\n");
+}
+
 export async function buildContextFromDirs(
   config: PluginConfig,
   sessionDir: string,
@@ -251,6 +280,7 @@ export async function buildContext(config: PluginConfig, api: any, agentId: stri
   const goalsPath = join(workspaceDir, "goals", "goals.json");
   const bundle = await buildContextFromDirs(config, dirs.sessionsDir, dirs.memoryDirs, goalsPath);
   bundle.openHypotheses = await buildHypothesesContext(join(workspaceDir, "sapience", "hypotheses.json"));
+  bundle.openSkillProposals = await buildSkillProposalsContext(join(workspaceDir, "sapience", "skill-proposals.json"));
   return bundle;
 }
 

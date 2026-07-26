@@ -438,7 +438,7 @@ export default definePluginEntry({
             return toolText([
               "All todos are complete.",
               "Confirm with the user whether the goal's outcome has been reached.",
-              "If it has: record completion with goal_update — the temporary skill retires automatically. Only when the goal produced a recurring analysis worth repeating should you also offer to distill it into a permanent skill; many goals simply end.",
+              "If it has: record completion with goal_update — the temporary skill retires automatically. Only when the goal produced a recurring analysis worth repeating should you also suggest a permanent skill: if a skill_proposal tool is available, log the spec there; otherwise describe it to the user; many goals simply end.",
               "If not: add the next todos with goal_todo.",
             ].join("\n"));
           }

@@ -11,9 +11,11 @@ Shared instructions for all AI coding agents (Claude Code, Cursor, Copilot, Gemi
 | Plugin | Status | Does |
 |--------|--------|------|
 | `sapience-thinking/` | Implemented | Periodic thinking passes; generates observations and proposals; writes `proposals.jsonl` sidecar |
-| `sapience/` | Implemented | Routes proposals through autonomy tiers (Act/Propose/Ask/Explore/Learning); calibration profile; weekly digest |
+| `sapience/` | Implemented | Routes proposals through autonomy tiers (Act/Propose/Ask/Explore/Learning); calibration profile; weekly digest; skill-proposal ledger (`skill_proposal` tools) |
 | `sapience-feedback/` | Implemented | Captures corrections and confirmations from chat; updates calibration profile; writes meta-pointers via `api.memory.add` |
 | `sapience-goals/` | Implemented | Accepts fuzzy long-running goals; decomposes them; tracks progress; weekly status |
+
+Ownership convention: **sapience owns action artifacts** (hypotheses ledger, skill-proposals ledger, delivery); **thinking only observes** — it reads sapience's files for pass context, tolerates their absence, and works standalone. Other plugins reference sapience tools loosely ("if a skill_proposal tool is available…"), never as hard dependencies.
 
 ---
 

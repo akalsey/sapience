@@ -52,6 +52,38 @@ describe("buildDigestPrompt", () => {
   });
 });
 
+describe("digest skill proposals section", () => {
+  it("lists open skill proposals so pending decisions resurface weekly", async () => {
+    const { mkdtemp, rm } = await import("fs/promises");
+    const { join } = await import("path");
+    const { tmpdir } = await import("os");
+    const { upsertProposal } = await import("./skill-proposals.js");
+    const dir = await mkdtemp(join(tmpdir(), "digest-skills-"));
+    try {
+      const skillProposalsPath = join(dir, "skill-proposals.json");
+      await upsertProposal(skillProposalsPath, join(dir, "skill-proposals.md"), {
+        name: "weekly-usage-divergence", summary: "WoW usage attribution", spec_markdown: "spec",
+      });
+      const prompt = await buildDigestPrompt({
+        ...DEFAULT_CONFIG,
+        output: { ...DEFAULT_CONFIG.output, actionLogPath: "/nonexistent/path.md", skillProposalsPath },
+      });
+      expect(prompt).toContain("weekly-usage-divergence");
+      expect(prompt).toContain("Skill proposals awaiting your decision");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("omits the section when there are no open proposals", async () => {
+    const prompt = await buildDigestPrompt({
+      ...DEFAULT_CONFIG,
+      output: { ...DEFAULT_CONFIG.output, actionLogPath: "/nonexistent/path.md", skillProposalsPath: "/nonexistent/sp.json" },
+    });
+    expect(prompt).not.toContain("Skill proposals awaiting your decision");
+  });
+});
+
 describe("digest calibration question", () => {
   it("asks one calibration question grounded in the action log", async () => {
     const prompt = await buildDigestPrompt({ ...DEFAULT_CONFIG, output: { ...DEFAULT_CONFIG.output, actionLogPath: "/nonexistent/path.md" } });

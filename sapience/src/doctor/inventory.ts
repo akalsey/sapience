@@ -83,6 +83,8 @@ export const SUITE_FILES: ReadonlyArray<{ label: string; owner: string; staleAft
   { label: "sapience/processed-passes.json", owner: "sapience" },
   { label: "goals/goals.json", owner: "sapience-goals",
     absentHint: "created on the first goal_submit — absent until someone asks the assistant to track a goal" },
+  { label: "sapience/skill-proposals.json", owner: "sapience",
+    absentHint: "created on the first skill_proposal — absent until the assistant notices a repeated multi-step task worth codifying" },
 ];
 
 // Memory config the suite needs, with the config path and required value. Drives

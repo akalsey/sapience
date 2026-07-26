@@ -1,6 +1,7 @@
 import { readFile } from "fs/promises";
 import { resolvePath } from "./utils.js";
 import type { SapienceConfig } from "./types.js";
+import { loadProposals, renderProposalsList } from "./skill-proposals.js";
 
 // Whether the digest should fire now. The caller persists localDate after a
 // successful send and passes it back as lastSentDate — that's what prevents
@@ -41,11 +42,20 @@ export async function buildDigestPrompt(config: SapienceConfig): Promise<string>
       : raw;
   } catch { /* file absent is fine */ }
 
+  // Open skill proposals resurface weekly so a logged pattern the user never
+  // reacted to doesn't rot silently in the ledger.
+  const open = (await loadProposals(config.output.skillProposalsPath))
+    .filter((p) => p.status === "proposed" || p.status === "building");
+  const skillsSection = open.length === 0 ? "" : `
+## Skill proposals awaiting your decision
+${renderProposalsList(open)}
+`;
+
   return `[SAPIENCE: WEEKLY DIGEST] Build and deliver a weekly summary to the user.
 
 ## Action log from this week
 ${actionLog}
-
+${skillsSection}
 ## Instructions
 
 Deliver a brief weekly summary with these sections:

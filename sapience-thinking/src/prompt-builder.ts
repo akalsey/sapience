@@ -58,6 +58,16 @@ export function buildPrompt(bundle: ContextBundle, signal: SignalReport | null, 
     sections.push(["## Your Recent Proposals (Last 3 Passes)", "", bundle.recentPasses].join("\n"));
   }
 
+  if (bundle.openSkillProposals) {
+    sections.push([
+      "## Open Skill Proposals",
+      "",
+      "Skills already suggested to the user and awaiting their decision. Don't re-propose these — when the activity above shows the same task done again, propose appending the new evidence (queries, scripts, examples) to the existing proposal instead.",
+      "",
+      bundle.openSkillProposals,
+    ].join("\n"));
+  }
+
   if (bundle.openHypotheses) {
     sections.push([
       "## Open Hypotheses",

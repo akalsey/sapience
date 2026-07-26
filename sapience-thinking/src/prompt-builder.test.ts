@@ -130,6 +130,25 @@ describe("playbooks section", () => {
   });
 });
 
+describe("open skill proposals section", () => {
+  it("surfaces open proposals with a no-re-propose instruction", async () => {
+    const prompt = buildPrompt({ ...bundle, openSkillProposals: "- [s1] weekly-usage-divergence — WoW attribution (proposed, evidence ×2)" }, null);
+    expect(prompt).toContain("## Open Skill Proposals");
+    expect(prompt).toContain("weekly-usage-divergence");
+    expect(prompt).toMatch(/don'?t re-propose/i);
+  });
+
+  it("omits the section when there are none", async () => {
+    expect(buildPrompt(bundle, null)).not.toContain("## Open Skill Proposals");
+  });
+});
+
+describe("repetition watch", () => {
+  it("the base prompt tells passes to watch for repeated multi-step tasks", async () => {
+    expect(buildPrompt(bundle, null)).toContain("same multi-step task");
+  });
+});
+
 describe("open hypotheses section", () => {
   it("surfaces open hypotheses for opportunistic re-testing", async () => {
     const prompt = buildPrompt({ ...bundle, openHypotheses: "- [open] spend velocity decays before churn (seen 3x)" }, null);

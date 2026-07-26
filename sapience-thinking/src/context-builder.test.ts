@@ -315,6 +315,26 @@ describe("buildHypothesesContext", () => {
   });
 });
 
+describe("buildSkillProposalsContext", () => {
+  it("summarizes open proposals and drops settled ones", async () => {
+    const path = join(tmpDir, "skill-proposals.json");
+    await writeFile(path, JSON.stringify([
+      { id: "s1", name: "weekly-usage-divergence", summary: "WoW usage attribution", status: "proposed", evidence_count: 2, created_at: "2026-07-20T00:00:00Z", updated_at: "2026-07-25T00:00:00Z" },
+      { id: "s2", name: "sunday-slide-prep", summary: "prep the review deck", status: "installed", evidence_count: 1, created_at: "2026-07-01T00:00:00Z", updated_at: "2026-07-02T00:00:00Z" },
+    ]));
+    const { buildSkillProposalsContext } = await import("./context-builder.js");
+    const text = await buildSkillProposalsContext(path);
+    expect(text).toContain("weekly-usage-divergence");
+    expect(text).toContain("evidence ×2");
+    expect(text).not.toContain("sunday-slide-prep");
+  });
+
+  it("returns empty when the ledger is missing", async () => {
+    const { buildSkillProposalsContext } = await import("./context-builder.js");
+    expect(await buildSkillProposalsContext(join(tmpDir, "nope.json"))).toBe("");
+  });
+});
+
 describe("machine-session exclusion", () => {
   // Production incident: with little human activity in the lookback window,
   // thinking-pass context was dominated by the suite's own cron session
