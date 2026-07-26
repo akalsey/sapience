@@ -92,6 +92,19 @@ describe("buildTierPrompt", () => {
     expect(propose).toContain('"rejected"');
     expect(propose).toContain('"acknowledged"');
   });
+
+  it("describes content, never scripts wording — the user reads these daily", () => {
+    // Production feedback: every calibrate note opened with the same
+    // fill-in-the-blanks sentence because the prompt dictated it verbatim.
+    for (const tier of ["act", "propose", "ask", "explore", "learning"] as const) {
+      const p = buildTierPrompt({ ...base, tier });
+      expect(p, tier).toContain("own words");
+    }
+    const learning = buildTierPrompt({ ...base, tier: "learning" });
+    expect(learning).not.toContain("Is that the right level of initiative");
+    expect(learning).not.toContain('Tell the user: "');
+    expect(buildTierPrompt({ ...base, tier: "act" })).not.toContain('"I just [');
+  });
 });
 
 describe("deliverItems", () => {

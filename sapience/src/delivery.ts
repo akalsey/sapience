@@ -20,8 +20,14 @@ function outcomeInstruction(item: RoutedItem, guidance: string): string {
 const USER_FIRST =
   "(If the user's own message accompanies this note, the user's message takes priority — respond to it first and fully, then surface this briefly or hold it for a natural moment.)\n\n";
 
+// The user reads these notes daily; a scripted sentence repeated verbatim on
+// every delivery reads as machinery, not judgment. The instructions below
+// describe CONTENT — the model supplies the wording.
+const OWN_WORDS =
+  "\n\nWrite the note in your own words, matched to the conversation's tone, and vary your phrasing from previous notes — these instructions describe what to convey, not what to say. Never quote them verbatim.";
+
 export function buildTierPrompt(item: RoutedItem): string {
-  return USER_FIRST + tierPromptBody(item);
+  return USER_FIRST + tierPromptBody(item) + OWN_WORDS;
 }
 
 function tierPromptBody(item: RoutedItem): string {
@@ -33,7 +39,7 @@ Action: ${item.text}
 Domain: ${item.domain} / ${item.action_class}
 Confidence: ${(item.confidence * 100).toFixed(0)}%
 
-Execute now. After completion, send a brief message: "I just [what you did]. [Reversible/not reversible]."
+Execute now. Afterwards tell the user what you did and whether it can be undone — a sentence or two.
 ${outcomeInstruction(item, 'Then record it: use "acted_on" (or "rejected" if execution failed or you had to abort) in')}`;
 
     case "propose":
@@ -72,7 +78,7 @@ Item: ${item.text}
 Domain: ${item.domain} / ${item.action_class}
 Current confidence: ${(item.confidence * 100).toFixed(0)}%
 
-Tell the user: "I noticed [item]. My instinct is to [what you'd do at the propose tier]. Is that the right level of initiative, or would you prefer I handle this differently?"
+You're finding out how much initiative the user wants here. Convey three things: what you noticed, what you'd do about it on your own if trusted, and whether they'd want you to just do that next time or check in first.
 ${outcomeInstruction(item, 'After they respond, record their reaction — "accepted" if they endorsed the instinct, "rejected" if they wanted less initiative, "acknowledged" if unclear — via')}`;
   }
 }
