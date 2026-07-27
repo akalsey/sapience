@@ -90,6 +90,7 @@ Every event has `ts` (ISO-8601), `plugin` (`thinking` | `sapience` | `feedback` 
 - `pass_completed` — a thinking pass finished; fields: `pass_id`, `observations`, `actions`, `audits`, `questions`, `nothing_to_report`
 - `pass_skipped` — pass did not run; field: `reason` (`outside_hours` or `already_running`). `outside_hours` is logged once on the transition out of hours, not every 15 minutes
 - `proposals_deduped` — near-duplicates of proposals from the last 14 days were dropped before routing; fields: `pass_id`, `dropped`
+- `proposals_coerced` — the pass's output was recovered from a malformed shape; items that couldn't be salvaged are counted; fields: `pass_id`, `dropped_items`
 - `outcome_recorded` — the agent recorded your reaction to a delivered proposal via `record_outcome`; fields: `proposal_id`, `outcome` (`acted_on`/`accepted`/`rejected`/`acknowledged`), `domain`, `action_class`
 - `audit_scheduled` / `audit_schedule_failed` — an accepted audit proposal was (or couldn't be) registered as a recurring `sapience-audit-<slug>` cron job; fields: `cron`, plus `reason` on failure
 - `noticed` — post-task noticing found incidental observations in a live session; fields: `session`, `observations`
@@ -108,13 +109,20 @@ Every event has `ts` (ISO-8601), `plugin` (`thinking` | `sapience` | `feedback` 
 - `watch_checked` — a due watch was checked; fields: `watch`, `value`, `notable`
 - `watch_check_failed` — the watch's value couldn't be fetched (cadence still advances); field: `watch`
 - `digest_delivered` — weekly digest was queued for the next main-session turn
-- `delivery_failed` — a tier prompt, the digest, or a watch alert could not be injected; fields: `reason`, plus `tier`/`domain`, `what: "digest"`, or `what: "watch"`
+- `item_delivered` — positive receipt: a tier prompt was accepted for the next turn; fields: `proposal_id`, `tier`, `domain`, `priority`
+- `item_queued` — the item exceeded `delivery.maxPerCycle` and went to the pending queue for the `sapience-delivery` cron; fields: `proposal_id`, `tier`, `priority`, `queued`
+- `item_suppressed` — the item's text matched something delivered within `delivery.dedupeWindowHours`; fields: `proposal_id`, `domain`, `reason` (`recently_delivered`)
+- `pending_deliveries_drained` — the delivery cron picked up queued items to compose into one message; field: `count`
+- `skill_proposal_created` / `skill_proposal_evidence` — a repeated multi-step task was logged as a skill spec, or matched an existing one and added evidence; fields: `proposal_id`, `evidence_count`
+- `skill_proposal_updated` — the human's decision was recorded; fields: `proposal_id`, `status` (`proposed`/`building`/`installed`/`declined`)
+- `delivery_failed` — a tier prompt, the digest, or a watch alert could not be injected; fields: `reason`, `queued` (whether it fell back to the pending queue), plus `tier`/`domain`, `what: "digest"`, or `what: "watch"`
 - `config_invalid` — invalid `activeHours` config; running on defaults
 
 **sapience-feedback** (`plugin: "feedback"`):
 - `signal_detected` — feedback signal captured; fields: `signal_type`, `domain`, `action_class`, `source` (`llm`, `regex`, or `manual`)
 - `calibration_change` — the signal was applied to the profile; same fields as sapience's event, with `source` `feedback` (existing entry updated) or `feedback_new_entry` (feedback on an unknown domain seeded a new entry — orphaned signals are no longer dropped). The `plugin` field distinguishes these from sapience's own calibration events
 - `playbook_added` / `playbook_duplicate` — a `method` signal appended a new analytical playbook (or matched an existing one); fields: `domain`, `source`
+- `playbook_rejected` — the text wasn't a single analytical move and was not stored (a one-time directive kept as a permanent playbook gets re-proposed every pass); fields: `reason` (`too_long`/`empty`), `domain`, `source`
 - `memory_write_failed` — the meta-pointer write via `api.memory.add` failed; fields: `domain`, `reason`
 
 **sapience-goals** (`plugin: "goals"`):
@@ -123,6 +131,8 @@ Every event has `ts` (ISO-8601), `plugin` (`thinking` | `sapience` | `feedback` 
 - `goal_status_changed` — status transition via `goal_update`; fields: `goal_id`, `status`
 - `goal_progress` — progress note recorded; field: `goal_id`
 - `goal_metric_set` — a measurable key result was attached via `goal_set_metric`; fields: `goal_id`, `metric`
+- `goal_planned` — `goal_plan` saved standing instructions and installed them as a temporary skill; fields: `goal_id`, `todos` (count seeded)
+- `goal_todo` — a todo was added or completed; fields: `goal_id`, `action` (`add`/`done`), `open` (remaining open todos)
 - `goal_blocked` — blocker recorded; field: `goal_id`
 - `status_delivered` — weekly status queued for a goal; field: `goal_id`
 - `delivery_failed` — a decomposition or weekly-status injection failed; fields: `what` (`decomposition` or `weekly_status`), `goal_id`, `reason`. Failed weekly statuses are retried next run
@@ -173,7 +183,7 @@ It's not lost. The feedback plugin seeds a new calibration entry (`propose` tier
 
 **"I see delivery_failed events"**
 
-The plugin produced output but couldn't inject it into the main session (gateway declined, or the injection API was unavailable). Weekly goal statuses retry on the next run; routed proposals from that pass are not retried. Check the `reason` field.
+The plugin produced output but couldn't inject it into the target session (gateway declined, or the injection API was unavailable). Check the `reason` field — and `queued`: when true, the item went to `<workspace>/sapience/pending-deliveries.json` and the `sapience-delivery` cron sends it through your channel within 15 minutes, so a dead injection path degrades to latency rather than silence. Weekly goal statuses also retry on the next run.
 
 **"I want to see what sapience decided to do autonomously"**
 

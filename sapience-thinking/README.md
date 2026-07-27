@@ -20,17 +20,23 @@ openclaw plugins install npm:@akalsey/sapience-thinking
 
 Add to your OpenClaw config:
 
+Config lives under `plugins.entries.sapience-thinking.config` — the full path shape; the short `plugins.sapience-thinking` form is silently ignored.
+
 ```json
 {
   "plugins": {
-    "sapience-thinking": {
-      "activeHours": {
-        "start": "08:00",
-        "end": "20:00",
-        "timezone": "America/Los_Angeles"
-      },
-      "output": {
-        "logPath": "proactive-thinking/log.md"
+    "entries": {
+      "sapience-thinking": {
+        "config": {
+          "activeHours": {
+            "start": "08:00",
+            "end": "20:00",
+            "timezone": "America/Los_Angeles"
+          },
+          "output": {
+            "logPath": "proactive-thinking/log.md"
+          }
+        }
       }
     }
   }
@@ -59,9 +65,12 @@ The context bundle for each pass is built from what's actually on disk, resolved
 
 - **Session transcripts** — recent activity from the agent's real sessions dir, ordered by file mtime (newest first) within the `lookbackHours` window
 - **Memory** — the memory-wiki vault first, then the legacy per-agent memory dir; newest `.md` files first
-- **Active goals** — in-flight goals from `goals/goals.json`, so passes weigh proposals by whether they advance one
+- **Active goals** — in-flight goals from `goals/goals.json` with each one's open todos, so passes weigh proposals by whether they advance a goal and can propose work that moves a specific todo
 - **Open hypotheses** — unsettled cases from sapience's hypothesis ledger, for opportunistic re-testing when adjacent data is in hand
-- **Analytical playbooks** — built-in analyst moves (decompose on delta, outlier check, denominator check, seasonality check, case-to-cohort) plus any you've taught via method feedback, loaded from `<workspace>/sapience/playbooks.json`
+- **Open skill proposals** — repeated tasks already logged in sapience's skill-proposal ledger and awaiting your decision, so a pass appends evidence instead of re-proposing them
+- **Analytical playbooks** — built-in analyst moves (decompose on delta, outlier check, denominator check, seasonality check, case-to-cohort) plus any you've taught via method feedback, loaded from `<workspace>/sapience/playbooks.json`. They're framed as techniques, never tasks: a pass may apply a playbook but never proposes executing one
+
+Sections whose source file is absent are simply omitted — a standalone install (no sapience) just gets a shorter bundle.
 
 The resolved sessions and memory dirs are recorded in the plugin's status artifact, so `openclaw sapience doctor` shows exactly which directories a pass reads.
 
@@ -77,7 +86,9 @@ Each entry in `log.md` has:
 
 A pass that found nothing useful logs `nothing_to_report: true`. Over time, this data shows when thinking passes are productive.
 
-Before anything is recorded, proposals are deduplicated against the last 14 days of outcome history — a proposal you dismissed last week doesn't resurface reworded. Drops are logged as `proposals_deduped` events.
+Passes also watch for **repetition worth codifying**: the same multi-step task done more than once (a warehouse query, a CRM pull, a recurring slide) becomes a skill proposal — named, specified, with the repeated occurrences as evidence — logged through sapience's `skill_proposal` tool rather than built unbidden.
+
+Before anything is recorded, proposals are deduplicated against the last 14 days of outcome history — a proposal you dismissed last week doesn't resurface reworded. Drops are logged as `proposals_deduped` events. Output that doesn't parse cleanly is recovered where possible rather than discarding the whole pass; unsalvageable items are counted in a `proposals_coerced` event. Downstream, sapience additionally suppresses items whose text it already delivered in the last 72 hours.
 
 ---
 
@@ -106,6 +117,8 @@ Invalid values (`"8am"`, a bad timezone) don't disable the plugin: it falls back
 ## Delivery
 
 When `sapience` is installed and active, thinking passes are routed by its autonomy layer — this plugin defers direct delivery. Standalone (or if the router hasn't run in 2 hours), high-priority proposals (`priorityThreshold`, default 4+) are injected into your main session's next turn, capped at `maxProposalsPerHeartbeat` (default 3) per pass. Injection failures record a `delivery_failed` event.
+
+Injections target the agent main session by default. On installs where `session.dmScope` isolates DMs into per-peer sessions, set `delivery.sessionKey` to the conversation you actually read — see [docs/configuration.md](../docs/configuration.md#delivery-target). Delivered notes subordinate themselves to your own message: if one arrives on the same turn as something you sent, you get answered first.
 
 ---
 

@@ -13,13 +13,28 @@ Call `goal_submit` when the user expresses a fuzzy, long-running objective — s
 
 ## How to submit
 
-Call `goal_submit(description)` with the user's objective as stated — fuzzy language is fine. You don't need to clean it up or restate it formally. The system handles decomposition.
+Call `goal_submit(description)` with the user's objective as stated — fuzzy language is fine. You don't need to clean it up or restate it formally.
 
-After submitting, confirm to the user: "I've recorded that as a goal and will come back with some approaches."
+## What happens next — in the same turn
 
-## What happens next
+`goal_submit` returns the goal id and a script for the rest of *this* turn. Don't stop at "recorded, I'll come back with approaches", and don't start doing the work: the goal is long-running, pursued by scheduled thinking passes over weeks.
 
-`goal_submit` delivers a `[GOALS: DECOMPOSE]` prompt immediately — it's injected into the main session's next turn, presenting 2–4 concrete approaches. When the user picks one, call `goal_select_approach(id, approach)` to record it; the goal stays in `decomposing` (no weekly check-ins) until you do. Goals written to the inbox file (`goals/inbox.md`) instead are picked up by the next `check_goals` cron run.
+1. Acknowledge the goal in your own words, as an ongoing commitment.
+2. Ask one or two clarifying questions if the metric, cadence, or definition of done is ambiguous.
+3. Propose 2–3 concrete **recurring** approaches — what you'd watch, gather, or do on a cadence — and wait for the user's pick.
+
+When they pick, call `goal_select_approach(id, approach)`; the goal stays in `decomposing` (no weekly check-ins) until you do. Goals written to the inbox file (`goals/inbox.md`) instead are picked up by the next `check_goals` cron run, which delivers a `[GOALS: DECOMPOSE]` prompt.
+
+Lost the id in a later turn? Call `goal_list()` — never guess one.
+
+## Compile the approach into a plan
+
+Right after the approach is settled, call `goal_plan(id, instructions, todos)`:
+
+- `instructions` — standing behavioral instructions to follow during normal work while this goal is active ("when you access PostHog, remember the results; compare against what you know; explain trends and outliers; don't force conclusions"). These are installed as a temporary workspace skill, active in every session.
+- `todos` — the initial concrete steps toward the outcome.
+
+Then keep the list alive with `goal_todo(id, "add"|"done", text)`: add todos as new work becomes clear, mark them done as they finish. When the last open todo is completed, confirm with the user whether the outcome is actually reached — if yes, `goal_update(id, "completed")` (which retires the temporary skill); if not, add the next todos. Only when the goal produced a recurring analysis worth repeating should you suggest a permanent skill: log the spec with `skill_proposal` if that tool is available, otherwise describe it. Many goals simply end.
 
 ## Ongoing lifecycle
 

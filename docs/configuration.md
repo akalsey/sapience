@@ -1,6 +1,26 @@
 # Configuration Reference
 
-Every key each plugin reads, with its default. Set overrides under `plugins.<plugin-id>` in your OpenClaw config; anything omitted uses the default.
+Every key each plugin reads, with its default. Anything omitted uses the default.
+
+**Where overrides go.** Plugin config lives under `plugins.entries.<plugin-id>.config.<key>` in your OpenClaw config — the full shape, not `plugins.<plugin-id>.<key>`. The CLI rejects the short form, and hand-editing it into the JSON file writes orphan keys the plugin never reads:
+
+```bash
+openclaw config set plugins.entries.sapience.config.digest.day '"friday"'
+openclaw config set plugins.entries.sapience.config.push.enabled true --strict-json   # booleans/numbers need --strict-json
+openclaw config get plugins.entries.sapience.config.digest.day
+```
+
+The equivalent JSON:
+
+```json
+{
+  "plugins": {
+    "entries": {
+      "sapience": { "config": { "digest": { "day": "friday" } } }
+    }
+  }
+}
+```
 
 **Paths:** relative paths resolve under the agent workspace dir (`<workspace>/`, from `api.runtime.agent.resolveAgentWorkspaceDir`). Absolute paths and `~/` paths are used as-is.
 
@@ -27,6 +47,7 @@ Every key each plugin reads, with its default. Set overrides under `plugins.<plu
 | `delivery.heartbeatTrigger` | `true` | Standalone mode: inject high-priority proposals into the main session (ignored when the sapience router is active) |
 | `delivery.priorityThreshold` | `4` | Minimum priority (1–5) for standalone delivery |
 | `delivery.maxProposalsPerHeartbeat` | `3` | Cap on proposals per standalone delivery |
+| `delivery.sessionKey` | *(unset)* | Explicit target session for injections — see [Delivery target](#delivery-target) |
 | `noticing.enabled` | `true` | Post-task incidental noticing: watch live session transcripts and run a cheap side-pass after substantial turns |
 | `noticing.minTurnChars` | `1500` | Turns shorter than this (characters) are never noticed on |
 | `noticing.cooldownMinutes` | `15` | Minimum gap between noticing passes per session |
@@ -53,6 +74,9 @@ Not configurable here: thinking passes read analytical playbooks from `<workspac
 | `digest.enabled` | `true` | Deliver the weekly digest |
 | `digest.day` | `"friday"` | Digest day (weekday name) |
 | `digest.time` | `"17:00"` | Digest time, `HH:MM` — minutes are honored; fires on the first routing run at/after this, once per day |
+| `delivery.maxPerCycle` | `3` | Items injected directly per routing cycle (act-tier first, then priority); the overflow queues for the `sapience-delivery` cron, which composes it into one message |
+| `delivery.dedupeWindowHours` | `72` | An item whose normalized text was already delivered within this window is suppressed (`item_suppressed`) instead of re-delivered — the thinking model re-emits the same finding under a fresh id, which pass-id dedupe never catches |
+| `delivery.sessionKey` | *(unset)* | Explicit target session for injections — see [Delivery target](#delivery-target) |
 | `push.enabled` | `true` | Proactive channel push: wake the agent to deliver high-priority act/propose items through the last active channel instead of waiting for your next turn |
 | `push.maxPerDay` | `6` | Push budget per local day (the weekly digest always pushes and doesn't count) |
 | `push.minPriority` | `4` | Minimum priority (1–5) for an item to push |
@@ -75,6 +99,10 @@ Not configurable here: thinking passes read analytical playbooks from `<workspac
 | `output.investigationStatePath` | `"sapience/investigation-state.json"` | Daily investigation budget tracking |
 | `output.hypothesesPath` | `"sapience/hypotheses.json"` | Hypothesis ledger — open cases built from recurring hunches |
 | `output.watchesPath` | `"sapience/watches.json"` | Metric watches and their reading history |
+| `output.pendingDeliveriesPath` | `"sapience/pending-deliveries.json"` | Queue drained by the `sapience-delivery` cron (failed injections + per-cycle overflow) |
+| `output.deliveredLedgerPath` | `"sapience/delivered-ledger.json"` | Content hashes of recently delivered items, for `delivery.dedupeWindowHours` |
+| `output.skillProposalsPath` | `"sapience/skill-proposals.json"` | Skill-proposal ledger (machine state) |
+| `output.skillProposalsDocPath` | `"skill-proposals.md"` | Append-only human-readable specs, at the workspace root where you'd actually read them |
 
 ## sapience-feedback
 
@@ -102,5 +130,25 @@ Not configurable here: thinking passes read analytical playbooks from `<workspac
 | `weeklyCheckInTime` | `"09:00"` | Local time for status deliveries, `HH:MM` |
 | `inboxPath` | `"goals/inbox.md"` | Append-only file where new goals can be written externally |
 | `inboxPositionPath` | `"goals/inbox-position.json"` | Byte-offset tracker for the inbox — don't edit |
+| `skillsDir` | `"skills"` | Where a goal's standing instructions install as a temporary skill (`skills/goal-<id>/SKILL.md`), retired when the goal completes |
 | `output.goalsPath` | `"goals/goals.json"` | Goals store |
 | `output.eventsPath` | `"sapience/events.jsonl"` | Shared suite event log |
+| `delivery.sessionKey` | *(unset)* | Explicit target session for injections — see [Delivery target](#delivery-target) |
+
+---
+
+## Delivery target
+
+Injected deliveries (tier prompts, the digest, goal decomposition and weekly status) go to the agent's **main** session by default — resolved as `agent:<agentId>:<session.mainKey>`, or `global` when `session.scope` is `global`.
+
+That default is wrong on installs where `session.dmScope` isolates DMs into per-peer sessions: the main session is then machine-only, so proposals delivered there ask questions whose answers can never arrive. Set an explicit session key on each delivering plugin:
+
+```bash
+for id in sapience sapience-thinking sapience-goals; do
+    openclaw config set "plugins.entries.$id.config.delivery.sessionKey" '"agent:main:telegram:direct:12345"'
+done
+```
+
+`install.sh` detects this at install time and offers to set it from your most recent operator conversation; `openclaw sapience doctor` re-checks it (finding `delivery:target`) and `--fix` applies it — which matters on a fresh install, where no conversation exists yet to point at. Keys are lowercased before use.
+
+This is separate from the `sapience-delivery` cron's `--channel`/`--to` announce target ([cron-setup.md](cron-setup.md#the-delivery-job-is-different)): `delivery.sessionKey` decides where injections land, the announce target decides where the fallback cron's message is sent.

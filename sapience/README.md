@@ -46,6 +46,14 @@ Act items run in isolated subagent sessions at routing time (`act.execute`, time
 
 Next-turn injection alone means the agent can never initiate contact. For initiative-worthy items — act/propose at or above `push.minPriority` — sapience requests a heartbeat targeting the last active channel, so the agent delivers as a real outbound message. Budgeted at `push.maxPerDay` per local day; the weekly digest always pushes. Notable watch readings and act results share the same budget.
 
+### Skill proposals
+
+Work the agent does repeatedly should become a skill, not a habit of re-deriving the same steps. When a thinking pass (or the agent mid-task) notices the same multi-step task done more than once, it calls `skill_proposal(name, summary, spec_markdown)` — the spec captures what the skill would do, what triggered it, and the actual queries or scripts used. Proposals dedupe by normalized name: a second sighting appends evidence and bumps `evidence_count` rather than creating a twin.
+
+Two files back this, following the hypothesis-ledger pattern: `<workspace>/sapience/skill-proposals.json` is machine state, and `<workspace>/skill-proposals.md` is the append-only human-readable spec doc, kept at the workspace root where you'd actually read it. The markdown is never parsed back or rewritten, so hand edits survive.
+
+New proposals surface through the normal delivery path (`[SAPIENCE: SKILL PROPOSAL]`); evidence appends stay quiet, and open proposals resurface in the weekly digest. When you decide, the agent records it with `skill_proposal_update(ref, status)` — `building`, `installed`, or `declined`. **Nothing is ever built or installed unbidden**; the ledger exists to surface the pattern and track your decision. `skill_proposal_list` prints the current state.
+
 ### Metric watches
 
 "Keep an eye on X" is a first-class primitive. The agent calls `watch_metric(name, query_hint, cadence_hours?, policy?, threshold?)` when you ask it to watch a number; `watch_remove(name)` stops. Each routing pass checks up to `watch.maxChecksPerRun` due watches with a bounded read-only fetch; the delta policy — `percent` (vs the recent baseline mean, default ±20%), `above`, `below`, or `always` — decides whether a reading is worth surfacing. Notable moves go to your main session (and push, budget permitting); steady readings stay in the event stream. Watches live in `<workspace>/sapience/watches.json`; list them with `/sapience watches`.
@@ -67,25 +75,31 @@ openclaw plugins install npm:@akalsey/sapience-goals       # optional
 
 ### Configuration (sapience)
 
+Config lives under `plugins.entries.sapience.config` — the full path shape; the short `plugins.sapience` form is silently ignored.
+
 ```json
 {
   "plugins": {
-    "sapience": {
-      "autonomy": {
-        "defaultTier": "propose",
-        "domainFloors": {
-          "github": "propose",
-          "salesforce": "ask"
+    "entries": {
+      "sapience": {
+        "config": {
+          "autonomy": {
+            "defaultTier": "propose",
+            "domainFloors": {
+              "github": "propose",
+              "salesforce": "ask"
+            }
+          },
+          "learning": {
+            "enabled": true,
+            "confidenceDropThreshold": 0.4
+          },
+          "digest": {
+            "enabled": true,
+            "day": "friday",
+            "time": "17:00"
+          }
         }
-      },
-      "learning": {
-        "enabled": true,
-        "confidenceDropThreshold": 0.4
-      },
-      "digest": {
-        "enabled": true,
-        "day": "friday",
-        "time": "17:00"
       }
     }
   }
@@ -101,6 +115,8 @@ openclaw plugins install npm:@akalsey/sapience-goals       # optional
 **`digest`** — Weekly summary of what was acted on, what's pending review, and what's planned. Delivered at the configured day and time.
 
 **`push` / `investigation` / `act` / `watch`** — budgets and timeouts for channel push, hunch investigation, act-tier execution, and metric watches (all on by default; see above).
+
+**`delivery`** — `maxPerCycle` (default 3) caps how many items are injected in one routing cycle; the rest queue for the delivery cron. `dedupeWindowHours` (default 72) suppresses an item whose text was already delivered inside the window. `sessionKey` routes injections at a specific session instead of the agent main session — required when `session.dmScope` makes the main session machine-only ([docs/configuration.md](../docs/configuration.md#delivery-target)).
 
 **`domains`** — extend the domain taxonomy with `{"<regex>": "<slug>"}` patterns, checked against proposal text before the builtins. Use the same key on `sapience-feedback` so feedback lands on the domains routing emits.
 
@@ -124,6 +140,10 @@ Relative paths resolve under the agent workspace dir (`<workspace>/`), not `~/.o
 | `<workspace>/sapience/watches.json` | Metric watches and their reading history |
 | `<workspace>/sapience/push-state.json` | Daily channel-push budget tracking |
 | `<workspace>/sapience/investigation-state.json` | Daily investigation budget tracking |
+| `<workspace>/sapience/pending-deliveries.json` | Queue drained by the `sapience-delivery` cron — per-cycle overflow and failed injections |
+| `<workspace>/sapience/delivered-ledger.json` | Content hashes of recent deliveries, capped at 500 entries |
+| `<workspace>/sapience/skill-proposals.json` | Skill-proposal ledger — status and evidence counts |
+| `<workspace>/skill-proposals.md` | Human-readable skill specs, append-only (workspace root, not `sapience/`) |
 
 `action-log.md` rotates at 5 MB (newest 500 lines kept, previous contents in `action-log.md.old`); `events.jsonl` rotates to timestamped archives with only the newest two archives kept. If a JSON state file is corrupt, it's quarantined to `<name>.corrupt-<timestamp>` and rebuilt.
 
@@ -195,15 +215,25 @@ Once installed, the suite runs in the background. What you'll see in your sessio
 - `[SAPIENCE: EXPLORE]` — a problem with options for you to choose from
 - `[SAPIENCE: CALIBRATE]` — a calibration question for a new domain
 - `[SAPIENCE: WATCH]` — a watched metric moved notably
+- `[SAPIENCE: SKILL PROPOSAL]` — a repeated multi-step task was logged as a skill spec
 - `[SAPIENCE: WEEKLY DIGEST]` — Friday summary of actions, pending items, and plans
 
-Most deliveries are **next-turn injections into your main session** (session key `agent:<id>:main`): the routing cron enqueues them, and they appear the next time you take a turn. High-priority act/propose items, notable watch moves, and the weekly digest additionally request a **channel push** — a heartbeat targeting your last active channel, so they arrive as real outbound messages within the daily `push` budget. If an injection fails, a `delivery_failed` event is recorded in `events.jsonl`.
+These markers instruct the agent, they aren't the text you see: each prompt describes what to convey and the agent writes the note in its own words, varying phrasing between notes. Every injected prompt also opens by subordinating itself to your own message — an injection prepends to your next turn, and your message gets answered first.
+
+### How a delivery reaches you
+
+1. **Injection** into the target session — the agent main session (`agent:<id>:<mainKey>`) by default, or `delivery.sessionKey` when set. At most `delivery.maxPerCycle` items per routing cycle (act-tier first, then priority), each logged as `item_delivered`.
+2. **Overflow and failures queue.** Items past the cap, and items the gateway declines, go to `<workspace>/sapience/pending-deliveries.json` (`item_queued` / `delivery_failed` with `queued: true`). The `sapience-delivery` cron drains that queue every 15 minutes and composes one concise message delivered through your channel via cron announce — so a dead injection path degrades to latency, not silence.
+3. **Push** — high-priority act/propose items, notable watch moves, and the weekly digest additionally request a heartbeat targeting your last active channel, within the daily `push` budget.
+
+Repeats are suppressed before any of this: an item whose normalized text was delivered within `delivery.dedupeWindowHours` (default 72h) is dropped with an `item_suppressed` event, because the thinking model re-emits persistent findings under a fresh id every pass and pass-id dedupe never catches that.
 
 ### Weekly digest
 
 Every Friday at 5pm (or your configured `digest.day`/`digest.time` — minutes are honored, `17:45` means 17:45), the digest summarizes:
 - What was acted on this week
 - Proposals still waiting on your input
+- Open skill proposals — repeated tasks worth codifying, still awaiting your decision
 - What's planned for next week
 
 It ends with one calibration question drawn from the week's autonomous actions — "I did X without asking 4 times this week; keep it that way, or check in first?" — skipped when nothing ran autonomously.
@@ -226,7 +256,7 @@ Check that sapience-thinking is writing `proposals.jsonl`:
 ```bash
 tail -1 <workspace>/proactive-thinking/proposals.jsonl | python3 -m json.tool
 ```
-If the file is empty or missing, sapience-thinking isn't running — run the doctor. Also remember deliveries are next-turn injections: they only show up when you next interact with your main session.
+If the file is empty or missing, sapience-thinking isn't running — run the doctor. If proposals exist, follow the delivery chain in `events.jsonl`: `item_delivered` means it's waiting for your next turn, `item_queued`/`delivery_failed` means the `sapience-delivery` cron owns it now (that job must exist, grant `get_pending_deliveries`, and be registered `--announce`), and `item_suppressed` means it was a repeat inside the dedupe window. If items are delivered but you never see them, you're reading a different session than the one they land in — `openclaw sapience doctor` flags this as `delivery:target`.
 
 **Everything is going to Learning mode**
 Expected behavior for the first week or two. Each calibration response builds confidence. If it continues beyond 2–3 weeks for a domain you use daily, check `calibration.json` — entries may not be getting written.

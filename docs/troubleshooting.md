@@ -14,12 +14,12 @@ openclaw sapience doctor --probe  # trigger one real thinking pass and verify it
 What it checks:
 
 - **PLUGINS** — all four plugins installed and initialized. Each plugin writes a status artifact at init (under `~/.openclaw/sapience/status/`) recording its version, agent, resolved workspace dir, and output paths; a missing or stale artifact means the plugin isn't loading. For sapience-feedback it also reports `captureMode` — `command-only` means passive capture is degraded and only `/feedback` works.
-- **CRONS** — the three jobs exist, are enabled, aren't erroring, don't pin a disallowed model, and grant their tools via `payload.toolsAllow` (see below).
-- **PATHS** — the resolved workspace dir, whether each output file exists, and — critically — whether pipeline files are **fresh**. A green cron with a stale `log.md`/`proposals.jsonl`/`events.jsonl` (older than 24h) is flagged as an error: the cron runs but the tool handlers never execute. Quarantined `.corrupt-*` files are reported here too.
+- **CRONS** — the four jobs exist, are enabled, aren't erroring, don't pin a disallowed model, and grant their tools via `payload.toolsAllow` (see below).
+- **PATHS** — the resolved workspace dir, whether each output file exists, and — critically — whether pipeline files are **fresh**. A green cron with a stale `log.md`/`proposals.jsonl`/`events.jsonl` (older than 24h) is flagged as an error: the cron runs but the tool handlers never execute. Files that are simply cold-start absent say which activity creates them (`action-log.md` needs a first act-tier execution, `goals.json` a first `goal_submit`, `skill-proposals.json` a first `skill_proposal`) rather than reading as breakage. Quarantined `.corrupt-*` files are reported here too. This section also carries the **delivery target** check (below).
 - **MEMORY** — memory-wiki installed, plus the four settings the suite needs (`memory-core` dreaming, wiki bridge mode, bridge enabled, search corpus `all`).
-- **VERSIONS** — skew between what the gateway is running and what's installed on disk (restart needed), stale legacy npm pins, and newer published versions. When a plugin is out of date against the registry, the fix is auto-fixable — the doctor runs `openclaw plugins update <id>`. (Re-running `install.sh` does **not** update an already-installed plugin; use the doctor or `openclaw plugins update`.)
+- **VERSIONS** — skew between what the gateway is running and what's installed on disk (restart needed — including a plugin whose *loaded* version trails the build on disk), stale legacy npm pins, and newer published versions. When a plugin is out of date against the registry, the fix is auto-fixable — the doctor runs `openclaw plugins update <id>`. (Re-running `install.sh` does **not** update an already-installed plugin; use the doctor or `openclaw plugins update`.)
 
-`--fix` applies the safe fixes: setting the memory config values, registering missing cron jobs (with the same arguments as `install.sh`), and updating out-of-date suite plugins to the latest published version. After a plugin update it reminds you to restart the gateway (updates don't take effect until then). Everything else it reports with instructions. Exit code is non-zero when errors remain, so it's scriptable.
+`--fix` applies the safe fixes: setting the memory config values, registering missing cron jobs (with the same arguments as `install.sh`), routing deliveries to your operator conversation, and updating out-of-date suite plugins to the latest published version. After a plugin update it reminds you to restart the gateway (updates don't take effect until then). The post-fix report is re-gathered, so what it prints afterward reflects the config changes it just applied rather than the pre-fix state. Everything else it reports with instructions. Exit code is non-zero when errors remain, so it's scriptable.
 
 `--probe` goes beyond the static checks: it triggers one real `sapience-thinking` cron run (`openclaw cron run --wait`, up to ~3 minutes) and watches `log.md`/`proposals.jsonl` for writes. Verdicts:
 
@@ -51,6 +51,18 @@ Each suite job must grant exactly its tools (see [cron-setup.md](cron-setup.md) 
 
 ---
 
+## Deliveries going nowhere (`delivery:target`)
+
+Injections land in the agent's main session by default. When `session.dmScope` isolates DMs into per-peer sessions, that session is machine-only — proposals delivered there ask questions no human will ever see, let alone answer. The doctor's `delivery:target` finding covers this:
+
+- **ok** — `dmScope` is `main`, so DMs share the main session and deliveries reach you there.
+- **warn, no key configured** — it names your most recent operator conversation and `--fix` sets `delivery.sessionKey` on sapience, sapience-thinking, and sapience-goals to point at it. If no operator conversation exists yet, message the assistant once from your chat app and re-run `--fix`.
+- **warn, configured key missing from the session store** — the key has a typo, or the session was pruned; deliveries fall back to gateway resolution and may go nowhere.
+
+Set it by hand with `openclaw config set plugins.entries.<id>.config.delivery.sessionKey '"agent:main:telegram:direct:12345"'` on each of the three delivering plugins — see [configuration.md](configuration.md#delivery-target).
+
+---
+
 ## Other common problems
 
 **Plugins installed but tools don't exist / old behavior persists**
@@ -63,7 +75,18 @@ The job pins a `--model` the gateway doesn't permit; preflight rejects every run
 
 **Nothing arrives in my session**
 
-Deliveries are next-turn injections into the main session — they appear when you next take a turn, not as pushes. Check `<workspace>/sapience/events.jsonl` for `delivery_failed` events if turns come and go with nothing.
+Most deliveries are next-turn injections — they appear when you next take a turn, not as pushes. Trace it through `<workspace>/sapience/events.jsonl`:
+
+- `item_delivered` — the injection was accepted; it's waiting for your next turn.
+- `item_queued` — the item overflowed `delivery.maxPerCycle` (default 3 per cycle) and is waiting for the `sapience-delivery` cron to send it, within 15 minutes.
+- `delivery_failed` — the injection was declined (`reason` says why); the item falls back to the same pending queue.
+- `item_suppressed` — the same finding was already delivered inside `delivery.dedupeWindowHours` (default 72h), so it was dropped rather than repeated.
+
+If `delivery_failed` and `item_queued` are piling up but nothing reaches your chat, the `sapience-delivery` cron is the thing to check: it must exist, grant `get_pending_deliveries`, and be registered with `--announce` (plus `--channel`/`--to` when announce can't resolve a target). If deliveries are being *accepted* but you never see them, you're probably reading a different session than the one they land in — see the `delivery:target` section above.
+
+**One proposal keeps arriving over and over**
+
+Fixed in 0.4.22, but worth knowing the shape: the thinking model re-emits a persistent finding under a fresh id every pass, so pass-id dedupe never catches it. Routing now suppresses repeats by normalized text for `delivery.dedupeWindowHours`. If it still repeats, check `<workspace>/sapience/playbooks.json` — a one-time directive stored as a permanent analytical playbook gets re-read as an unexecuted mandate every pass. Delete the offending entry; the classifier no longer stores directives as playbooks, and over-long entries are rejected with a `playbook_rejected` event.
 
 **A state file went missing / a `.corrupt-<timestamp>` file appeared**
 

@@ -26,18 +26,24 @@ openclaw plugins install npm:@akalsey/sapience-feedback
 
 ### Configuration
 
+Config lives under `plugins.entries.sapience-feedback.config` — the full path shape; the short `plugins.sapience-feedback` form is silently ignored.
+
 ```json
 {
   "plugins": {
-    "sapience-feedback": {
-      "logPath": "sapience/feedback.md",
-      "calibrationPath": "sapience/calibration.json",
-      "playbooksPath": "sapience/playbooks.json",
-      "memoryEnabled": true,
-      "semanticDetection": {
-        "enabled": true,
-        "minLength": 8,
-        "minConfidence": 0.6
+    "entries": {
+      "sapience-feedback": {
+        "config": {
+          "logPath": "sapience/feedback.md",
+          "calibrationPath": "sapience/calibration.json",
+          "playbooksPath": "sapience/playbooks.json",
+          "memoryEnabled": true,
+          "semanticDetection": {
+            "enabled": true,
+            "minLength": 8,
+            "minConfidence": 0.6
+          }
+        }
       }
     }
   }
@@ -81,6 +87,8 @@ Instructions about how much autonomy the agent should have. "Just do it" or "sto
 Standing rules about *how* to analyze something, rather than how much autonomy to take. "Whenever you look at churn, segment by plan tier." "Always check for outliers before reporting an average."
 
 **Effect:** No confidence change — the rule is appended to the shared analytical playbooks file (`playbooksPath`), and every future thinking pass applies it whenever the data in front of it is relevant. Near-duplicate rules are detected and skipped (`playbook_duplicate` event).
+
+A **one-time directive** is not method feedback. "Go re-check the Q3 numbers and tell me what you find" is a task, not a standing analytical move; stored as a permanent playbook it gets re-read as an unexecuted mandate on every thinking pass and re-proposed forever. The classifier distinguishes the two, and anything too long to be a single analytical move is rejected outright with a `playbook_rejected` event.
 
 If the LLM is unavailable (no `api.runtime.llm` exposed, or the call fails), the plugin falls back to a regex matcher covering the common phrasings. The regex layer is intentionally conservative and misses paraphrases — semantic detection is the primary path.
 

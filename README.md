@@ -27,9 +27,9 @@ That's the sapience suite.
 | Plugin | Does |
 |--------|------|
 | `sapience-thinking` | Runs periodic isolated "thinking passes" every 15 minutes over your real session transcripts, memory, goals, and open hypotheses. Generates evidence-graded proposals — observations, suggested actions, audits, open questions — and also notices things *in passing* after substantial task turns. |
-| `sapience` | Routes proposals through autonomy tiers based on evidence, reversibility, and calibrated (decaying) confidence. Executes act-tier items in isolated sessions, investigates hunches read-only before surfacing them, keeps a hypothesis ledger, watches metrics you care about, and pushes what matters through your channel. Delivers a weekly digest. |
+| `sapience` | Routes proposals through autonomy tiers based on evidence, reversibility, and calibrated (decaying) confidence. Executes act-tier items in isolated sessions, investigates hunches read-only before surfacing them, keeps a hypothesis ledger, watches metrics you care about, and pushes what matters through your channel. Tracks repeated multi-step tasks as skill proposals. Delivers a weekly digest. |
 | `sapience-feedback` | Scans your messages for corrections, confirmations, and method advice. "Don't push to main without a PR" automatically drops confidence for that domain. "Whenever you look at churn, segment by plan tier" becomes a standing analytical playbook. No manual calibration file to manage. |
-| `sapience-goals` | Accepts fuzzy long-running objectives, decomposes them into concrete approaches, attaches measurable key results, and delivers a weekly status update per goal — leading with the numbers when a metric is set. |
+| `sapience-goals` | Accepts fuzzy long-running objectives, talks through concrete approaches in the same turn, and compiles the one you pick into a temporary skill with its own todo list — standing instructions active in every session until the goal is done. Measurable key results and a weekly status update per goal, leading with the numbers when a metric is set. |
 
 Each plugin works standalone. Together, they compose into a coherent system.
 
@@ -68,6 +68,12 @@ The recommended way is the installer. It checks for and installs the plugins, re
 The installer needs **bash >= 4** (it guards this and exits with a message otherwise). macOS ships bash 3.2 — `brew install bash` first, then run the one-liner with the Homebrew bash (e.g. `/opt/homebrew/bin/bash -c "$(curl ...)"`).
 
 It's interactive and idempotent: it only adds what's missing, so it's safe to re-run after an upgrade. It finishes by running `openclaw sapience doctor` to verify the install.
+
+If your install isolates DMs into per-peer sessions (`session.dmScope`), the installer also asks which of your conversations deliveries should go to, and you can pin the delivery cron's channel target up front:
+
+```bash
+SAPIENCE_DELIVERY_CHANNEL=telegram SAPIENCE_DELIVERY_TO=<chatId> /opt/homebrew/bin/bash -c "$(curl -fsSL ...)"
+```
 
 <details>
 <summary>Manual installation</summary>
@@ -111,7 +117,7 @@ Each plugin works standalone. When sapience is installed alongside thinking, thi
 
 ### 2. Start a session
 
-Everything runs automatically. The thinking plugin fires every 15 minutes during active hours (08:00–20:00 local by default). The first routing run baselines any existing passes rather than delivering them, so expect the first proposals roughly 30–45 minutes in. Most deliveries are **next-turn injections into your main session** — they appear when you next take a turn. High-priority items, notable metric moves, and the weekly digest also **push** through your last active channel, within a daily budget.
+Everything runs automatically. The thinking plugin fires every 15 minutes during active hours (08:00–20:00 local by default). The first routing run baselines any existing passes rather than delivering them, so expect the first proposals roughly 30–45 minutes in. Most deliveries are **next-turn injections into your session** — they appear when you next take a turn, at most three per routing cycle so a productive pass can't bury you. Anything over that cap, and anything whose injection is declined, queues for the `sapience-delivery` cron, which composes the backlog into one message and sends it through your channel within 15 minutes. High-priority items, notable metric moves, and the weekly digest also **push** through your last active channel, within a daily budget.
 
 The first week is calibration. Proposals will arrive as `[SAPIENCE: CALIBRATE]` questions — the agent is learning what level of initiative you want for each type of action. Answer them and it calibrates. Ignore them and it stays conservative.
 
@@ -119,27 +125,38 @@ The first week is calibration. Proposals will arrive as `[SAPIENCE: CALIBRATE]` 
 
 ## Configuration
 
-All plugins work out of the box with defaults. Override per-plugin in your OpenClaw config:
+All plugins work out of the box with defaults. Override per-plugin under `plugins.entries.<id>.config` in your OpenClaw config — that full path shape is required; the short `plugins.<id>` form is silently ignored:
 
 ```json
 {
   "plugins": {
-    "sapience-thinking": {
-      "activeHours": { "start": "08:00", "end": "20:00", "timezone": "America/Los_Angeles" }
-    },
-    "sapience": {
-      "autonomy": { "defaultTier": "propose" },
-      "digest": { "day": "friday", "time": "17:00" }
-    },
-    "sapience-feedback": {
-      "memoryEnabled": true
-    },
-    "sapience-goals": {
-      "weeklyCheckInDay": "monday",
-      "weeklyCheckInTime": "09:00"
+    "entries": {
+      "sapience-thinking": {
+        "config": {
+          "activeHours": { "start": "08:00", "end": "20:00", "timezone": "America/Los_Angeles" }
+        }
+      },
+      "sapience": {
+        "config": {
+          "autonomy": { "defaultTier": "propose" },
+          "digest": { "day": "friday", "time": "17:00" }
+        }
+      },
+      "sapience-feedback": {
+        "config": { "memoryEnabled": true }
+      },
+      "sapience-goals": {
+        "config": { "weeklyCheckInDay": "monday", "weeklyCheckInTime": "09:00" }
+      }
     }
   }
 }
+```
+
+Or from the CLI:
+
+```bash
+openclaw config set plugins.entries.sapience.config.digest.day '"friday"'
 ```
 
 Full configuration reference — every key with its default — in [docs/configuration.md](docs/configuration.md).
@@ -158,9 +175,12 @@ Full configuration reference — every key with its default — in [docs/configu
 | `[SAPIENCE: EXPLORE]` | A problem surfaced with 2–3 options for you to choose from |
 | `[SAPIENCE: CALIBRATE]` | A new domain — agent checking what level of initiative you want |
 | `[SAPIENCE: WATCH]` | A watched metric moved notably |
+| `[SAPIENCE: SKILL PROPOSAL]` | The agent noticed it has done the same multi-step task more than once and logged a spec |
 | `[SAPIENCE: WEEKLY DIGEST]` | Friday summary of what happened, what's pending, what's planned — ends with one calibration question |
-| `[GOALS: DECOMPOSE]` | New goal detected — agent presenting approaches for you to choose from |
+| `[GOALS: DECOMPOSE]` | A goal from the inbox file — agent presenting approaches for you to choose from |
 | `[GOALS: WEEKLY STATUS]` | Monday goal check-in — what happened, what's blocked, what's next |
+
+The markers are instructions to the agent, not a script: the agent writes each note in its own words, and a note that arrives alongside your own message answers you first.
 
 **Giving feedback:**
 
@@ -177,13 +197,19 @@ Say `"keep an eye on daily signups"` — the agent calls `watch_metric` and the 
 
 **Submitting a goal:**
 
-Just tell the agent — it calls `goal_submit` and the decomposition prompt is delivered immediately. Or append to the inbox file from a script:
+Just tell the agent — it calls `goal_submit` and then, in that same turn, acknowledges the goal, asks anything ambiguous, and proposes 2–3 recurring approaches for you to pick from. When you pick, it compiles the choice into standing instructions and a starting todo list (`goal_plan`), installed as a temporary skill at `<workspace>/skills/goal-<id>/SKILL.md` that's active in every session until the goal completes. Todos grow and burn down as work happens (`goal_todo`); finishing the last one starts wrap-up.
+
+Or append to the inbox file from a script:
 
 ```bash
 echo "Get weekly OKR scoring rates above 80% by end of Q3" >> <workspace>/goals/inbox.md
 ```
 
-The next `check_goals` cron run (within 15 minutes, during active hours) picks it up and delivers a decomposition prompt on your next turn.
+The next `check_goals` cron run (within 15 minutes, during active hours) picks it up and delivers a `[GOALS: DECOMPOSE]` prompt on your next turn.
+
+**Skill proposals:**
+
+When the agent notices it has done the same multi-step task more than once — the same warehouse query, the same CRM pull, the same recurring slide — it logs a spec via `skill_proposal` instead of quietly redoing the work forever. Specs accumulate in `<workspace>/skill-proposals.md` (append-only, safe to hand-edit), open ones resurface in the weekly digest, and nothing is ever built or installed unless you ask. `skill_proposal_list` shows the ledger; telling the agent you want one (or don't) records the decision.
 
 ---
 
@@ -235,8 +261,13 @@ All relative paths in plugin config resolve under the **agent workspace director
 | `<workspace>/sapience/watches.json` | Metric watches and their reading history |
 | `<workspace>/sapience/push-state.json` | Daily channel-push budget tracking |
 | `<workspace>/sapience/investigation-state.json` | Daily investigation budget tracking |
-| `<workspace>/goals/goals.json` | All goals with status, metrics, and progress |
+| `<workspace>/sapience/pending-deliveries.json` | Queue the `sapience-delivery` cron drains — overflow and failed injections |
+| `<workspace>/sapience/delivered-ledger.json` | Content hashes of recent deliveries, so the same finding isn't repeated |
+| `<workspace>/sapience/skill-proposals.json` | Skill-proposal ledger — status and evidence counts |
+| `<workspace>/skill-proposals.md` | The human-readable skill specs (append-only) |
+| `<workspace>/goals/goals.json` | All goals with status, metrics, todos, and progress |
 | `<workspace>/goals/inbox.md` | Where you (or scripts) write new goals |
+| `<workspace>/skills/goal-<id>/SKILL.md` | A goal's standing instructions as a temporary skill; removed when the goal completes |
 
 Large logs rotate automatically at 5 MB (see [docs/observability.md](docs/observability.md)). If a JSON state file is ever unparseable, it's quarantined to `<name>.corrupt-<timestamp>` and rebuilt — `openclaw sapience doctor` reports quarantined files.
 
@@ -245,7 +276,7 @@ Large logs rotate automatically at 5 MB (see [docs/observability.md](docs/observ
 ## More documentation
 
 - [docs/configuration.md](docs/configuration.md) — complete config reference for all four plugins
-- [docs/cron-setup.md](docs/cron-setup.md) — the three cron jobs and how to register them manually
+- [docs/cron-setup.md](docs/cron-setup.md) — the four cron jobs and how to register them manually
 - [docs/troubleshooting.md](docs/troubleshooting.md) — `openclaw sapience doctor` and common failure modes
 - [docs/observability.md](docs/observability.md) — the dashboard and event log
 - [docs/memory-configuration.md](docs/memory-configuration.md) — how corrections persist via OpenClaw memory
