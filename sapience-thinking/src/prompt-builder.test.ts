@@ -55,6 +55,16 @@ describe("buildPrompt", () => {
     expect(prompt).toContain("scheduled thinking pass");
     expect(prompt).toContain("record_thinking_output()");
   });
+
+  // A resolved problem was resurfacing a day later: the pass flagged a
+  // point-in-time issue ("unable to access Google Sheets") from one turn or one
+  // memory note without reading the later evidence that showed it fixed. Pin
+  // the whole-timeline instruction so the pass reconciles against resolution.
+  it("instructs the pass to read the whole timeline and skip resolved problems", async () => {
+    const prompt = await buildPrompt(bundle, null);
+    expect(prompt).toContain("whole body of evidence");
+    expect(prompt).toContain("resolved");
+  });
 });
 
 describe("delivery-aware prompt", () => {
