@@ -1,5 +1,47 @@
 # @akalsey/sapience-thinking
 
+## 0.5.3
+
+### Patch Changes
+
+- 5d7c9e3: Stop the hypothesis ledger from manufacturing corroboration for itself.
+
+  One real Google auth failure fragmented into 8 open ledger entries, and every
+  later thinking pass read that pile as 8 independent confirmations — grading
+  observations `replicated` while citing the pass context itself as the evidence,
+  and escalating to priority 5 over four days.
+
+  - Near-duplicate matching adds a containment test above an 8-token floor, so a
+    restatement that piles on detail merges instead of opening a new case (the two
+    production scope hypotheses scored 0.528 Jaccard against a 0.6 threshold).
+  - Un-corroborated hunches expire after 72h rather than 14 days, and an
+    `inconclusive` verdict no longer counts as corroboration — every one in
+    production reported the investigator could not reach the data at all.
+    Corroboration now means a `supported`/`refuted` verdict or a re-sighting in a
+    genuinely later pass, not fragments merged within a single burst.
+  - The rendered ledger collapses restatements into one line carrying a count, so
+    redundancy reads as redundancy. Grouping by `domain` would not have helped:
+    23 of 25 production entries were `general`.
+  - The pass prompt now forbids citing its own prior output as evidence of
+    recurrence, and states that absence of new activity is not evidence a problem
+    persists — passes had been escalating on runs of `nothing_to_report`.
+  - The pass-history section gets framing of its own. Clearing the ledger in
+    production did not stop the loop: the next pass escalated "for the fifth
+    time", citing "chronology of repeated P5 proposals in the last four thinking
+    passes". It was the only section rendered as a bare header with no
+    instructions, and it now says plainly that a repeat is a record of what you
+    said, not evidence for it.
+
+## 0.5.2
+
+### Patch Changes
+
+- 51d9a8e: Two fixes to the CALIBRATE delivery pipeline, from 23 days of production evidence in which the calibration loop never promoted a single entry past `propose`.
+
+  **Item ids are now generated host-side.** The thinking model was asked to emit a UUID per item and that id became the `proposal_id` the agent had to hand back to `record_outcome`. Models don't generate random UUIDs — they generate patterned ones and reuse them: across 1,217 passes, 92 ids repeated and 88 of those carried different content each time, and one id named three different pending actions inside a single delivered prompt, making the `record_outcome` call ambiguous by construction. The parser now mints a fresh v4 UUID per item and discards whatever the model emitted; the prompt no longer asks for one.
+
+  **`delivery.maxPerCycle` is enforced per routing run, and the surviving items ship as one note.** The cap lived inside `deliverItems`, which routing calls once per _pass_, so it was really a per-pass cap: a run draining a backlog injected the cap times the backlog depth. Production saw one run log `passes=6 items=21` and put 15 separate notes — each with its own copy of the "the user's message takes priority" guard — ahead of the user's next message, and a 19-pass drain the morning after active hours resumed. Routing now collects every item from every pass it drained and delivers once, and the selected items share a single priority guard instead of repeating it per item. The default drops from 3 to 1; overflow queues for the `sapience-delivery` cron as before.
+
 ## 0.5.1
 
 ### Patch Changes
