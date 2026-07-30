@@ -1,8 +1,0 @@
-[
-  {
-    "id": "act-1",
-    "kind": "item",
-    "prompt": "[SAPIENCE: ACT] High-confidence action — execute immediately without asking the user for approval, then notify them briefly.\n\nAction: Fix the typo in dashboard query\nDomain: posthog / posthog/action\nConfidence: 90%\n\nExecute now. After completion, send a brief message: \"I just [what you did]. [Reversible/not reversible].\"\nThen record it: use \"acted_on\" (or \"rejected\" if execution failed or you had to abort) in record_outcome({ proposal_id: \"act-1\", outcome: <outcome>, domain: \"posthog\", action_class: \"posthog/action\" }).",
-    "queued_at": "2026-07-19T04:05:06.752Z"
-  }
-]

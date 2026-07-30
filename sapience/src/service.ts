@@ -2,7 +2,7 @@
 import { mkdirSync, writeFileSync } from "fs";
 import { join } from "path";
 import { definePluginEntry } from "openclaw/plugin-sdk/plugin-entry";
-import { DEFAULT_CONFIG, type SapienceConfig } from "./types.js";
+import { DEFAULT_CONFIG, type RoutedItem, type SapienceConfig } from "./types.js";
 import { resolveDataPath } from "./utils.js";
 import { validateActiveHours, isWithinActiveHours } from "./active-hours.js";
 import { loadProfile, saveProfile, upsertEntry, addMissingEntries, decayProfile } from "./calibration.js";
@@ -391,6 +391,12 @@ export default definePluginEntry({
             const newEntries: typeof profile = [];
             let totalItems = 0;
             const byTier: Record<string, number> = {};
+            // Delivery is per RUN, not per pass. This loop used to call
+            // deliverItems once per pass, so delivery.maxPerCycle was really
+            // "per pass" and a run that drained a backlog injected the cap
+            // times the backlog depth — 6 passes became 15 separate notes on
+            // the user's next turn, and the 19-pass morning drain was worse.
+            const toDeliver: RoutedItem[] = [];
 
             for (const pass of newPasses) {
               const allItems = proposalSetToItems(pass, extraDomains);
@@ -415,7 +421,7 @@ export default definePluginEntry({
               // else is delivered as next-turn context.
               const acts = config.act.execute ? investigated.filter((i) => i.tier === "act") : [];
               const rest = config.act.execute ? investigated.filter((i) => i.tier !== "act") : investigated;
-              await deliverItems(rest, api, config);
+              toDeliver.push(...rest);
               if (acts.length > 0) await executeActItems(acts, api, config);
               updatedProcessed = await markPassProcessed(pass.pass_id, config.output.processedPassesPath, updatedProcessed);
 
@@ -443,6 +449,8 @@ export default definePluginEntry({
                 }
               }
             }
+
+            if (toDeliver.length > 0) await deliverItems(toDeliver, api, config);
 
             if (newEntries.length > 0) {
               const fresh = await loadProfile(config.output.calibrationPath);

@@ -78,7 +78,7 @@ The job pins a `--model` the gateway doesn't permit; preflight rejects every run
 Most deliveries are next-turn injections — they appear when you next take a turn, not as pushes. Trace it through `<workspace>/sapience/events.jsonl`:
 
 - `item_delivered` — the injection was accepted; it's waiting for your next turn.
-- `item_queued` — the item overflowed `delivery.maxPerCycle` (default 3 per cycle) and is waiting for the `sapience-delivery` cron to send it, within 15 minutes.
+- `item_queued` — the item overflowed `delivery.maxPerCycle` (default 1 per routing run) and is waiting for the `sapience-delivery` cron to send it, within 15 minutes.
 - `delivery_failed` — the injection was declined (`reason` says why); the item falls back to the same pending queue.
 - `item_suppressed` — the same finding was already delivered inside `delivery.dedupeWindowHours` (default 72h), so it was dropped rather than repeated.
 

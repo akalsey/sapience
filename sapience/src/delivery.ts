@@ -27,7 +27,17 @@ const OWN_WORDS =
   "\n\nWrite the note in your own words, matched to the conversation's tone, and vary your phrasing from previous notes — these instructions describe what to convey, not what to say. Never quote them verbatim.";
 
 export function buildTierPrompt(item: RoutedItem): string {
-  return USER_FIRST + tierPromptBody(item) + OWN_WORDS;
+  return buildBatchPrompt([item]);
+}
+
+// One routing run puts ONE note in front of the user. When several items ship
+// together they share the priority guard and the own-words instruction rather
+// than repeating them per item: a turn once arrived carrying 15 separate
+// CALIBRATE notes and 15 copies of "the user's message takes priority" ahead
+// of a 23-character user message, and no model reads the sixth copy of "this
+// is secondary" as secondary.
+export function buildBatchPrompt(items: RoutedItem[]): string {
+  return USER_FIRST + items.map(tierPromptBody).join("\n\n---\n\n") + OWN_WORDS;
 }
 
 function tierPromptBody(item: RoutedItem): string {
@@ -83,6 +93,15 @@ ${outcomeInstruction(item, 'After they respond, record their reaction — "accep
   }
 }
 
+// Both the overflow path (over maxPerCycle) and the failed-injection
+// fallback hand the item to the same durable queue the delivery cron drains;
+// share the construction so the two can't drift on shape.
+async function queueForDeliveryCron(item: RoutedItem, config: SapienceConfig): Promise<boolean> {
+  return addPendingDelivery(config.output.pendingDeliveriesPath, {
+    id: item.id, kind: "item", prompt: buildTierPrompt(item),
+  }).catch(() => false);
+}
+
 export async function deliverItems(
   items: RoutedItem[],
   api: any,
@@ -92,53 +111,59 @@ export async function deliverItems(
     ((a.tier === "act" ? 0 : 1) - (b.tier === "act" ? 0 : 1)) || (b.priority - a.priority)
   );
 
-  // A single pass can route many items at once (a productive thinking pass, a
-  // drained backlog); injecting them all buries the user under a wall of
-  // boilerplate in one turn. Inject the top few, queue the rest — the
-  // delivery cron composes queued items into one concise message.
-  const maxPerCycle = config.delivery?.maxPerCycle ?? 3;
+  // A routing run can drain a whole backlog of thinking passes (19 in one run
+  // the morning after active hours resumed); injecting them all buries the
+  // user under a wall of boilerplate in one turn. Take the top few, queue the
+  // rest — the delivery cron composes queued items into one concise message.
+  // The cap spans the RUN: callers pass every item from every pass they
+  // drained, because enforcing it per pass multiplied it by the backlog depth.
+  const maxPerCycle = config.delivery?.maxPerCycle ?? 1;
+  const selected = sorted.slice(0, maxPerCycle);
   const overflow = sorted.slice(maxPerCycle);
   for (const item of overflow) {
-    const queued = await addPendingDelivery(config.output.pendingDeliveriesPath, {
-      id: item.id, kind: "item", prompt: buildTierPrompt(item),
-    }).catch(() => false);
+    const queued = await queueForDeliveryCron(item, config);
     await appendEvent(config.output.eventsPath, {
       plugin: "sapience", type: "item_queued", proposal_id: item.id, tier: item.tier, priority: item.priority, queued,
     });
   }
+  if (selected.length === 0) return;
 
-  for (const item of sorted.slice(0, maxPerCycle)) {
-    if (item.tier === "act") {
-      await appendAction(item, "Queued for immediate execution", config.output.actionLogPath);
-      await appendEvent(config.output.eventsPath, {
-        plugin: "sapience",
-        type: "action_logged",
-        domain: item.domain,
-        action_class: item.action_class,
-        confidence: item.confidence,
-      });
+  for (const item of selected) {
+    if (item.tier !== "act") continue;
+    await appendAction(item, "Queued for immediate execution", config.output.actionLogPath);
+    await appendEvent(config.output.eventsPath, {
+      plugin: "sapience",
+      type: "action_logged",
+      domain: item.domain,
+      action_class: item.action_class,
+      confidence: item.confidence,
+    });
+  }
+
+  const lead = selected[0]!;
+  const result = await enqueueMainSessionInjection(api, buildBatchPrompt(selected));
+  if (!result.enqueued) {
+    // The sapience-delivery cron drains this queue through cron announce
+    // delivery, so a dead injection path degrades to ≤15-minute latency
+    // instead of silence. Each item queues on its own, self-contained prompt —
+    // the cron composes the message from whatever it finds.
+    let queued = true;
+    for (const item of selected) {
+      if (!(await queueForDeliveryCron(item, config))) queued = false;
     }
-    const prompt = buildTierPrompt(item);
-    const result = await enqueueMainSessionInjection(api, prompt);
-    if (!result.enqueued) {
-      // The sapience-delivery cron drains this queue through cron announce
-      // delivery, so a dead injection path degrades to ≤15-minute latency
-      // instead of silence.
-      const queued = await addPendingDelivery(config.output.pendingDeliveriesPath, {
-        id: item.id,
-        kind: "item",
-        prompt,
-      }).catch(() => false);
-      await appendEvent(config.output.eventsPath, {
-        plugin: "sapience",
-        type: "delivery_failed",
-        tier: item.tier,
-        domain: item.domain,
-        reason: result.reason,
-        queued,
-      });
-      continue;
-    }
+    await appendEvent(config.output.eventsPath, {
+      plugin: "sapience",
+      type: "delivery_failed",
+      tier: lead.tier,
+      domain: lead.domain,
+      items: selected.length,
+      reason: result.reason,
+      queued,
+    });
+    return;
+  }
+
+  for (const item of selected) {
     // Positive receipt: without it, "queued and waiting for the human's next
     // turn" was indistinguishable from "nothing was ever sent".
     await appendEvent(config.output.eventsPath, {

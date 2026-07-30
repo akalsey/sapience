@@ -116,7 +116,7 @@ Config lives under `plugins.entries.sapience.config` — the full path shape; th
 
 **`push` / `investigation` / `act` / `watch`** — budgets and timeouts for channel push, hunch investigation, act-tier execution, and metric watches (all on by default; see above).
 
-**`delivery`** — `maxPerCycle` (default 3) caps how many items are injected in one routing cycle; the rest queue for the delivery cron. `dedupeWindowHours` (default 72) suppresses an item whose text was already delivered inside the window. `sessionKey` routes injections at a specific session instead of the agent main session — required when `session.dmScope` makes the main session machine-only ([docs/configuration.md](../docs/configuration.md#delivery-target)).
+**`delivery`** — `maxPerCycle` (default 1) caps how many items ride the single note injected per routing run; the rest queue for the delivery cron. `dedupeWindowHours` (default 72) suppresses an item whose text was already delivered inside the window. `sessionKey` routes injections at a specific session instead of the agent main session — required when `session.dmScope` makes the main session machine-only ([docs/configuration.md](../docs/configuration.md#delivery-target)).
 
 **`domains`** — extend the domain taxonomy with `{"<regex>": "<slug>"}` patterns, checked against proposal text before the builtins. Use the same key on `sapience-feedback` so feedback lands on the domains routing emits.
 
@@ -222,7 +222,7 @@ These markers instruct the agent, they aren't the text you see: each prompt desc
 
 ### How a delivery reaches you
 
-1. **Injection** into the target session — the agent main session (`agent:<id>:<mainKey>`) by default, or `delivery.sessionKey` when set. At most `delivery.maxPerCycle` items per routing cycle (act-tier first, then priority), each logged as `item_delivered`.
+1. **Injection** into the target session — the agent main session (`agent:<id>:<mainKey>`) by default, or `delivery.sessionKey` when set. One note per routing run, carrying at most `delivery.maxPerCycle` items (act-tier first, then priority) and a single copy of the priority guard; each item is logged as `item_delivered`. The cap spans the whole run, however many thinking passes it drained.
 2. **Overflow and failures queue.** Items past the cap, and items the gateway declines, go to `<workspace>/sapience/pending-deliveries.json` (`item_queued` / `delivery_failed` with `queued: true`). The `sapience-delivery` cron drains that queue every 15 minutes and composes one concise message delivered through your channel via cron announce — so a dead injection path degrades to latency, not silence.
 3. **Push** — high-priority act/propose items, notable watch moves, and the weekly digest additionally request a heartbeat targeting your last active channel, within the daily `push` budget.
 

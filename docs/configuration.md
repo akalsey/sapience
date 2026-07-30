@@ -74,7 +74,7 @@ Not configurable here: thinking passes read analytical playbooks from `<workspac
 | `digest.enabled` | `true` | Deliver the weekly digest |
 | `digest.day` | `"friday"` | Digest day (weekday name) |
 | `digest.time` | `"17:00"` | Digest time, `HH:MM` — minutes are honored; fires on the first routing run at/after this, once per day |
-| `delivery.maxPerCycle` | `3` | Items injected directly per routing cycle (act-tier first, then priority); the overflow queues for the `sapience-delivery` cron, which composes it into one message |
+| `delivery.maxPerCycle` | `1` | Items carried by the single note injected per routing run (act-tier first, then priority); the overflow queues for the `sapience-delivery` cron, which composes it into one message |
 | `delivery.dedupeWindowHours` | `72` | An item whose normalized text was already delivered within this window is suppressed (`item_suppressed`) instead of re-delivered — the thinking model re-emits the same finding under a fresh id, which pass-id dedupe never catches |
 | `delivery.sessionKey` | *(unset)* | Explicit target session for injections — see [Delivery target](#delivery-target) |
 | `push.enabled` | `true` | Proactive channel push: wake the agent to deliver high-priority act/propose items through the last active channel instead of waiting for your next turn |

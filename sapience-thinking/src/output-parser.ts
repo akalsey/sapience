@@ -30,8 +30,21 @@ function clampPriority(v: unknown): 1 | 2 | 3 | 4 | 5 {
   return Math.min(5, Math.max(1, n)) as 1 | 2 | 3 | 4 | 5;
 }
 
-function itemId(v: unknown): string {
+// The pass envelope is system-owned (the prompt tells the model not to emit
+// it), but a supplied one still round-trips — passes are keyed by it and a
+// caller replaying a known pass_id should get the same pass back.
+function passId(v: unknown): string {
   return typeof v === "string" && v.trim() ? v : randomUUID();
+}
+
+// The item id is the handle the agent hands back to record_outcome, so it has
+// to be unique. Models do not generate random UUIDs — they generate PATTERNED
+// ones and reuse them: across 1,217 production passes, 92 ids repeated and 88
+// of those carried different content each time, and one id named three
+// different pending actions inside a single delivered prompt. Whatever the
+// model emits is discarded; the id is ours to mint.
+function newItemId(): string {
+  return randomUUID();
 }
 
 function normObservation(raw: any): ProposalSet["observations"][number] | null {
@@ -39,7 +52,7 @@ function normObservation(raw: any): ProposalSet["observations"][number] | null {
   const text = asString(raw.text).trim();
   if (!text) return null;
   const o: ProposalSet["observations"][number] = {
-    id: itemId(raw.id), text, evidence: asString(raw.evidence), priority: clampPriority(raw.priority),
+    id: newItemId(), text, evidence: asString(raw.evidence), priority: clampPriority(raw.priority),
   };
   if (GRADES.has(raw.evidence_grade)) o.evidence_grade = raw.evidence_grade;
   return o;
@@ -50,7 +63,7 @@ function normAction(raw: any): ProposalSet["proposed_actions"][number] | null {
   const text = asString(raw.text).trim();
   if (!text) return null;
   const a: ProposalSet["proposed_actions"][number] = {
-    id: itemId(raw.id), text, rationale: asString(raw.rationale),
+    id: newItemId(), text, rationale: asString(raw.rationale),
     estimated_effort: EFFORTS.has(raw.estimated_effort) ? raw.estimated_effort : "medium",
     priority: clampPriority(raw.priority),
   };
@@ -63,14 +76,14 @@ function normAudit(raw: any): ProposalSet["proposed_audits"][number] | null {
   const domain = asString(raw.domain).trim();
   const rationale = asString(raw.rationale).trim();
   if (!domain && !rationale) return null;
-  return { id: itemId(raw.id), domain: domain || "general", rationale, priority: clampPriority(raw.priority) };
+  return { id: newItemId(), domain: domain || "general", rationale, priority: clampPriority(raw.priority) };
 }
 
 function normQuestion(raw: any): ProposalSet["open_questions"][number] | null {
   if (!raw || typeof raw !== "object") return null;
   const text = asString(raw.text).trim();
   if (!text) return null;
-  return { id: itemId(raw.id), text, blocking_what: asString(raw.blocking_what) };
+  return { id: newItemId(), text, blocking_what: asString(raw.blocking_what) };
 }
 
 function asArray(v: unknown): any[] {
@@ -110,7 +123,7 @@ export function normalizeProposals(raw: unknown): NormalizeResult {
   const hasContent = observations.length + proposed_actions.length + proposed_audits.length + open_questions.length > 0;
 
   const proposals: ProposalSet = {
-    pass_id: itemId(body.pass_id),
+    pass_id: passId(body.pass_id),
     timestamp: asString(body.timestamp) || new Date().toISOString(),
     observations,
     proposed_actions,

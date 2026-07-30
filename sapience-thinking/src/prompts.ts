@@ -27,7 +27,7 @@ Consider what has been happening recently. Look for:
 - Watch for repetition worth codifying: when the activity shows the same multi-step task done more than once (querying a data warehouse, pulling a CRM report, refreshing a recurring slide), propose logging it as a skill proposal — name it, say what the skill would do, and cite the repeated occurrences as evidence. Check the Open Skill Proposals section first; if it's already there, propose appending the new evidence instead.
 - Proposals reach the human asynchronously (on their next message, or via a budgeted channel push). An unresolved proposal usually means they haven't SEEN it yet — never conclude the human is ignoring you or that oversight has failed, and never escalate on that basis.
 - Priority 5 means "this likely needs human attention today." Use sparingly.
-- Each item needs its own "id" (a UUID). pass_id and timestamp are added by the system — do not include them.
+- Item ids, pass_id, and timestamp are added by the system — do not include them.
 - Every proposed_action MUST include an "estimated_effort" of exactly "small", "medium", or "large".
 - Mark proposed_actions with reversible: true only when the action can be cleanly undone (archive vs delete, draft vs send). Unknown or irreversible actions are never executed autonomously.
 - Grade observation evidence with evidence_grade: "hunch" for an unverified pattern-suspicion (a single case that might generalize, an untested correlation), "quick_check" when you verified it against the data at hand, "replicated" when it has held repeatedly. When in doubt, "hunch" — weak evidence framed as fact erodes trust.
@@ -37,10 +37,10 @@ Consider what has been happening recently. Look for:
 Call record_thinking_output() with a JSON object of EXACTLY this shape. All four arrays must be present (use [] when empty):
 
 {
-  "observations": [{"id": "<uuid>", "text": "...", "evidence": "...", "priority": 3, "evidence_grade": "hunch"}],
-  "proposed_actions": [{"id": "<uuid>", "text": "...", "rationale": "...", "estimated_effort": "medium", "priority": 3, "reversible": false}],
-  "proposed_audits": [{"id": "<uuid>", "domain": "...", "rationale": "...", "priority": 2}],
-  "open_questions": [{"id": "<uuid>", "text": "...", "blocking_what": "..."}],
+  "observations": [{"text": "...", "evidence": "...", "priority": 3, "evidence_grade": "hunch"}],
+  "proposed_actions": [{"text": "...", "rationale": "...", "estimated_effort": "medium", "priority": 3, "reversible": false}],
+  "proposed_audits": [{"domain": "...", "rationale": "...", "priority": 2}],
+  "open_questions": [{"text": "...", "blocking_what": "..."}],
   "nothing_to_report": false,
   "summary": "one or two sentences"
 }

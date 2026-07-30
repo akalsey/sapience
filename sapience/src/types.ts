@@ -46,8 +46,10 @@ export interface SapienceConfig {
     domainFloors: Record<string, "propose" | "ask" | "explore">;
   };
   digest: { enabled: boolean; day: string; time: string };
-  // Per routing cycle, at most this many items are injected directly; the
-  // rest queue for the delivery cron, which composes them into one message.
+  // Per routing run, at most this many items ship in the single injected
+  // note; the rest queue for the delivery cron, which composes them into one
+  // message. Default 1 — a turn carrying eight initiative questions ahead of
+  // the user's own message is nobody's idea of a calibration conversation.
   // dedupeWindowHours: an item whose text matches something already delivered
   // within this window is suppressed instead of re-delivered.
   delivery: { maxPerCycle: number; dedupeWindowHours: number };
@@ -96,7 +98,7 @@ export const DEFAULT_CONFIG: SapienceConfig = {
     domainFloors: {},
   },
   digest: { enabled: true, day: "friday", time: "17:00" },
-  delivery: { maxPerCycle: 3, dedupeWindowHours: 72 },
+  delivery: { maxPerCycle: 1, dedupeWindowHours: 72 },
   push: { enabled: true, maxPerDay: 6, minPriority: 4 },
   investigation: { enabled: true, maxPerDay: 3, minPriority: 3, timeoutSec: 120 },
   act: { execute: true, timeoutSec: 300 },

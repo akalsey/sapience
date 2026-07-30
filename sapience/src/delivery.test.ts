@@ -11,6 +11,17 @@ let dir: string;
 beforeEach(async () => { dir = await mkdtemp(join(tmpdir(), "delivery-")); });
 afterEach(async () => { await rm(dir, { recursive: true, force: true }); })
 
+// DEFAULT_CONFIG.output paths are workspace-relative, so any test that spreads
+// it without overriding EVERY path writes into the repo working tree — that is
+// how `sapience/sapience/pending-deliveries.json` got committed. Redirect the
+// whole map into the temp dir; overrides are for paths a test needs to read.
+function sandboxOutput(over: Partial<typeof DEFAULT_CONFIG.output> = {}) {
+  const redirected = Object.fromEntries(
+    Object.entries(DEFAULT_CONFIG.output).map(([key, rel]) => [key, join(dir, rel)])
+  ) as typeof DEFAULT_CONFIG.output;
+  return { ...redirected, ...over };
+}
+
 const base: RoutedItem = {
   id: "act-1", type: "action", text: "Fix the typo in dashboard query",
   domain: "posthog", action_class: "posthog/action",
@@ -28,6 +39,26 @@ const fakeApi = {
     },
   },
 };
+
+// Captures every injection so tests can assert how many separate notes a
+// routing run puts in front of the user, not just how many items it routed.
+function recordingApi() {
+  const injections: string[] = [];
+  return {
+    injections,
+    api: {
+      config: {},
+      session: {
+        workflow: {
+          enqueueNextTurnInjection: async (inj: { sessionKey: string; text: string }) => {
+            injections.push(inj.text);
+            return { enqueued: true, id: "1", sessionKey: inj.sessionKey };
+          },
+        },
+      },
+    },
+  };
+}
 
 const decliningApi = {
   config: {},
@@ -108,14 +139,14 @@ describe("buildTierPrompt", () => {
 });
 
 describe("deliverItems", () => {
-  it("delivers at most maxPerCycle items per pass and queues the overflow by priority", async () => {
+  it("delivers at most maxPerCycle items per routing run and queues the overflow by priority", async () => {
     const eventsPath = join(dir, "events.jsonl");
     const pendingDeliveriesPath = join(dir, "pending-deliveries.json");
     const config = {
       ...DEFAULT_CONFIG,
       push: { ...DEFAULT_CONFIG.push, enabled: false },
       delivery: { ...DEFAULT_CONFIG.delivery, maxPerCycle: 2 },
-      output: { ...DEFAULT_CONFIG.output, actionLogPath: join(dir, "action-log.md"), eventsPath, pendingDeliveriesPath },
+      output: sandboxOutput({ actionLogPath: join(dir, "action-log.md"), eventsPath, pendingDeliveriesPath }),
     };
     const items = [1, 2, 3, 4, 5].map((n) => ({
       ...base, id: `p${n}`, tier: "learning" as const, priority: (n <= 2 ? 5 : 2) as 5 | 2,
@@ -136,7 +167,7 @@ describe("deliverItems", () => {
     const config = {
       ...DEFAULT_CONFIG,
       push: { ...DEFAULT_CONFIG.push, enabled: false },
-      output: { ...DEFAULT_CONFIG.output, actionLogPath: join(dir, "action-log.md"), eventsPath, pendingDeliveriesPath },
+      output: sandboxOutput({ actionLogPath: join(dir, "action-log.md"), eventsPath, pendingDeliveriesPath }),
     };
     const item = { ...base, tier: "propose" as const };
     await deliverItems([item], decliningApi, config);
@@ -157,11 +188,10 @@ describe("deliverItems", () => {
     const config = {
       ...DEFAULT_CONFIG,
       push: { ...DEFAULT_CONFIG.push, enabled: false },
-      output: {
-        ...DEFAULT_CONFIG.output,
+      output: sandboxOutput({
         actionLogPath: join(dir, "action-log.md"),
         eventsPath,
-      },
+      }),
     };
     const item = { ...base, tier: "act" as const, confidence: 0.9 };
     await deliverItems([item], fakeApi, config);
@@ -178,7 +208,7 @@ describe("deliverItems", () => {
     const config = {
       ...DEFAULT_CONFIG,
       push: { ...DEFAULT_CONFIG.push, enabled: false },
-      output: { ...DEFAULT_CONFIG.output, actionLogPath: join(dir, "action-log.md"), eventsPath },
+      output: sandboxOutput({ actionLogPath: join(dir, "action-log.md"), eventsPath }),
     };
     await deliverItems([{ ...base, tier: "learning" as const, priority: 5 }], fakeApi, config);
     const events = (await readFile(eventsPath, "utf-8")).trim().split("\n").map((l) => JSON.parse(l));
@@ -193,11 +223,10 @@ describe("deliverItems", () => {
     const config = {
       ...DEFAULT_CONFIG,
       push: { ...DEFAULT_CONFIG.push, enabled: false },
-      output: {
-        ...DEFAULT_CONFIG.output,
+      output: sandboxOutput({
         actionLogPath: join(dir, "action-log.md"),
         eventsPath,
-      },
+      }),
     };
     const item = { ...base, tier: "propose" as const, confidence: 0.5, priority: 2 };
     await deliverItems([item], fakeApi, config);
@@ -215,12 +244,11 @@ describe("deliverItems", () => {
     const config = {
       ...DEFAULT_CONFIG,
       push: { enabled: true, maxPerDay: 1, minPriority: 4 },
-      output: {
-        ...DEFAULT_CONFIG.output,
+      output: sandboxOutput({
         actionLogPath: join(dir, "action-log.md"),
         eventsPath,
         pushStatePath: join(dir, "push-state.json"),
-      },
+      }),
     };
     const high1 = { ...base, id: "a1", tier: "act" as const, priority: 5 };
     const high2 = { ...base, id: "a2", tier: "act" as const, priority: 5 };
@@ -243,26 +271,87 @@ describe("deliverItems", () => {
     const config = {
       ...DEFAULT_CONFIG,
       push: { enabled: true, maxPerDay: 5, minPriority: 4 },
-      output: {
-        ...DEFAULT_CONFIG.output,
+      output: sandboxOutput({
         actionLogPath: join(dir, "action-log.md"),
         eventsPath: join(dir, "events.jsonl"),
         pushStatePath: join(dir, "push-state.json"),
-      },
+      }),
     };
     await deliverItems([{ ...base, tier: "act" as const, priority: 5 }], pushApi, config);
     expect(heartbeats).toHaveLength(0);
+  });
+
+  // Production: one turn arrived carrying 15 separate CALIBRATE notes, each
+  // with its own copy of the priority guard, ahead of a 23-character user
+  // message. Whatever survives the cap ships as ONE note with ONE guard.
+  it("coalesces the selected items into a single injection with one priority guard", async () => {
+    const { api, injections } = recordingApi();
+    const eventsPath = join(dir, "events.jsonl");
+    const config = {
+      ...DEFAULT_CONFIG,
+      push: { ...DEFAULT_CONFIG.push, enabled: false },
+      delivery: { ...DEFAULT_CONFIG.delivery, maxPerCycle: 3 },
+      output: sandboxOutput({ actionLogPath: join(dir, "action-log.md"), eventsPath, pendingDeliveriesPath: join(dir, "pending.json") }),
+    };
+    const items = [1, 2, 3].map((n) => ({ ...base, id: `p${n}`, text: `item text ${n}`, tier: "learning" as const }));
+    await deliverItems(items, api, config);
+
+    expect(injections).toHaveLength(1);
+    const note = injections[0]!;
+    expect(note.match(/user's message takes priority/g)).toHaveLength(1);
+    expect(note.match(/own words/g)).toHaveLength(1);
+    for (const item of items) expect(note).toContain(item.text);
+    // Each item still gets its own receipt and its own record_outcome handle.
+    const events = (await readFile(eventsPath, "utf-8")).trim().split("\n").map((l) => JSON.parse(l));
+    expect(events.filter((e) => e.type === "item_delivered").map((e) => e.proposal_id)).toEqual(["p1", "p2", "p3"]);
+    for (const item of items) expect(note).toContain(`proposal_id: "${item.id}"`);
+  });
+
+  it("defaults to one item per routing run", async () => {
+    const { api, injections } = recordingApi();
+    const pendingDeliveriesPath = join(dir, "pending-deliveries.json");
+    const config = {
+      ...DEFAULT_CONFIG,
+      push: { ...DEFAULT_CONFIG.push, enabled: false },
+      output: sandboxOutput({ actionLogPath: join(dir, "action-log.md"), eventsPath: join(dir, "events.jsonl"), pendingDeliveriesPath }),
+    };
+    const items = [1, 2, 3, 4].map((n) => ({ ...base, id: `p${n}`, tier: "learning" as const }));
+    await deliverItems(items, api, config);
+
+    expect(DEFAULT_CONFIG.delivery.maxPerCycle).toBe(1);
+    expect(injections).toHaveLength(1);
+    expect(injections[0]!.match(/\[SAPIENCE: CALIBRATE\]/g)).toHaveLength(1);
+    const { drainPendingDeliveries } = await import("./pending-deliveries.js");
+    expect((await drainPendingDeliveries(pendingDeliveriesPath)).map((q) => q.id)).toEqual(["p2", "p3", "p4"]);
+  });
+
+  it("queues every selected item when the single injection is declined", async () => {
+    const eventsPath = join(dir, "events.jsonl");
+    const pendingDeliveriesPath = join(dir, "pending-deliveries.json");
+    const config = {
+      ...DEFAULT_CONFIG,
+      push: { ...DEFAULT_CONFIG.push, enabled: false },
+      delivery: { ...DEFAULT_CONFIG.delivery, maxPerCycle: 2 },
+      output: sandboxOutput({ actionLogPath: join(dir, "action-log.md"), eventsPath, pendingDeliveriesPath }),
+    };
+    const items = [1, 2].map((n) => ({ ...base, id: `p${n}`, tier: "propose" as const }));
+    await deliverItems(items, decliningApi, config);
+
+    const { drainPendingDeliveries } = await import("./pending-deliveries.js");
+    expect((await drainPendingDeliveries(pendingDeliveriesPath)).map((q) => q.id).sort()).toEqual(["p1", "p2"]);
+    const events = (await readFile(eventsPath, "utf-8")).trim().split("\n").map((l) => JSON.parse(l));
+    expect(events.filter((e) => e.type === "delivery_failed")).toHaveLength(1);
+    expect(events.filter((e) => e.type === "item_delivered")).toHaveLength(0);
   });
 
   it("emits a delivery_failed event when the gateway declines the injection", async () => {
     const eventsPath = join(dir, "events.jsonl");
     const config = {
       ...DEFAULT_CONFIG,
-      output: {
-        ...DEFAULT_CONFIG.output,
+      output: sandboxOutput({
         actionLogPath: join(dir, "action-log.md"),
         eventsPath,
-      },
+      }),
     };
     const item = { ...base, tier: "propose" as const, confidence: 0.5 };
     await deliverItems([item], decliningApi, config);

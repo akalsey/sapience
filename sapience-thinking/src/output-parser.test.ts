@@ -73,7 +73,7 @@ describe("tolerant normalization", () => {
       ],
       open_questions: [{ id: "q1", blocking_what: "no text" }],
     });
-    expect(proposals.proposed_actions.map((a) => a.id)).toEqual(["a1"]);
+    expect(proposals.proposed_actions.map((a) => a.text)).toEqual(["keep me"]);
     expect(proposals.open_questions).toHaveLength(0);
     expect(dropped).toBe(2);
   });
@@ -109,5 +109,43 @@ describe("tolerant normalization", () => {
     const out = parseProposals({ summary: "quiet pass" });
     expect(out.nothing_to_report).toBe(true);
     expect(out.summary).toBe("quiet pass");
+  });
+});
+
+// Item ids are the handle the agent passes back to record_outcome, so they
+// must be unique. Models do not generate random UUIDs — they generate
+// PATTERNED ones and reuse them. Across 1,217 production passes, 92 ids were
+// reused and 88 of those carried different content each time; one id named
+// three different pending actions inside a single delivered prompt, making the
+// record_outcome call ambiguous by construction. The id is ours to mint.
+describe("host-generated item ids", () => {
+  const collide = "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d";
+  const V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+
+  it("discards the model's id and mints a fresh v4 uuid per item", () => {
+    const out = parseProposals({
+      ...validProposals,
+      observations: [{ id: collide, text: "An observation", evidence: "e", priority: 3 }],
+      proposed_actions: [{ id: collide, text: "An action", rationale: "r", estimated_effort: "small", priority: 3 }],
+      proposed_audits: [{ id: collide, domain: "d", rationale: "r", priority: 2 }],
+      open_questions: [{ id: collide, text: "A question", blocking_what: "b" }],
+    });
+    const ids = [
+      out.observations[0]!.id, out.proposed_actions[0]!.id,
+      out.proposed_audits[0]!.id, out.open_questions[0]!.id,
+    ];
+    for (const id of ids) {
+      expect(id).not.toBe(collide);
+      expect(id).toMatch(V4);
+    }
+    expect(new Set(ids).size).toBe(4);
+  });
+
+  it("mints distinct ids for two passes that reuse the same model id", () => {
+    const pass = () => parseProposals({
+      ...validProposals,
+      observations: [{ id: collide, text: "Auth has been failing for two hours", evidence: "e", priority: 4 }],
+    });
+    expect(pass().observations[0]!.id).not.toBe(pass().observations[0]!.id);
   });
 });

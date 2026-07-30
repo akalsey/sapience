@@ -4,3 +4,9 @@ dist/
 internal-docs/
 .claude/
 .controlflow/
+
+# Test leakage guard: DEFAULT_CONFIG output paths are workspace-relative,
+# so a test that misses one writes into the plugin source tree.
+*/sapience/
+*/proactive-thinking/
+*/goals/

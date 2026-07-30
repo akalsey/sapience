@@ -115,7 +115,7 @@ Every event has `ts` (ISO-8601), `plugin` (`thinking` | `sapience` | `feedback` 
 - `pending_deliveries_drained` — the delivery cron picked up queued items to compose into one message; field: `count`
 - `skill_proposal_created` / `skill_proposal_evidence` — a repeated multi-step task was logged as a skill spec, or matched an existing one and added evidence; fields: `proposal_id`, `evidence_count`
 - `skill_proposal_updated` — the human's decision was recorded; fields: `proposal_id`, `status` (`proposed`/`building`/`installed`/`declined`)
-- `delivery_failed` — a tier prompt, the digest, or a watch alert could not be injected; fields: `reason`, `queued` (whether it fell back to the pending queue), plus `tier`/`domain`, `what: "digest"`, or `what: "watch"`
+- `delivery_failed` — a tier prompt, the digest, or a watch alert could not be injected; fields: `reason`, `queued` (whether it fell back to the pending queue), plus `tier`/`domain` and `items` (how many items the declined note carried), `what: "digest"`, or `what: "watch"`
 - `config_invalid` — invalid `activeHours` config; running on defaults
 
 **sapience-feedback** (`plugin: "feedback"`):
