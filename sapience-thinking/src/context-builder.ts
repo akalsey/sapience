@@ -97,6 +97,38 @@ export async function buildGoalsContext(goalsPath: string): Promise<string> {
   }).join("\n");
 }
 
+// Restatement clustering for the rendered ledger. Mirrors sapience's own
+// near-duplicate rule (jaccard, or containment above a token floor) rather
+// than importing it — thinking reads sapience's files but never depends on
+// its package. Grouping by the `domain` field would not do: 23 of 25 entries
+// in the production ledger were domain "general", including all 8 that
+// described the same Google auth failure.
+// Keep these in lockstep with the same-named constants in sapience's
+// hypotheses.ts — the two copies exist to hold the package boundary, not
+// because they are allowed to drift.
+const SIMILARITY_THRESHOLD = 0.6;
+const CONTAINMENT_THRESHOLD = 0.65;
+const CONTAINMENT_MIN_TOKENS = 8;
+
+function hypothesisTokens(text: string): Set<string> {
+  return new Set(
+    text.toLowerCase().split(/[^a-z0-9]+/)
+      .filter((w) => w.length >= 3)
+      .map((w) => w.replace(/s$/, ""))
+  );
+}
+
+function restatesSame(a: string, b: string): boolean {
+  const ta = hypothesisTokens(a);
+  const tb = hypothesisTokens(b);
+  if (ta.size === 0 || tb.size === 0) return false;
+  let intersection = 0;
+  for (const w of ta) if (tb.has(w)) intersection++;
+  if (intersection / (ta.size + tb.size - intersection) >= SIMILARITY_THRESHOLD) return true;
+  const smaller = Math.min(ta.size, tb.size);
+  return smaller >= CONTAINMENT_MIN_TOKENS && intersection / smaller >= CONTAINMENT_THRESHOLD;
+}
+
 // Open cases from the sapience hypothesis ledger, so passes re-test them
 // opportunistically when adjacent data is in hand instead of forgetting them.
 export async function buildHypothesesContext(path: string): Promise<string> {
@@ -104,6 +136,7 @@ export async function buildHypothesesContext(path: string): Promise<string> {
     text?: string;
     status?: string;
     sightings?: number;
+    last_seen?: string;
     evidence?: Array<{ verdict?: string; note?: string }>;
   }
   let list: HypothesisLite[];
@@ -113,16 +146,27 @@ export async function buildHypothesesContext(path: string): Promise<string> {
   } catch {
     return "";
   }
-  const live = list
+  const ordered = list
     .filter((h) => h.status === "open" || h.status === "supported")
-    // Newest-first, capped: a hoarded ledger must not flood the pass context.
-    .sort((a, b) => Date.parse((b as { last_seen?: string }).last_seen ?? "") - Date.parse((a as { last_seen?: string }).last_seen ?? ""))
-    .slice(0, 10);
+    // Newest-first: a hoarded ledger must not flood the pass context.
+    .sort((a, b) => Date.parse(b.last_seen ?? "") - Date.parse(a.last_seen ?? ""));
+
+  // Collapse restatements BEFORE capping, so one fragmented suspicion cannot
+  // occupy the whole budget and read as a stack of independent findings.
+  const clusters: Array<{ head: HypothesisLite; restatements: number }> = [];
+  for (const h of ordered) {
+    const existing = clusters.find((c) => restatesSame(c.head.text ?? "", h.text ?? ""));
+    if (existing) existing.restatements++;
+    else clusters.push({ head: h, restatements: 0 });
+  }
+
+  const live = clusters.slice(0, 10);
   if (live.length === 0) return "";
-  return live.map((h) => {
-    const latest = h.evidence?.[h.evidence.length - 1];
+  return live.map(({ head, restatements }) => {
+    const latest = head.evidence?.[head.evidence.length - 1];
     const evidenceNote = latest?.note ? ` — latest: ${latest.verdict}, ${latest.note}` : "";
-    return `- [${h.status}] ${h.text ?? ""} (seen ${h.sightings ?? 1}x${evidenceNote})`;
+    const dupes = restatements > 0 ? `, ${restatements} more restatement${restatements > 1 ? "s" : ""} of this same case` : "";
+    return `- [${head.status}] ${head.text ?? ""} (seen ${head.sightings ?? 1}x${dupes}${evidenceNote})`;
   }).join("\n");
 }
 

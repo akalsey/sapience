@@ -97,7 +97,7 @@ Not configurable here: thinking passes read analytical playbooks from `<workspac
 | `output.goalsPath` | `"goals/goals.json"` | Goals store (read for the dashboard's goals summary) |
 | `output.pushStatePath` | `"sapience/push-state.json"` | Daily push budget tracking |
 | `output.investigationStatePath` | `"sapience/investigation-state.json"` | Daily investigation budget tracking |
-| `output.hypothesesPath` | `"sapience/hypotheses.json"` | Hypothesis ledger — open cases built from recurring hunches |
+| `output.hypothesesPath` | `"sapience/hypotheses.json"` | Hypothesis ledger — open cases built from recurring hunches. Retention is not configurable: a hunch nothing has corroborated expires after 72h, a corroborated one after 14 days, and refuted cases are kept 7 days for dedup. Corroboration means a `supported`/`refuted` verdict or a re-sighting in a later pass — an `inconclusive` verdict does not count |
 | `output.watchesPath` | `"sapience/watches.json"` | Metric watches and their reading history |
 | `output.pendingDeliveriesPath` | `"sapience/pending-deliveries.json"` | Queue drained by the `sapience-delivery` cron (failed injections + per-cycle overflow) |
 | `output.deliveredLedgerPath` | `"sapience/delivered-ledger.json"` | Content hashes of recently delivered items, for `delivery.dedupeWindowHours` |

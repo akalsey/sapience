@@ -72,7 +72,7 @@ export function buildPrompt(bundle: ContextBundle, signal: SignalReport | null, 
     sections.push([
       "## Open Hypotheses",
       "",
-      "Suspicions from earlier passes that haven't been settled. When the data in front of you touches one, test it and report what you find (with evidence_grade). Don't re-propose them as new observations.",
+      "Unsettled suspicions from earlier passes — guesses that were written down, NOT findings and NOT a count of how often anything happened. Several entries describing one subject means it got phrased several ways, not that it was confirmed several times. When the data in front of you touches one, test it against that data and report what you find (with evidence_grade). Never cite this section as evidence, and don't re-propose these as new observations.",
       "",
       bundle.openHypotheses,
     ].join("\n"));

@@ -300,6 +300,48 @@ describe("buildHypothesesContext", () => {
     expect(await buildHypothesesContext(join(tmpDir, "nope.json"))).toBe("");
   });
 
+  // One real Google auth failure fragmented into 8 ledger entries, and passes
+  // read that pile as 8 independent corroborations — grading the resulting
+  // observation "replicated" and citing the Open Hypotheses section itself as
+  // the evidence. Restatements of one suspicion must render as ONE case.
+  it("collapses restatements of one suspicion into a single line with a count", async () => {
+    const path = join(tmpDir, "hypotheses.json");
+    const at = (h: number) => new Date(Date.now() - h * 3600_000).toISOString();
+    const entry = (id: string, text: string, hours: number) => ({
+      id, text, domain: "general", status: "open", sightings: 1,
+      evidence: [], first_seen: at(hours), last_seen: at(hours),
+    });
+    await writeFile(path, JSON.stringify([
+      entry("g1", "The agent is requesting an unusually broad set of Google API scopes, including full access to Drive, Calendar, Gmail, Chat, Contacts, and other services, potentially indicating an over-privileged application or a very broad, undefined purpose.", 5),
+      entry("g2", "The agent is requesting an unusually broad set of Google API scopes, including full read/write access to Drive, Calendar, Gmail, Sheets, Contacts, Presentations, Documents, Chat, and Google Apps Script, among others.", 4),
+      entry("g3", "The agent is requesting an unusually large number and broad range of Google API scopes, suggesting it might be trying to cover many potential future tasks at once rather than a specific need.", 3),
+      entry("v", "Voice minutes spiked because of a single dialer customer", 2),
+    ]));
+    const text = await buildHypothesesContext(path);
+    const lines = text.split("\n").filter((l) => l.trim().startsWith("-"));
+    // g1+g2 are lexical restatements and collapse. g3 says the same thing in
+    // different words (0.36 containment against both) and does NOT — token
+    // overlap catches restatement, not paraphrase, and the threshold that
+    // would catch g3 would merge unrelated cases. The shorter un-corroborated
+    // expiry and the prompt's evidence rules are what stop a paraphrase pile
+    // from reading as corroboration; this only stops the cheapest form.
+    expect(lines).toHaveLength(3);
+    // The collapsed line has to say it stands for a restatement, so volume is
+    // visible as redundancy rather than as corroboration.
+    expect(text).toMatch(/1 more restatement of this same case/i);
+    expect(text).toContain("Voice minutes spiked");
+  });
+
+  it("leaves genuinely distinct hypotheses as separate lines", async () => {
+    const path = join(tmpDir, "hypotheses.json");
+    await writeFile(path, JSON.stringify([
+      { id: "a", text: "spend velocity decays before churn across customers", domain: "posthog", status: "open", sightings: 1, evidence: [], first_seen: "2026-07-01T00:00:00Z", last_seen: "2026-07-01T00:00:00Z" },
+      { id: "b", text: "voice minutes spike is one dialer customer", domain: "voice", status: "open", sightings: 1, evidence: [], first_seen: "2026-07-02T00:00:00Z", last_seen: "2026-07-02T00:00:00Z" },
+    ]));
+    const lines = (await buildHypothesesContext(path)).split("\n").filter((l) => l.trim().startsWith("-"));
+    expect(lines).toHaveLength(2);
+  });
+
   it("caps the rendered list at the 10 most recently seen so a hoarded ledger cannot flood the pass", async () => {
     const many = Array.from({ length: 30 }, (_, i) => ({
       text: `hypothesis number ${i}`, status: "open", sightings: 1,

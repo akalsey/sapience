@@ -65,6 +65,25 @@ describe("buildPrompt", () => {
     expect(prompt).toContain("whole body of evidence");
     expect(prompt).toContain("resolved");
   });
+
+  // The pass's own prior output was closing a loop: one real auth failure left
+  // 8 open hypotheses, and later passes cited "the Open Hypotheses section
+  // contains numerous entries" as the evidence for a "replicated" observation.
+  // Nothing in the prompt said the ledger is a pile of guesses rather than a
+  // tally of occurrences.
+  it("forbids treating the pass's own prior output as evidence of recurrence", async () => {
+    const prompt = await buildPrompt(bundle, null);
+    expect(prompt).toMatch(/never (count|treat).*(Open Hypotheses|prior output|your own)/i);
+    expect(prompt).toMatch(/not evidence/i);
+  });
+
+  // Passes read "no new session activity" as proof the problem was still live
+  // and escalated on it: "passes at 20:30, 20:45 and 21:00 all deferred to an
+  // earlier proposal, indicating no progress has been made."
+  it("tells the pass that absence of new activity is not evidence a problem persists", async () => {
+    const prompt = await buildPrompt(bundle, null);
+    expect(prompt).toMatch(/absence of new activity|quiet period|no new activity/i);
+  });
 });
 
 describe("delivery-aware prompt", () => {

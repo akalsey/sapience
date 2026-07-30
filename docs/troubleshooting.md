@@ -88,6 +88,12 @@ If `delivery_failed` and `item_queued` are piling up but nothing reaches your ch
 
 Fixed in 0.4.22, but worth knowing the shape: the thinking model re-emits a persistent finding under a fresh id every pass, so pass-id dedupe never catches it. Routing now suppresses repeats by normalized text for `delivery.dedupeWindowHours`. If it still repeats, check `<workspace>/sapience/playbooks.json` — a one-time directive stored as a permanent analytical playbook gets re-read as an unexecuted mandate every pass. Delete the offending entry; the classifier no longer stores directives as playbooks, and over-long entries are rejected with a `playbook_rejected` event.
 
+**Passes keep escalating a problem that really happened only once**
+
+The tell is an observation graded `replicated` whose `evidence` field cites the pass's own context rather than any activity — "the Open Hypotheses section contains numerous entries", "recent passes consistently point to this". Fixed in 0.5.3. The shape: one incident gets written into the hypothesis ledger several times under different wording, dedup doesn't catch the restatements, and every later pass reads the pile as that many independent confirmations — escalating priority as it goes. A production ledger turned a single Google auth failure into 8 open cases and sustained a four-day "persistent critical blocker" narrative from them.
+
+Check `<workspace>/sapience/hypotheses.json` for a cluster of entries all saying the same thing with `"sightings": 1` and `last_seen` equal to `first_seen`. Those are un-corroborated guesses; deleting them stops the loop immediately, and they now expire on their own after 72h. Two related habits are also fixed in the pass prompt: it no longer treats its own prior output as evidence of recurrence, and no longer reads a quiet period as proof a problem is ongoing.
+
 **A state file went missing / a `.corrupt-<timestamp>` file appeared**
 
 State files that fail to parse are quarantined to `<name>.corrupt-<timestamp>` (evidence preserved) and rebuilt from empty. The doctor lists quarantined files. Note the corrupt-`processed-passes.json` case is benign: an empty processed set triggers a bootstrap that marks all existing passes processed, so nothing is re-delivered.

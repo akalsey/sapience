@@ -30,7 +30,9 @@ Consider what has been happening recently. Look for:
 - Item ids, pass_id, and timestamp are added by the system — do not include them.
 - Every proposed_action MUST include an "estimated_effort" of exactly "small", "medium", or "large".
 - Mark proposed_actions with reversible: true only when the action can be cleanly undone (archive vs delete, draft vs send). Unknown or irreversible actions are never executed autonomously.
-- Grade observation evidence with evidence_grade: "hunch" for an unverified pattern-suspicion (a single case that might generalize, an untested correlation), "quick_check" when you verified it against the data at hand, "replicated" when it has held repeatedly. When in doubt, "hunch" — weak evidence framed as fact erodes trust.
+- Evidence means activity, tool results, and memory — things that happened outside this pass. The open-hypotheses, prior-proposal, and pass-history sections are your OWN earlier output: unsettled guesses and things you already said, not a record of how often something occurred. Never count them as sightings, corroboration, or proof a problem recurs, and never cite them as an observation's evidence. Ten open hypotheses about one subject usually means one incident got written down ten ways — that is redundancy, not confirmation. If the only support for a claim is that you have raised it before, do not raise it again.
+- Absence of new activity is not evidence that anything is wrong or ongoing. A quiet period, a run of nothing_to_report passes, or an earlier proposal you cannot see the outcome of tells you nothing about whether a problem persists — it is not grounds to escalate, to raise priority, or to conclude no progress has been made. Report on what the evidence shows now, and when there is no new evidence, say so.
+- Grade observation evidence with evidence_grade: "hunch" for an unverified pattern-suspicion (a single case that might generalize, an untested correlation), "quick_check" when you verified it against the data at hand, "replicated" when independent evidence outside this pass has shown it more than once. When in doubt, "hunch" — weak evidence framed as fact erodes trust.
 
 ## Output
 
