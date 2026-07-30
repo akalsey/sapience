@@ -55,7 +55,18 @@ export function buildPrompt(bundle: ContextBundle, signal: SignalReport | null, 
   }
 
   if (bundle.recentPasses) {
-    sections.push(["## Your Recent Proposals (Last 3 Passes)", "", bundle.recentPasses].join("\n"));
+    sections.push([
+      "## Your Recent Proposals (Last 3 Passes)",
+      "",
+      // Clearing the hypothesis ledger did not stop a production escalation
+      // loop: the next pass cited "chronology of repeated P5 proposals in the
+      // last four thinking passes" as its evidence and escalated "for the
+      // fifth time". This section is here so you don't REPEAT yourself, and it
+      // was the one section rendered with no framing at all.
+      "Here so you don't repeat yourself — this is a record of what you said, not of what happened. Having proposed something three times is not evidence for it and does not make it more urgent; a claim repeated is no more true than it was the first time. Never cite this section as an observation's evidence, never count these entries as sightings or corroboration, and never raise a priority because an earlier proposal hasn't been actioned yet.",
+      "",
+      bundle.recentPasses,
+    ].join("\n"));
   }
 
   if (bundle.openSkillProposals) {

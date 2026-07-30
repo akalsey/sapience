@@ -92,7 +92,9 @@ Fixed in 0.4.22, but worth knowing the shape: the thinking model re-emits a pers
 
 The tell is an observation graded `replicated` whose `evidence` field cites the pass's own context rather than any activity — "the Open Hypotheses section contains numerous entries", "recent passes consistently point to this". Fixed in 0.5.3. The shape: one incident gets written into the hypothesis ledger several times under different wording, dedup doesn't catch the restatements, and every later pass reads the pile as that many independent confirmations — escalating priority as it goes. A production ledger turned a single Google auth failure into 8 open cases and sustained a four-day "persistent critical blocker" narrative from them.
 
-Check `<workspace>/sapience/hypotheses.json` for a cluster of entries all saying the same thing with `"sightings": 1` and `last_seen` equal to `first_seen`. Those are un-corroborated guesses; deleting them stops the loop immediately, and they now expire on their own after 72h. Two related habits are also fixed in the pass prompt: it no longer treats its own prior output as evidence of recurrence, and no longer reads a quiet period as proof a problem is ongoing.
+Check `<workspace>/sapience/hypotheses.json` for a cluster of entries all saying the same thing with `"sightings": 1` and `last_seen` equal to `first_seen`. Those are un-corroborated guesses, and they now expire on their own after 72h.
+
+Deleting them is worth doing but **is not sufficient on its own** — there are two feeders. Clearing the production ledger did not stop the escalation: the very next pass cited "chronology of repeated P5 proposals in the last four thinking passes" instead and escalated again. The pass-history section feeds the loop independently of the ledger, and only the prompt changes close that one. If you are on a build before 0.5.3, expect the loop to continue from pass history even with an empty ledger; upgrading is the fix, and the gateway needs a restart to pick it up.
 
 **A state file went missing / a `.corrupt-<timestamp>` file appeared**
 

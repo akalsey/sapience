@@ -84,6 +84,18 @@ describe("buildPrompt", () => {
     const prompt = await buildPrompt(bundle, null);
     expect(prompt).toMatch(/absence of new activity|quiet period|no new activity/i);
   });
+
+  // Clearing the hypothesis ledger did NOT stop the production loop: the very
+  // next pass escalated "for the fifth time", citing "chronology of repeated P5
+  // proposals in the last four thinking passes" as its evidence. The pass
+  // history was the second feeder, and it was the one section rendered with a
+  // bare header and no framing at all.
+  it("frames the recent-proposals section so a repeat is not read as escalating evidence", async () => {
+    const prompt = await buildPrompt({ ...bundle, recentPasses: "## Pass at 22:45\nP5: fix the auth outage" }, null);
+    const section = prompt.slice(prompt.indexOf("## Your Recent Proposals"));
+    expect(section).toMatch(/not evidence|does not make it|no more true/i);
+    expect(section).toMatch(/repeat|again|same/i);
+  });
 });
 
 describe("delivery-aware prompt", () => {

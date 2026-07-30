@@ -24,3 +24,9 @@ and escalating to priority 5 over four days.
 - The pass prompt now forbids citing its own prior output as evidence of
   recurrence, and states that absence of new activity is not evidence a problem
   persists — passes had been escalating on runs of `nothing_to_report`.
+- The pass-history section gets framing of its own. Clearing the ledger in
+  production did not stop the loop: the next pass escalated "for the fifth
+  time", citing "chronology of repeated P5 proposals in the last four thinking
+  passes". It was the only section rendered as a bare header with no
+  instructions, and it now says plainly that a repeat is a record of what you
+  said, not evidence for it.
