@@ -96,6 +96,30 @@ Check `<workspace>/sapience/hypotheses.json` for a cluster of entries all saying
 
 Deleting them is worth doing but **is not sufficient on its own** — there are two feeders. Clearing the production ledger did not stop the escalation: the very next pass cited "chronology of repeated P5 proposals in the last four thinking passes" instead and escalated again. The pass-history section feeds the loop independently of the ledger, and only the prompt changes close that one. If you are on a build before 0.5.3, expect the loop to continue from pass history even with an empty ledger; upgrading is the fix, and the gateway needs a restart to pick it up.
 
+**Passes always say "no session activity" / the agent ignores what you told it**
+
+The pass reads session transcripts from disk. If it resolves the wrong directory it reads *nothing*, and — before 0.5.4 — reported that as "No recent session activity found", identical to a genuinely quiet day. A pass in that state has only its own prior output and the hypothesis ledger to reason from, which is how a single incident becomes a multi-day "persistent outage" the agent will defend against your direct correction.
+
+Check the status artifact at `~/.openclaw/sapience/status/sapience-thinking.json`:
+
+```
+"contextSessionsDir": "/home/you/.openclaw/agents/main/sessions",
+"contextSessionsDirExists": "true"
+```
+
+If `contextSessionsDirExists` is `"false"`, the pass is blind. From 0.5.4 the resolver probes several layouts and then scans `agents/*/sessions` for one that exists, so this should self-correct; the artifact tells you which path won. Sessions live at `agents/<id>/sessions` — a sibling of `agents/<id>/agent/`, not a child of it — and the agent is `main` on a default install, not `default`.
+
+**A supposed problem won't stay dead after you correct it**
+
+Hypotheses are unsettled guesses that thinking passes write down and read back as context. Telling the agent in chat that something isn't real doesn't clear them — before 0.5.4 nothing could, so the agent would agree with you, write a note to memory, and keep re-reading the same open cases. Have it call `hypothesis_resolve` with a few words describing the subject, a verdict, and what you checked:
+
+```
+hypothesis_resolve({ match: "google auth", verdict: "refuted",
+                     note: "verified working — oauth flow ran, list_drive_items succeeded" })
+```
+
+Every matching case is closed at once, so one correction clears a fragmented cluster. `hypothesis_list` shows what's currently open. Settled cases stop feeding passes immediately; refuted ones are kept 7 days for dedup, then dropped.
+
 **A state file went missing / a `.corrupt-<timestamp>` file appeared**
 
 State files that fail to parse are quarantined to `<name>.corrupt-<timestamp>` (evidence preserved) and rebuilt from empty. The doctor lists quarantined files. Note the corrupt-`processed-passes.json` case is benign: an empty processed set triggers a bootstrap that marks all existing passes processed, so nothing is re-delivered.

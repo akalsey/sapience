@@ -117,6 +117,30 @@ describe("buildTierPrompt", () => {
     }
   });
 
+  // The delivered note reads to the receiving agent like an independent
+  // monitoring signal, so it outranked the agent's own first-hand evidence.
+  // In production the agent ran the Google auth flow, confirmed it worked with
+  // a successful list_drive_items call, told the user so — and twelve minutes
+  // later a delivery arrived and it wrote "the cron job's message just now is
+  // definitive proof that the Google Authentication issue is not resolved",
+  // then apologized for having said it was fine. The pass that produced that
+  // note had seen none of the conversation.
+  it("every tier prompt discloses that the pass did not see the conversation", () => {
+    for (const tier of ["act", "propose", "ask", "explore", "learning"] as const) {
+      const p = buildTierPrompt({ ...base, tier });
+      expect(p, tier).toMatch(/did not see|has not seen|no visibility into/i);
+    }
+  });
+
+  it("every tier prompt ranks the agent's own first-hand evidence above the note", () => {
+    for (const tier of ["act", "propose", "ask", "explore", "learning"] as const) {
+      const p = buildTierPrompt({ ...base, tier });
+      expect(p, tier).toMatch(/first-hand|what you have (directly )?observed|your own evidence/i);
+      // and it must not read as confirmation of anything
+      expect(p, tier).toMatch(/not confirmation|not evidence|does not confirm/i);
+    }
+  });
+
   it("the act prompt records acted_on after execution; propose offers the reaction set", () => {
     expect(buildTierPrompt({ ...base, tier: "act" })).toContain('"acted_on"');
     const propose = buildTierPrompt({ ...base, tier: "propose" });

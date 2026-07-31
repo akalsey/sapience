@@ -134,6 +134,61 @@ export async function noteSighting(
   return fresh;
 }
 
+// A verdict settles a case, except `inconclusive`, which leaves it where it
+// was — an investigation that reached no answer has not changed anything.
+function nextStatus(current: Hypothesis["status"], verdict: HypothesisEvidence["verdict"]): Hypothesis["status"] {
+  if (verdict === "refuted") return "refuted";
+  if (verdict === "supported") return "supported";
+  return current;
+}
+
+// Does every meaningful word of `query` appear in `text`? Deliberately NOT
+// similar(): that metric compares two full hypothesis statements, and a real
+// correction is short ("google auth", "the scopes thing"). Two tokens sit
+// below the containment floor and score near zero on Jaccard, so similar()
+// would reject exactly the phrasing a human actually uses.
+function matchesQuery(query: string, text: string): boolean {
+  const q = [...tokens(query)];
+  if (q.length === 0) return false;
+  const t = tokens(text);
+  return q.every((w) => t.has(w));
+}
+
+// Settle every case matching a free-text description, and return what was
+// closed. This is the correction path: without it recordVerdict was reachable
+// only by the internal investigation subagent, so a user telling the agent
+// "you should have no active issues with google auth" had nowhere to land —
+// the agent said it had noted the resolution and the ledger kept all eight
+// fragments open, feeding them back into passes for four more days.
+//
+// Every fragment of a cluster is closed, not just the best match: one
+// correction has to clear the whole pile, or the user is made to repeat
+// themselves once per restatement.
+export async function resolveByText(
+  path: string,
+  query: string,
+  verdict: HypothesisEvidence["verdict"],
+  note: string
+): Promise<Hypothesis[]> {
+  const list = await loadHypotheses(path);
+  const hits = list.filter((h) => h.status !== "refuted" && matchesQuery(query, h.text));
+  if (hits.length === 0) return [];
+  const now = new Date().toISOString();
+  const ids = new Set(hits.map((h) => h.id));
+  const updated = list.map((h) =>
+    ids.has(h.id)
+      ? {
+          ...h,
+          status: nextStatus(h.status, verdict),
+          last_tested: now,
+          evidence: [...h.evidence, { at: now, verdict, note }],
+        }
+      : h
+  );
+  await writeJsonAtomic(path, updated);
+  return updated.filter((h) => ids.has(h.id));
+}
+
 export async function recordVerdict(
   path: string,
   id: string,
@@ -145,11 +200,9 @@ export async function recordVerdict(
   if (idx === -1) return;
   const h = list[idx]!;
   const now = new Date().toISOString();
-  const status: Hypothesis["status"] =
-    verdict === "refuted" ? "refuted" : verdict === "supported" ? "supported" : h.status;
   const updated: Hypothesis = {
     ...h,
-    status,
+    status: nextStatus(h.status, verdict),
     last_tested: now,
     evidence: [...h.evidence, { at: now, verdict, note }],
   };

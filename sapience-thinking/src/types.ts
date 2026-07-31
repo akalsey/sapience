@@ -90,6 +90,10 @@ export interface ContextBundle {
   activeGoals?: string;
   // Open cases from the hypothesis ledger, for opportunistic re-testing.
   openHypotheses?: string;
+  // True when the session directory could not be read at all. Distinct from a
+  // quiet period: the pass is blind rather than looking at an idle day, and
+  // callers surface it instead of letting it pass as silence.
+  sessionsDirMissing?: boolean;
   // Skill proposals awaiting the human's decision (sapience's ledger), so
   // passes append evidence instead of re-proposing the same pattern.
   openSkillProposals?: string;

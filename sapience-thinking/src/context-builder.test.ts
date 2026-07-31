@@ -32,9 +32,14 @@ function transcriptLine(role: string, text: string): string {
 }
 
 describe("buildContextFromDirs", () => {
-  it("returns empty context when session dir does not exist", async () => {
+  // This assertion used to read `toContain("No recent session activity")`,
+  // which is precisely the conflation that hid the outage: a misresolved path
+  // and an idle day produced the same sentence, so a green suite proved
+  // nothing about whether the pass could see anything.
+  it("reports a missing session dir as a fault, not as an absence of activity", async () => {
     const bundle = await buildContextFromDirs(config, join(tmpDir, "sessions"), [join(tmpDir, "memory")]);
-    expect(bundle.recentActivity).toContain("No recent session activity");
+    expect(bundle.recentActivity).not.toContain("No recent session activity");
+    expect(bundle.sessionsDirMissing).toBe(true);
   });
 
   it("extracts user/assistant messages from the real transcript schema", async () => {
@@ -171,7 +176,7 @@ describe("buildContextFromDirs", () => {
 });
 
 describe("resolveContextDirs", () => {
-  it("uses runtime resolvers and the configured wiki vault", () => {
+  it("uses runtime resolvers and the configured wiki vault", async () => {
     const api = {
       config: { plugins: { entries: { "memory-wiki": { config: { vault: { path: "/data/wiki/main" } } } } } },
       runtime: {
@@ -179,14 +184,14 @@ describe("resolveContextDirs", () => {
         agent: { resolveAgentDir: () => "/state/agents/main" },
       },
     };
-    const dirs = resolveContextDirs(api, "main");
+    const dirs = await resolveContextDirs(api, "main");
     expect(dirs.sessionsDir).toBe("/state/agents/main/sessions");
     expect(dirs.memoryDirs[0]).toBe("/data/wiki/main");
     expect(dirs.memoryDirs).toContain("/state/agents/main/memory");
   });
 
-  it("falls back to state-dir conventions when resolvers are absent", () => {
-    const dirs = resolveContextDirs({ config: {}, runtime: { state: { resolveStateDir: () => "/state" } } }, "main");
+  it("falls back to state-dir conventions when resolvers are absent", async () => {
+    const dirs = await resolveContextDirs({ config: {}, runtime: { state: { resolveStateDir: () => "/state" } } }, "main");
     expect(dirs.sessionsDir).toBe("/state/agents/main/sessions");
     expect(dirs.memoryDirs).toContain("/state/wiki/main");
   });
@@ -278,6 +283,67 @@ describe("goal todos in context", () => {
     const text = await buildGoalsContext(path);
     expect(text).toContain("baseline the weekly numbers");
     expect(text).not.toContain("already finished");
+  });
+});
+
+// The pass ran blind for weeks. `agent.id` does not exist in a real OpenClaw
+// config (it uses `agents.defaults`), so agentId fell back to "default" while
+// the live agent is "main"; and sessions live at agents/<id>/sessions, a
+// SIBLING of the agent data dir, not a child of it. Both errors resolved to a
+// path that never existed, buildContextFromDirs swallowed the ENOENT, and
+// every pass reported "No recent session activity found" while 116 transcripts
+// a day sat one directory away.
+describe("resolveContextDirs", () => {
+  const mkAgent = async (id: string, withSessions: boolean) => {
+    const dir = join(tmpDir, "agents", id);
+    await mkdir(join(dir, "agent"), { recursive: true });
+    if (withSessions) await mkdir(join(dir, "sessions"), { recursive: true });
+    return dir;
+  };
+  const api = (stateDir: string, agentDir?: string) => ({
+    runtime: {
+      state: { resolveStateDir: () => stateDir },
+      agent: agentDir ? { resolveAgentDir: () => agentDir } : undefined,
+    },
+    config: {},
+  });
+
+  it("resolves sessions as a sibling of the agent dir, not a child of it", async () => {
+    const agentDir = await mkAgent("main", true);
+    const dirs = await resolveContextDirs(api(tmpDir, join(agentDir, "agent")), "main");
+    expect(dirs.sessionsDir).toBe(join(tmpDir, "agents", "main", "sessions"));
+    expect(dirs.sessionsDirExists).toBe(true);
+  });
+
+  it("discovers the real agent when the configured id does not exist", async () => {
+    await mkAgent("main", true);
+    const dirs = await resolveContextDirs(api(tmpDir), "default");
+    expect(dirs.sessionsDir).toBe(join(tmpDir, "agents", "main", "sessions"));
+    expect(dirs.sessionsDirExists).toBe(true);
+  });
+
+  it("reports when no sessions directory can be found at all", async () => {
+    const dirs = await resolveContextDirs(api(tmpDir), "default");
+    expect(dirs.sessionsDirExists).toBe(false);
+  });
+});
+
+// Silence is what let this run for weeks: a missing directory and a quiet day
+// produced the identical string, so no pass and no reader could tell the
+// difference between "nothing happened" and "I am blind".
+describe("missing session directory is distinguishable from an empty one", () => {
+  it("says the directory is missing, not that there was no activity", async () => {
+    const bundle = await buildContextFromDirs(config, join(tmpDir, "nope"), []);
+    expect(bundle.recentActivity).toMatch(/could not be read|unavailable/i);
+    expect(bundle.sessionsDirMissing).toBe(true);
+  });
+
+  it("still says no activity when the directory exists but is empty", async () => {
+    const sessions = join(tmpDir, "sessions");
+    await mkdir(sessions, { recursive: true });
+    const bundle = await buildContextFromDirs(config, sessions, []);
+    expect(bundle.recentActivity).toContain("No recent session activity");
+    expect(bundle.sessionsDirMissing).toBeFalsy();
   });
 });
 

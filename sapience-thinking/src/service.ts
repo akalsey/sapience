@@ -91,7 +91,14 @@ export default definePluginEntry({
 
     const lockFile = join(workspaceDir, "proactive-thinking", ".pass.lock");
     const skipStatePath = join(workspaceDir, "proactive-thinking", ".skip-state.json");
-    const agentId: string = ((api.config as Record<string, unknown>)?.agent as Record<string, unknown>)?.id as string ?? "default";
+    // A real OpenClaw config has no `agent` key — it has `agents.defaults` —
+    // so this read is undefined on every install and the fallback is what
+    // actually decides. It said "default"; the gateway's built-in agent is
+    // "main" (every session key on production is `agent:main:*`), so the pass
+    // resolved a sessions path that has never existed. resolveContextDirs
+    // verifies whatever comes out of here against the disk, but the fallback
+    // should still name the agent that really exists.
+    const agentId: string = ((api.config as Record<string, unknown>)?.agent as Record<string, unknown>)?.id as string ?? "main";
 
     // A gateway restart means no pass can be running; drop any leftover lock.
     void clearLock(lockFile).catch(() => {});
@@ -102,20 +109,27 @@ export default definePluginEntry({
     // Refreshed on every cron run as a liveness heartbeat: register-time-only
     // artifacts made the doctor call healthy plugins "stale" on any gateway
     // that had simply been up longer than the staleness window.
-    const contextDirs = resolveContextDirs(api, agentId);
-    const touchArtifact = () => writeStatusArtifact({
-      pluginId: "sapience-thinking",
-      version: resolvePluginVersion(),
-      agentId,
-      resolvedWorkspaceDir: workspaceDir,
-      outputPaths: {
-        ...(config.output as unknown as Record<string, string>),
-        contextSessionsDir: contextDirs.sessionsDir,
-        contextMemoryDirs: contextDirs.memoryDirs.join(", "),
-      },
-      initAt: new Date().toISOString(),
-    }).catch(() => {});
-    void touchArtifact();
+    // Recording the path was not enough on its own: the artifact faithfully
+    // reported a sessions dir that had never existed and no one noticed,
+    // because a path is only observable if something asserts it resolves.
+    // contextSessionsDirExists is that assertion.
+    const touchArtifact = async () => {
+      const contextDirs = await resolveContextDirs(api, agentId);
+      return writeStatusArtifact({
+        pluginId: "sapience-thinking",
+        version: resolvePluginVersion(),
+        agentId,
+        resolvedWorkspaceDir: workspaceDir,
+        outputPaths: {
+          ...(config.output as unknown as Record<string, string>),
+          contextSessionsDir: contextDirs.sessionsDir,
+          contextSessionsDirExists: String(contextDirs.sessionsDirExists),
+          contextMemoryDirs: contextDirs.memoryDirs.join(", "),
+        },
+        initAt: new Date().toISOString(),
+      }).catch(() => {});
+    };
+    void touchArtifact().catch(() => {});
 
     // Post-task incidental noticing: peripheral vision over live sessions.
     const subscribeTranscripts = api?.runtime?.events?.onSessionTranscriptUpdate;
@@ -159,7 +173,7 @@ export default definePluginEntry({
       description: "Fetch context bundle and thinking instructions. Call this first in every thinking pass.",
       parameters: Type.Object({}),
       async execute(_id: any, _params: any) {
-        void touchArtifact();
+        void touchArtifact().catch(() => {});
         if (!isWithinActiveHours(config.activeHours)) {
           await logSkipOnce(skipStatePath, "outside_hours", () =>
             appendEvent(config.output.eventsPath, { plugin: "thinking", type: "pass_skipped", reason: "outside_hours" }));

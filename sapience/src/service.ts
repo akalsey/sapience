@@ -18,6 +18,7 @@ import { acquireLock, releaseLock, clearLock } from "./lock.js";
 import { rotateKeepingTail } from "./rotate.js";
 import { logSkipOnce, clearSkipState } from "./skip-log.js";
 import { appendEvent } from "./events.js";
+import { loadHypotheses, resolveByText } from "./hypotheses.js";
 import { generateDashboard } from "./dashboard.js";
 import { writeStatusArtifact, resolvePluginVersion } from "./status-artifact.js";
 import { enqueueMainSessionInjection } from "./main-session.js";
@@ -335,6 +336,77 @@ export default definePluginEntry({
           return { content: [{ type: "text", text: renderProposalsList(list) }] };
         } catch (err) {
           return { content: [{ type: "text", text: `[sapience] skill_proposal_list error: ${String(err)}` }] };
+        }
+      },
+    });
+
+    // The correction path. Thinking passes write hunches into the ledger and
+    // read them back as context, but until these tools existed nothing could
+    // settle one from a conversation: recordVerdict had a single caller, the
+    // internal investigation subagent. When a user said "you should have no
+    // active issues with google auth" the agent verified it, replied that the
+    // hypothesis was resolved, and wrote that to MEMORY.md — while all eight
+    // ledger fragments stayed open and drove four more days of escalation.
+    api.registerTool({
+      name: "hypothesis_list",
+      description:
+        "List the open hypotheses sapience is tracking, with ids. These are unsettled guesses from background thinking passes, not established facts — check them against what you actually know.",
+      parameters: { type: "object", properties: {} },
+      async execute(_id: any, _params: any) {
+        try {
+          const list = await loadHypotheses(config.output.hypothesesPath);
+          const live = list.filter((h) => h.status !== "refuted");
+          if (live.length === 0) return { content: [{ type: "text", text: "No open hypotheses." }] };
+          const text = live
+            .map((h) => `- [${h.id}] (${h.status}, seen ${h.sightings}x) ${h.text}`)
+            .join("\n");
+          return { content: [{ type: "text", text }] };
+        } catch (err) {
+          return { content: [{ type: "text", text: `[sapience] hypothesis_list error: ${String(err)}` }] };
+        }
+      },
+    });
+
+    api.registerTool({
+      name: "hypothesis_resolve",
+      description:
+        "Settle tracked hypotheses once you have real evidence — especially when the user tells you a supposed problem isn't real, or you verify first-hand that it is or isn't. Describe the subject in a few words (e.g. 'google auth') and every matching case is closed, so one correction clears the whole cluster. Use verdict 'refuted' when it is not true, 'supported' when confirmed. Record it as soon as you know; an unsettled hypothesis keeps feeding background passes.",
+      parameters: {
+        type: "object",
+        properties: {
+          match: { type: "string", description: "A few words describing the hypotheses to settle, e.g. 'google auth'." },
+          verdict: { type: "string", enum: ["refuted", "supported", "inconclusive"] },
+          note: { type: "string", description: "The evidence — what you checked, what the user said, what you observed." },
+        },
+        required: ["match", "verdict", "note"],
+      },
+      async execute(_id: any, params: any) {
+        try {
+          const closed = await resolveByText(
+            config.output.hypothesesPath,
+            String(params?.match ?? ""),
+            params?.verdict as "refuted" | "supported" | "inconclusive",
+            String(params?.note ?? "")
+          );
+          await appendEvent(config.output.eventsPath, {
+            plugin: "sapience",
+            type: "hypotheses_resolved",
+            match: String(params?.match ?? ""),
+            verdict: String(params?.verdict ?? ""),
+            count: closed.length,
+          });
+          if (closed.length === 0) {
+            return { content: [{ type: "text", text: `No open hypotheses matched "${params?.match}". Nothing to settle.` }] };
+          }
+          return {
+            content: [{
+              type: "text",
+              text: `Settled ${closed.length} hypothes${closed.length === 1 ? "is" : "es"} as ${params?.verdict}:\n` +
+                closed.map((h) => `- ${h.text}`).join("\n"),
+            }],
+          };
+        } catch (err) {
+          return { content: [{ type: "text", text: `[sapience] hypothesis_resolve error: ${String(err)}` }] };
         }
       },
     });

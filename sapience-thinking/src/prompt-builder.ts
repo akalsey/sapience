@@ -28,6 +28,17 @@ export function buildPrompt(bundle: ContextBundle, signal: SignalReport | null, 
     sections.push(["## Delivery Status — Read Before Interpreting Silence", "", bundle.deliveryWarning].join("\n"));
   }
 
+  // Ahead of the activity section it qualifies. A pass whose transcript
+  // directory misresolved read exactly like a pass on a quiet afternoon, and
+  // spent weeks concluding that "nothing new" meant "still broken".
+  if (bundle.sessionsDirMissing) {
+    sections.push([
+      "## Session Transcripts Unavailable — Read Before Interpreting Anything Below",
+      "",
+      "You cannot read any conversation this run: the session directory could not be opened. This is a configuration fault, not a quiet period. You do not know what the user has said, asked, corrected, or already resolved. Treat every conclusion about the current state of the world as unsupported, do not report problems as ongoing or unresolved on the strength of silence, and prefer reporting nothing over reporting a stale suspicion as live.",
+    ].join("\n"));
+  }
+
   sections.push(["## Recent Activity Context", "", bundle.recentActivity].join("\n"));
 
   if (playbooks && playbooks.length > 0) {

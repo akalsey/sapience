@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtemp, readFile, rm, writeFile } from "fs/promises";
 import { join } from "path";
 import { tmpdir } from "os";
-import { loadHypotheses, noteSighting, recordVerdict } from "./hypotheses.js";
+import { loadHypotheses, noteSighting, recordVerdict, resolveByText } from "./hypotheses.js";
 
 let dir: string;
 let path: string;
@@ -168,6 +168,52 @@ describe("ledger pruning", () => {
     // The newest sightings survive the cap.
     expect(live.map((h) => h.id)).toContain("h39");
     expect(live.map((h) => h.id)).not.toContain("h0");
+  });
+});
+
+// The correction path. A user said "you should have no active issues with
+// google auth", the agent verified it and replied that the hypothesis "has
+// been resolved and noted in my memory" — but recordVerdict had exactly one
+// caller (the internal investigation subagent) and no tool exposed it, so all
+// 8 entries stayed `open` and kept feeding passes for four more days. A
+// correction the agent cannot write down is a correction that does not exist.
+describe("resolveByText", () => {
+  it("closes the matching case by description when no id is known", async () => {
+    await noteSighting(path, { id: "h1", domain: "auth", text: "Google authentication is failing for all Drive requests" });
+    const closed = await resolveByText(path, "google authentication", "refuted", "verified working: list_drive_items succeeded");
+    expect(closed).toHaveLength(1);
+    const [stored] = await loadHypotheses(path);
+    expect(stored!.status).toBe("refuted");
+    expect(stored!.evidence.at(-1)!.note).toContain("list_drive_items");
+  });
+
+  // A short query is the realistic case — the user says "google auth", not a
+  // 40-token restatement. The dedup similarity metric cannot serve here: two
+  // tokens fall under its containment floor and score ~0 on Jaccard, so
+  // matching is "every word of the query appears in the case".
+  it("matches a short query that the dedup metric would score as unrelated", async () => {
+    await noteSighting(path, { id: "h1", domain: "auth", text: "The agent is requesting an unusually broad set of Google API scopes, including full access to Drive and Calendar" });
+    expect(await resolveByText(path, "google scopes", "refuted", "scopes are fine")).toHaveLength(1);
+  });
+
+  it("leaves unrelated cases alone", async () => {
+    await noteSighting(path, { id: "h1", domain: "voice", text: "voice minutes spike is one dialer customer" });
+    expect(await resolveByText(path, "google authentication", "refuted", "n/a")).toHaveLength(0);
+    expect((await loadHypotheses(path))[0]!.status).toBe("open");
+  });
+
+  // One correction must clear the whole fragmented cluster. Making the user
+  // repeat themselves once per restatement is how 8 entries survived a direct
+  // "you should have no active issues with google auth".
+  it("closes every fragment of the cluster, not just the first", async () => {
+    await noteSighting(path, { id: "a", domain: "auth", text: "The authorization URL is truncated for Google auth, suggesting a malformed URL" });
+    await noteSighting(path, { id: "b", domain: "auth", text: "Google auth fails because the redirect URI points at localhost" });
+    await noteSighting(path, { id: "c", domain: "voice", text: "voice minutes spike is one dialer customer" });
+    const closed = await resolveByText(path, "google auth", "refuted", "user confirmed auth works");
+    expect(closed).toHaveLength(2);
+    const stored = await loadHypotheses(path);
+    expect(stored.filter((h) => h.status === "refuted")).toHaveLength(2);
+    expect(stored.find((h) => h.id === "c")!.status).toBe("open");
   });
 });
 

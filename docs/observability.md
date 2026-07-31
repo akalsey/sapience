@@ -104,6 +104,7 @@ Every event has `ts` (ISO-8601), `plugin` (`thinking` | `sapience` | `feedback` 
 - `action_logged` — an act-tier action was taken autonomously; fields: `domain`, `action_class`, `confidence`
 - `act_executed` / `act_failed` — an act-tier item finished (or failed) executing in its isolated subagent session; fields: `proposal_id`, `domain`, `report`
 - `investigation_completed` — a hunch got its bounded read-only investigation; fields: `proposal_id`, `domain`, `verdict` (`supported`/`refuted`/`inconclusive`)
+- `hypotheses_resolved` — the agent settled tracked hypotheses via `hypothesis_resolve`, usually after a user correction or a first-hand check; fields: `match`, `verdict`, `count` (0 means nothing matched)
 - `push_requested` — a high-priority item requested a channel push (heartbeat to the last active channel); fields: `tier`, `domain`, `priority`, `requested`
 - `watch_added` / `watch_removed` — a metric watch was created or removed; field: `watch`
 - `watch_checked` — a due watch was checked; fields: `watch`, `value`, `notable`

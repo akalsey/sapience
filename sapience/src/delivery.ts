@@ -20,6 +20,19 @@ function outcomeInstruction(item: RoutedItem, guidance: string): string {
 const USER_FIRST =
   "(If the user's own message accompanies this note, the user's message takes priority — respond to it first and fully, then surface this briefly or hold it for a natural moment.)\n\n";
 
+// Where this note came from, and what it is not. A thinking pass runs in
+// isolation on a cron and reads no session transcripts, so anything it says
+// about the CURRENT state of the world is inference from stale artifacts.
+// Without this, deliveries read as an independent monitoring signal and
+// outrank the agent's own eyes: production ran the Google auth flow, confirmed
+// it working with a successful list_drive_items call, said so to the user, and
+// twelve minutes later declared "the cron job's message just now is definitive
+// proof that the Google Authentication issue is not resolved" — apologizing
+// for having reported the truth. The pass behind that note had seen none of
+// the conversation, including the user twice saying the problem wasn't real.
+const PROVENANCE =
+  "(Provenance: this came from a background thinking pass that did not see this conversation, did not run any check just now, and may be reasoning from stale or already-corrected information. It is a suggestion to weigh, not confirmation that anything is true. Your own first-hand evidence outranks it — a tool call you ran, something you observed, something the user told you. If it contradicts what you have directly observed or what the user has already corrected you on, say so plainly and trust the direct evidence. The arrival of this note is not proof the problem is real, and it is not a reason to apologize for having been right.)\n\n";
+
 // The user reads these notes daily; a scripted sentence repeated verbatim on
 // every delivery reads as machinery, not judgment. The instructions below
 // describe CONTENT — the model supplies the wording.
@@ -37,7 +50,7 @@ export function buildTierPrompt(item: RoutedItem): string {
 // of a 23-character user message, and no model reads the sixth copy of "this
 // is secondary" as secondary.
 export function buildBatchPrompt(items: RoutedItem[]): string {
-  return USER_FIRST + items.map(tierPromptBody).join("\n\n---\n\n") + OWN_WORDS;
+  return USER_FIRST + PROVENANCE + items.map(tierPromptBody).join("\n\n---\n\n") + OWN_WORDS;
 }
 
 function tierPromptBody(item: RoutedItem): string {

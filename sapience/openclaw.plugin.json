@@ -11,7 +11,9 @@
       "watch_remove",
       "skill_proposal",
       "skill_proposal_update",
-      "skill_proposal_list"
+      "skill_proposal_list",
+      "hypothesis_list",
+      "hypothesis_resolve"
     ]
   },
   "commandAliases": [

@@ -1,5 +1,5 @@
 import { readdir, readFile, stat } from "fs/promises";
-import { join } from "path";
+import { join, dirname } from "path";
 import { homedir } from "os";
 import type { ContextBundle, PluginConfig } from "./types.js";
 import { estimateTokens, resolvePath, extractTranscriptMessage } from "./utils.js";
@@ -211,6 +211,7 @@ export async function buildContextFromDirs(
 
   const chunks: string[] = [];
   let usedTokens = 0;
+  let sessionsDirMissing = false;
 
   try {
     const names = (await readdir(sessionDir)).filter(isTranscriptFile);
@@ -248,7 +249,13 @@ export async function buildContextFromDirs(
         usedTokens += tokens;
       }
     }
-  } catch { /* session dir absent — proceed with empty */ }
+  } catch {
+    // A missing session directory and a genuinely quiet day used to produce
+    // the identical "No recent session activity" string, so a misresolved path
+    // was indistinguishable from silence and went unnoticed for weeks while
+    // the pass reasoned entirely from its own prior output. Say which it is.
+    sessionsDirMissing = true;
+  }
 
   // Memory: wiki vault first (structured claims memory-wiki renders to disk),
   // then the legacy per-agent memory dir. Newest files first — memory recall
@@ -282,44 +289,127 @@ export async function buildContextFromDirs(
   const activeGoals = goalsPath ? await buildGoalsContext(goalsPath) : "";
 
   // chunks were pushed newest-first (files desc, entries reversed); restore chronological order
-  const activity = chunks.length > 0 ? chunks.reverse().join("\n") : "No recent session activity found.";
+  const activity = chunks.length > 0
+    ? chunks.reverse().join("\n")
+    : sessionsDirMissing
+      ? `SESSION TRANSCRIPTS UNAVAILABLE — the session directory could not be read (${sessionDir}). This is a configuration fault, not a quiet period: you are blind to all conversation, including anything the user has told or corrected you about. Do not infer from this that nothing happened or that any problem is unresolved.`
+      : "No recent session activity found.";
   const full = activity + memoryText;
 
-  return { recentActivity: full, recentPasses: "", activeGoals, tokenEstimate: estimateTokens(full) + estimateTokens(activeGoals) };
+  return {
+    recentActivity: full,
+    recentPasses: "",
+    activeGoals,
+    sessionsDirMissing,
+    tokenEstimate: estimateTokens(full) + estimateTokens(activeGoals),
+  };
 }
 
 export interface ContextDirs {
   sessionsDir: string;
   memoryDirs: string[];
+  sessionsDirExists: boolean;
+}
+
+async function isDir(path: string): Promise<boolean> {
+  try {
+    return (await stat(path)).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+// Every agent directory on disk that actually holds a sessions/ dir, newest
+// first. The last-resort answer to "the configured id is wrong" — which it was
+// in production for weeks.
+async function discoverAgentSessionDirs(stateDir: string): Promise<string[]> {
+  const root = join(stateDir, "agents");
+  let names: string[];
+  try { names = await readdir(root); } catch { return []; }
+  const found: Array<{ path: string; mtimeMs: number }> = [];
+  for (const name of names) {
+    const candidate = join(root, name, "sessions");
+    try {
+      const s = await stat(candidate);
+      if (s.isDirectory()) found.push({ path: candidate, mtimeMs: s.mtimeMs });
+    } catch { /* not an agent dir */ }
+  }
+  return found.sort((a, b) => b.mtimeMs - a.mtimeMs).map((f) => f.path);
 }
 
 // Resolve where sessions and memory actually live via the runtime when
 // available, with ~/.openclaw fallbacks. Memory lives in the memory-core store
 // and the wiki vault, not in the agent's own directory.
-export function resolveContextDirs(api: any, agentId: string): ContextDirs {
+//
+// Sessions are a SIBLING of the agent data dir: `agents/<id>/sessions` holds
+// the transcripts while `agents/<id>/agent/` holds sqlite, models and plugin
+// state. Joining "sessions" onto the agent dir — which this did — points at a
+// path that has never existed on any install.
+//
+// The id itself is checked against the disk rather than trusted: a real
+// OpenClaw config has no `agent.id` key (it uses `agents.defaults`), so a
+// plugin reading `config.agent?.id` gets undefined and whatever its fallback
+// says. The live agent is `main`. Candidates are tried in order and the first
+// one that exists wins, so a wrong id self-corrects instead of silently
+// yielding an empty context.
+export async function resolveContextDirs(api: any, agentId: string): Promise<ContextDirs> {
   let stateDir: string;
   try {
     stateDir = api?.runtime?.state?.resolveStateDir?.() ?? join(homedir(), ".openclaw");
   } catch {
     stateDir = join(homedir(), ".openclaw");
   }
-  let agentDir: string;
+  let runtimeAgentDir: string | undefined;
   try {
-    agentDir = api?.runtime?.agent?.resolveAgentDir?.(api?.config, agentId) ?? join(stateDir, "agents", agentId);
-  } catch {
-    agentDir = join(stateDir, "agents", agentId);
+    runtimeAgentDir = api?.runtime?.agent?.resolveAgentDir?.(api?.config, agentId);
+  } catch { /* helper absent or threw — fall through to path candidates */ }
+
+  const candidates = [...new Set([
+    // resolveAgentDir returns the agent DATA dir (`agents/<id>/agent`) on the
+    // production gateway, so sessions are its sibling. An older layout — and
+    // this plugin's own test mock — had it return the agent root, which is why
+    // the child form stayed wrong for weeks without failing a test. Probe both
+    // and let the disk decide which layout this install actually has.
+    ...(runtimeAgentDir ? [join(dirname(runtimeAgentDir), "sessions"), join(runtimeAgentDir, "sessions")] : []),
+    join(stateDir, "agents", agentId, "sessions"),
+    join(stateDir, "agents", "main", "sessions"),
+  ])];
+
+  // When nothing resolves, report the CONVENTIONAL path rather than the first
+  // guess — it is the one a human should go looking at.
+  let sessionsDir = join(stateDir, "agents", agentId, "sessions");
+  let sessionsDirExists = false;
+  for (const candidate of candidates) {
+    if (await isDir(candidate)) {
+      sessionsDir = candidate;
+      sessionsDirExists = true;
+      break;
+    }
   }
+
+  // Only when every cheap candidate missed: a readdir of agents/ plus a stat
+  // per entry is not worth paying on every pass just to discard the result.
+  if (!sessionsDirExists) {
+    const [discovered] = await discoverAgentSessionDirs(stateDir);
+    if (discovered) {
+      sessionsDir = discovered;
+      sessionsDirExists = true;
+    }
+  }
+
   const wikiPath: string =
     api?.config?.plugins?.entries?.["memory-wiki"]?.config?.vault?.path ?? join(stateDir, "wiki", "main");
+  const agentRoot = dirname(sessionsDir);
 
   return {
-    sessionsDir: join(agentDir, "sessions"),
-    memoryDirs: [wikiPath, join(agentDir, "memory")],
+    sessionsDir,
+    sessionsDirExists,
+    memoryDirs: [wikiPath, join(agentRoot, "memory"), join(agentRoot, "agent", "memory")],
   };
 }
 
 export async function buildContext(config: PluginConfig, api: any, agentId: string, workspaceDir: string): Promise<ContextBundle> {
-  const dirs = resolveContextDirs(api, agentId);
+  const dirs = await resolveContextDirs(api, agentId);
   // Conventions shared with sapience-goals' and sapience's default paths.
   const goalsPath = join(workspaceDir, "goals", "goals.json");
   const bundle = await buildContextFromDirs(config, dirs.sessionsDir, dirs.memoryDirs, goalsPath);

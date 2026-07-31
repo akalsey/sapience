@@ -85,6 +85,23 @@ describe("buildPrompt", () => {
     expect(prompt).toMatch(/absence of new activity|quiet period|no new activity/i);
   });
 
+  // Blindness has to be stated up front, not buried inside the activity
+  // section. A pass that cannot read transcripts saw the same "no activity"
+  // phrasing as a quiet afternoon and kept concluding that unresolved meant
+  // ongoing.
+  it("leads with a blindness warning when the session directory is unreadable", async () => {
+    const blind = { ...bundle, sessionsDirMissing: true };
+    const prompt = await buildPrompt(blind, null);
+    expect(prompt).toMatch(/cannot read|unable to read|blind/i);
+    // ahead of the activity section it qualifies
+    expect(prompt.indexOf("Recent Activity Context")).toBeGreaterThan(prompt.indexOf("## Session Transcripts Unavailable"));
+  });
+
+  it("says nothing about blindness when transcripts are readable", async () => {
+    const prompt = await buildPrompt(bundle, null);
+    expect(prompt).not.toContain("Session Transcripts Unavailable");
+  });
+
   // Clearing the hypothesis ledger did NOT stop the production loop: the very
   // next pass escalated "for the fifth time", citing "chronology of repeated P5
   // proposals in the last four thinking passes" as its evidence. The pass
