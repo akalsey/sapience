@@ -120,6 +120,20 @@ hypothesis_resolve({ match: "google auth", verdict: "refuted",
 
 Every matching case is closed at once, so one correction clears a fragmented cluster. `hypothesis_list` shows what's currently open. Settled cases stop feeding passes immediately; refuted ones are kept 7 days for dedup, then dropped.
 
+**The agent re-asks something you already answered, 15 minutes later**
+
+Deliveries are capped per cycle (`delivery.maxPerCycle`, default 1) and the overflow waits in `<workspace>/sapience/pending-deliveries.json`, which the `sapience-delivery` cron drains every 15 minutes. Before 0.5.6 nothing reconsidered that queue, so a burst of proposals written in one minute arrived over the following hours — including after you'd answered them. In production one pass produced an observation and the action derived from it; the user gave direction on the observation at 11:16 and the sibling action shipped at 11:30 as a fresh "would you like me to, or shall I check with you first?" about the very thing just settled.
+
+From 0.5.6, `record_outcome` retires queued deliveries that the answer speaks for — anything from the same pass, plus near-identical text from other passes — and logs a `stale_deliveries_dropped` event naming what went. Nothing is needed from you beyond letting the agent record the outcome, which the delivered prompt already instructs it to do.
+
+If it still repeats, check whether the repeats carry *different* `proposal_id`s from *different* passes written seconds apart. That is a separate fault — see below.
+
+**The same observation shows up several times in slightly different words**
+
+Look for several `noticed` events for one session within a second or two. Post-task noticing is meant to fire once per turn per cooldown (`noticing.cooldownMinutes`, default 15); a production install has been seen firing up to nine times, each side-pass wording the same remark differently so text dedup doesn't collapse them. Downstream this inflates one remark into several proposals and can get it graded `replicated`, as though independently confirmed.
+
+From 0.5.6 each `noticed` event carries `watcher` and `pid` to localize it — see [observability](./observability.md) for reading them. This is under investigation; the root cause is not in the cooldown itself, which is covered by test. Setting `noticing.enabled: false` disables the feature outright if the noise outweighs the value.
+
 **A state file went missing / a `.corrupt-<timestamp>` file appeared**
 
 State files that fail to parse are quarantined to `<name>.corrupt-<timestamp>` (evidence preserved) and rebuilt from empty. The doctor lists quarantined files. Note the corrupt-`processed-passes.json` case is benign: an empty processed set triggers a bootstrap that marks all existing passes processed, so nothing is re-delivered.

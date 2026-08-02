@@ -44,6 +44,17 @@ export class TurnWatcher {
   private buffers = new Map<string, string[]>();
   private lastNotice = new Map<string, number>();
 
+  // Production emits several side-passes for a single turn — four in 604ms on
+  // 2026-08-02, and 82% of bursts over 27 days involved more than one fire.
+  // The cooldown below provably prevents that within one instance (see the
+  // cooldown test), so the duplicates must come from somewhere else. Tagging
+  // each watcher, and reporting the tag with the pid on every `noticed` event,
+  // tells the three candidates apart: distinct tags on one pid means listeners
+  // are accumulating in a process that never unsubscribes; one tag across
+  // several pids means several gateway processes share these files; a single
+  // tag firing repeatedly would mean the guard itself is wrong.
+  readonly instanceId = randomUUID().slice(0, 8);
+
   constructor(private opts: WatcherOptions) {}
 
   observe(update: TranscriptUpdate): void {

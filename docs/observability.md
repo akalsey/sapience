@@ -93,7 +93,8 @@ Every event has `ts` (ISO-8601), `plugin` (`thinking` | `sapience` | `feedback` 
 - `proposals_coerced` — the pass's output was recovered from a malformed shape; items that couldn't be salvaged are counted; fields: `pass_id`, `dropped_items`
 - `outcome_recorded` — the agent recorded your reaction to a delivered proposal via `record_outcome`; fields: `proposal_id`, `outcome` (`acted_on`/`accepted`/`rejected`/`acknowledged`), `domain`, `action_class`
 - `audit_scheduled` / `audit_schedule_failed` — an accepted audit proposal was (or couldn't be) registered as a recurring `sapience-audit-<slug>` cron job; fields: `cron`, plus `reason` on failure
-- `noticed` — post-task noticing found incidental observations in a live session; fields: `session`, `observations`
+- `stale_deliveries_dropped` — answering a proposal retired queued deliveries that spoke to the same thing, so they aren't surfaced after you've already settled them; fields: `proposal_id` (the one you answered), `dropped`, `dropped_ids`
+- `noticed` — post-task noticing found incidental observations in a live session; fields: `session`, `observations`, `watcher`, `pid`. Several `noticed` events for one turn sharing a `pid` but carrying different `watcher` values mean transcript listeners are accumulating in that process; differing `pid`s mean more than one gateway process is writing these files.
 - `delivery_failed` — standalone-mode injection into the main session failed; field: `reason`
 - `config_invalid` — invalid `activeHours` config; running on defaults; fields: `field`, `errors`, `using`
 

@@ -7,7 +7,10 @@ import type { OutcomeMap, ProposalSet } from "./types.js";
 // proposal text as of this feature) with plain token-set similarity.
 
 const DEFAULT_WINDOW_DAYS = 14;
-const DEFAULT_THRESHOLD = 0.6;
+// Exported so the repeat-guard threshold has one source of truth: the same
+// notion of "this is the same proposal again" applies whether the duplicate is
+// caught before it is queued or after the user has answered its twin.
+export const DEFAULT_THRESHOLD = 0.6;
 
 function tokens(text: string): Set<string> {
   return new Set(

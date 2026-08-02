@@ -160,6 +160,9 @@ export default definePluginEntry({
                 await appendEvent(config.output.eventsPath, {
                   plugin: "thinking", type: "noticed",
                   session: sessionKey, observations: recorded.observations.length,
+                  // Provenance for the duplicate-side-pass investigation; see
+                  // the note on TurnWatcher.instanceId.
+                  watcher: watcher.instanceId, pid: process.pid,
                 });
               }
             } catch { /* peripheral vision must never disturb the main flow */ }
@@ -241,6 +244,15 @@ export default definePluginEntry({
               proposal_id: proposalId, outcome,
               domain: params?.domain, action_class: params?.action_class,
             });
+            // Queued siblings retired by this answer. Logged so a queue that
+            // silently empties is distinguishable from one that never filled.
+            if (result.staleDropped?.length) {
+              await appendEvent(config.output.eventsPath, {
+                plugin: "thinking", type: "stale_deliveries_dropped",
+                proposal_id: proposalId, dropped: result.staleDropped.length,
+                dropped_ids: result.staleDropped,
+              });
+            }
             // An accepted audit becomes recurring coverage: register the cron.
             const positive = outcome === "accepted" || outcome === "acted_on";
             if (positive && result.record?.proposal_type === "audit" && result.record.text) {

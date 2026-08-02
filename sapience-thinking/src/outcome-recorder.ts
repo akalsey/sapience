@@ -1,6 +1,7 @@
 import { join } from "path";
 import { loadOutcomes, saveOutcomes, resolveProposal } from "./outcome-tracker.js";
 import { readJsonSafe, writeJsonAtomic } from "./safe-json.js";
+import { dropStaleQueuedDeliveries } from "./stale-deliveries.js";
 import type { OutcomeRecord } from "./types.js";
 
 export type RecordableOutcome = "acted_on" | "accepted" | "rejected" | "acknowledged";
@@ -61,6 +62,8 @@ export interface RecordOutcomeResult {
   ok: boolean;
   message: string;
   record?: OutcomeRecord;
+  // Queued deliveries retired because this answer settled them.
+  staleDropped?: string[];
 }
 
 export async function recordOutcome(
@@ -78,5 +81,19 @@ export async function recordOutcome(
   if (params.domain && params.actionClass) {
     await adjustCalibration(workspaceDir, params.outcome, params.domain, params.actionClass);
   }
-  return { ok: true, message: `Recorded ${params.outcome} for ${params.proposalId}.`, record: updated[params.proposalId] };
+  // The user has now spoken about this. Anything still queued from the same
+  // thought would arrive minutes later re-asking what they just settled, so it
+  // is retired here rather than delivered. Never fatal: a queue that cannot be
+  // read or written must not cost the user their recorded outcome.
+  const staleDropped = await dropStaleQueuedDeliveries(
+    join(workspaceDir, "sapience", "pending-deliveries.json"),
+    updated,
+    params.proposalId
+  ).catch(() => [] as string[]);
+  return {
+    ok: true,
+    message: `Recorded ${params.outcome} for ${params.proposalId}.`,
+    record: updated[params.proposalId],
+    staleDropped,
+  };
 }

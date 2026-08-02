@@ -10,6 +10,9 @@ afterEach(async () => { await rm(dir, { recursive: true, force: true }); });
 
 const msg = (role: string, text: string) => ({ type: "message", message: { role, content: [{ type: "text", text }] } });
 
+// A key `isNoticeableSession` actually accepts — four segments, user-facing channel.
+const CHANNEL = "agent:main:telegram:direct:123";
+
 describe("TurnWatcher", () => {
   it("emits a completed turn when the assistant replies after substantial work", () => {
     const turns: string[] = [];
@@ -21,12 +24,42 @@ describe("TurnWatcher", () => {
     expect(turns[0]).toContain("duplicates of Apple");
   });
 
-  it("ignores tiny turns and honors the cooldown", () => {
+  // Session key must be a real channel key: `isNoticeableSession` rejects
+  // anything under four segments, so a placeholder like "k" would make this
+  // pass without ever reaching the length gate it claims to test.
+  it("ignores tiny turns", () => {
     const turns: string[] = [];
     const watcher = new TurnWatcher({ minTurnChars: 500, cooldownMs: 60_000, onTurn: (_key, text) => { turns.push(text); } });
-    watcher.observe({ sessionKey: "k", message: msg("user", "hi") });
-    watcher.observe({ sessionKey: "k", message: msg("assistant", "hello!") });
+    watcher.observe({ sessionKey: CHANNEL, message: msg("user", "hi") });
+    watcher.observe({ sessionKey: CHANNEL, message: msg("assistant", "hello!") });
     expect(turns).toHaveLength(0);
+  });
+
+  // The former version of this test fed a 12-char turn to minTurnChars:500, so
+  // it returned at the length gate and never reached the cooldown at all. The
+  // cooldown is the guard that should make a burst of assistant messages
+  // produce ONE side-pass; production saw four in 604ms, so it needs a test
+  // that actually exercises it.
+  it("honors the cooldown across successive substantial turns", () => {
+    const turns: string[] = [];
+    const watcher = new TurnWatcher({ minTurnChars: 20, cooldownMs: 60_000, onTurn: (_key, text) => { turns.push(text); } });
+    const long = "a genuinely substantial assistant reply about the salesforce export";
+    for (let i = 0; i < 4; i++) {
+      watcher.observe({ sessionKey: CHANNEL, message: msg("user", `question number ${i} with enough text to matter`) });
+      watcher.observe({ sessionKey: CHANNEL, message: msg("assistant", `${long} #${i}`) });
+    }
+    expect(turns).toHaveLength(1);
+  });
+
+  // Diagnostic: production emits several side-passes for one turn even though
+  // the cooldown above provably prevents that within a single instance. Each
+  // watcher is tagged so the `noticed` event can say whether the duplicates
+  // come from distinct instances (a listener leak) or one (a logic fault).
+  it("tags each instance with a distinct id", () => {
+    const a = new TurnWatcher({ minTurnChars: 10, cooldownMs: 0, onTurn: () => {} });
+    const b = new TurnWatcher({ minTurnChars: 10, cooldownMs: 0, onTurn: () => {} });
+    expect(a.instanceId).toBeTruthy();
+    expect(a.instanceId).not.toBe(b.instanceId);
   });
 
   it("never watches sapience's own sessions (no recursion)", () => {
