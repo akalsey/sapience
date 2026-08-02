@@ -67,6 +67,7 @@ The context bundle for each pass is built from what's actually on disk, resolved
 - **Memory** — the memory-wiki vault first, then the legacy per-agent memory dir; newest `.md` files first
 - **Active goals** — in-flight goals from `goals/goals.json` with each one's open todos, so passes weigh proposals by whether they advance a goal and can propose work that moves a specific todo
 - **Open hypotheses** — unsettled cases from sapience's hypothesis ledger, for opportunistic re-testing when adjacent data is in hand
+- **Installed skills** — the skills this install already has (`<workspace>/skills`, the state dir's `skills/`, plus any `skillsDirs` roots), name and description. A pass runs in an isolated cron session and would otherwise have no idea what exists, so it proposed building skills that were already installed
 - **Open skill proposals** — repeated tasks already logged in sapience's skill-proposal ledger and awaiting your decision, so a pass appends evidence instead of re-proposing them
 - **Analytical playbooks** — built-in analyst moves (decompose on delta, outlier check, denominator check, seasonality check, case-to-cohort) plus any you've taught via method feedback, loaded from `<workspace>/sapience/playbooks.json`. They're framed as techniques, never tasks: a pass may apply a playbook but never proposes executing one
 
@@ -86,7 +87,7 @@ Each entry in `log.md` has:
 
 A pass that found nothing useful logs `nothing_to_report: true`. Over time, this data shows when thinking passes are productive.
 
-Passes also watch for **repetition worth codifying**: the same multi-step task done more than once (a warehouse query, a CRM pull, a recurring slide) becomes a skill proposal — named, specified, with the repeated occurrences as evidence — logged through sapience's `skill_proposal` tool rather than built unbidden.
+Passes also watch for **repetition worth codifying**: the same multi-step task done more than once (a warehouse query, a CRM pull, a recurring slide) becomes a skill proposal — named, specified, with the repeated occurrences as evidence — logged through sapience's `skill_proposal` tool rather than built unbidden. The installed-skills inventory is checked first: if a skill already does the job, the finding is that it wasn't used; if one nearly does, the pass proposes extending that skill by name. Sapience's ledger enforces the same rule at the door and refuses duplicates.
 
 Before anything is recorded, proposals are deduplicated against the last 14 days of outcome history — a proposal you dismissed last week doesn't resurface reworded. Drops are logged as `proposals_deduped` events. Output that doesn't parse cleanly is recovered where possible rather than discarding the whole pass; unsalvageable items are counted in a `proposals_coerced` event. Downstream, sapience additionally suppresses items whose text it already delivered in the last 72 hours.
 

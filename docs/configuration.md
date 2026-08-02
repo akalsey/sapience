@@ -54,6 +54,7 @@ The equivalent JSON:
 | `learning.trackOutcomes` | `true` | Record each proposal in `outcomes.json` |
 | `learning.adjustPromptBasedOnSignal` | `true` | Feed signal-to-noise stats back into the thinking prompt |
 | `learning.bootstrapDays` | `14` | Days of data required before the signal report kicks in |
+| `skillsDirs` | `[]` | Extra roots to scan for already-installed skills, on top of `<workspace>/skills` and `<state-dir>/skills`. A pass sees the inventory in its prompt so it proposes new skills instead of ones that exist; keep this in step with sapience's key of the same name |
 
 Not configurable here: thinking passes read analytical playbooks from `<workspace>/sapience/playbooks.json` (a fixed path). The *write* side of that file is sapience-feedback's `playbooksPath` key.
 
@@ -88,6 +89,7 @@ Not configurable here: thinking passes read analytical playbooks from `<workspac
 | `act.timeoutSec` | `300` | Timeout for one act execution |
 | `watch.maxChecksPerRun` | `2` | Cap on metric-watch checks per routing pass |
 | `watch.timeoutSec` | `120` | Timeout for one watch-check subagent run |
+| `skillsDirs` | `[]` | Extra roots to scan for already-installed skills, on top of `<workspace>/skills` and `<state-dir>/skills`. `skill_proposal` refuses to log a proposal that duplicates a skill it can see, so an install that keeps skills elsewhere should list those roots here (and in sapience-thinking's key of the same name) |
 | `domains` | `{}` | Extra domain taxonomy: `{"<regex>": "<slug>"}` patterns matched against proposal text, checked before the builtins (github, salesforce, posthog, lovable, slack, google-docs, slides, okr-system, linear, credentials) |
 | `output.calibrationPath` | `"sapience/calibration.json"` | Autonomy calibration profile |
 | `output.actionLogPath` | `"sapience/action-log.md"` | Prose log of Act-tier items |

@@ -62,6 +62,11 @@ export interface SapienceConfig {
   act: { execute: boolean; timeoutSec: number };
   // Metric watches checked during routing passes.
   watch: { maxChecksPerRun: number; timeoutSec: number };
+  // Extra roots to scan for already-installed skills, on top of
+  // `<workspace>/skills` and the state dir's `skills/`. Only needed when an
+  // install keeps skills somewhere unconventional — the skill_proposal guard
+  // can only refuse duplicates of skills it can see.
+  skillsDirs: string[];
   output: {
     calibrationPath: string;
     actionLogPath: string;
@@ -103,6 +108,7 @@ export const DEFAULT_CONFIG: SapienceConfig = {
   investigation: { enabled: true, maxPerDay: 3, minPriority: 3, timeoutSec: 120 },
   act: { execute: true, timeoutSec: 300 },
   watch: { maxChecksPerRun: 2, timeoutSec: 120 },
+  skillsDirs: [],
   output: {
     calibrationPath: "sapience/calibration.json",
     actionLogPath: "sapience/action-log.md",

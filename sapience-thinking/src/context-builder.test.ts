@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtemp, rm, mkdir, writeFile } from "fs/promises";
 import { join } from "path";
 import { tmpdir } from "os";
-import { buildContextFromDirs, resolveContextDirs, buildGoalsContext, buildHypothesesContext, getLastThreePasses } from "./context-builder.js";
+import { buildContext, buildContextFromDirs, resolveContextDirs, buildGoalsContext, buildHypothesesContext, getLastThreePasses } from "./context-builder.js";
 import type { PluginConfig } from "./types.js";
 import { DEFAULT_CONFIG } from "./types.js";
 
@@ -492,5 +492,32 @@ describe("machine-session exclusion", () => {
     ].join("\n") + "\n");
     const bundle = await buildContextFromDirs(config, sessionDir, [join(tmpDir, "memory")]);
     expect(bundle.recentActivity).toContain("salesforce duplicates");
+  });
+});
+
+// The pass sees no skills of its own — it runs in an isolated cron session.
+// Without this it proposed building skills the install already had, and the
+// proposal ledger, which only deduped against its own entries, logged them.
+describe("installed skills reach the pass context", () => {
+  it("reads the workspace and state skill roots", async () => {
+    const workspace = join(tmpDir, "workspace");
+    await mkdir(join(workspace, "skills", "usage-report"), { recursive: true });
+    await writeFile(
+      join(workspace, "skills", "usage-report", "SKILL.md"),
+      "---\nname: usage-report\ndescription: Weekly usage rollup by product kind.\n---\n\n# body\n"
+    );
+    await mkdir(join(tmpDir, "skills", "pdf"), { recursive: true });
+    await writeFile(join(tmpDir, "skills", "pdf", "SKILL.md"), "---\nname: pdf\ndescription: Work with PDFs.\n---\n");
+
+    const api = { config: {}, runtime: { state: { resolveStateDir: () => tmpDir } } };
+    const bundle = await buildContext(config, api, "main", workspace);
+    expect(bundle.installedSkills).toContain("usage-report — Weekly usage rollup");
+    expect(bundle.installedSkills).toContain("pdf — Work with PDFs.");
+  });
+
+  it("is empty on an install with no skills", async () => {
+    const api = { config: {}, runtime: { state: { resolveStateDir: () => join(tmpDir, "state") } } };
+    const bundle = await buildContext(config, api, "main", join(tmpDir, "workspace"));
+    expect(bundle.installedSkills).toBe("");
   });
 });

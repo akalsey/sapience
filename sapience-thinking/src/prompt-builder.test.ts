@@ -188,6 +188,32 @@ describe("playbooks section", () => {
   });
 });
 
+describe("installed skills section", () => {
+  it("lists what already exists, ahead of the open proposals", async () => {
+    const prompt = buildPrompt({
+      ...bundle,
+      installedSkills: "- pdf — Work with PDF files.",
+      openSkillProposals: "- [s1] weekly-usage-divergence — WoW attribution (proposed, evidence ×2)",
+    }, null);
+    expect(prompt).toContain("## Installed Skills — Already Built");
+    expect(prompt).toContain("- pdf — Work with PDF files.");
+    expect(prompt.indexOf("## Installed Skills")).toBeLessThan(prompt.indexOf("## Open Skill Proposals"));
+  });
+
+  it("tells the pass to extend an existing skill rather than propose a duplicate", async () => {
+    const prompt = buildPrompt({ ...bundle, installedSkills: "- pdf — Work with PDF files." }, null);
+    expect(prompt).toMatch(/propose extending THAT skill/i);
+  });
+
+  it("omits the section when nothing is installed", async () => {
+    expect(buildPrompt(bundle, null)).not.toContain("## Installed Skills");
+  });
+
+  it("the base prompt makes the installed-skills check the first step before proposing one", async () => {
+    expect(buildPrompt(bundle, null)).toContain("Installed Skills: if a skill already does the job");
+  });
+});
+
 describe("open skill proposals section", () => {
   it("surfaces open proposals with a no-re-propose instruction", async () => {
     const prompt = buildPrompt({ ...bundle, openSkillProposals: "- [s1] weekly-usage-divergence — WoW attribution (proposed, evidence ×2)" }, null);

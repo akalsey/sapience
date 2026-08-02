@@ -3,6 +3,7 @@ import { join, dirname } from "path";
 import { homedir } from "os";
 import type { ContextBundle, PluginConfig } from "./types.js";
 import { estimateTokens, resolvePath, extractTranscriptMessage } from "./utils.js";
+import { buildInstalledSkillsContext, discoverInstalledSkills, resolveSkillDirs } from "./installed-skills.js";
 
 // OpenClaw session transcript line: role/content nested under `message`, with
 // content as a string or an array of {type:"text", text} blocks. Legacy
@@ -415,6 +416,11 @@ export async function buildContext(config: PluginConfig, api: any, agentId: stri
   const bundle = await buildContextFromDirs(config, dirs.sessionsDir, dirs.memoryDirs, goalsPath);
   bundle.openHypotheses = await buildHypothesesContext(join(workspaceDir, "sapience", "hypotheses.json"));
   bundle.openSkillProposals = await buildSkillProposalsContext(join(workspaceDir, "sapience", "skill-proposals.json"));
+  // What already exists. A pass that can't see the installed skills proposes
+  // building things the install has had for months.
+  bundle.installedSkills = buildInstalledSkillsContext(
+    await discoverInstalledSkills(resolveSkillDirs(api, workspaceDir, config.skillsDirs))
+  );
   return bundle;
 }
 

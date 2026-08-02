@@ -80,6 +80,20 @@ export function buildPrompt(bundle: ContextBundle, signal: SignalReport | null, 
     ].join("\n"));
   }
 
+  // Ahead of the open-proposals section: what EXISTS outranks what was
+  // suggested. A pass with no skill context proposed building a skill the
+  // install already had, and the ledger — which only ever deduped against its
+  // own entries — logged it and told the operator about it.
+  if (bundle.installedSkills) {
+    sections.push([
+      "## Installed Skills — Already Built",
+      "",
+      "Skills this install already has. Before proposing that any repeated task be codified, check it against this list: if a skill here does the job, the finding is that it wasn't used, not that something needs building. If one nearly does it, propose extending THAT skill by name. Only propose a new skill when nothing here covers the work, and say which of these came closest and why it doesn't fit.",
+      "",
+      bundle.installedSkills,
+    ].join("\n"));
+  }
+
   if (bundle.openSkillProposals) {
     sections.push([
       "## Open Skill Proposals",

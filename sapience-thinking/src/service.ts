@@ -47,6 +47,9 @@ function mergeConfig(raw: Record<string, unknown>, workspaceDir: string): Plugin
     delivery: { ...DEFAULT_CONFIG.delivery, ...((raw.delivery as object) ?? {}) },
     noticing: { ...DEFAULT_CONFIG.noticing, ...((raw.noticing as object) ?? {}) },
     learning: { ...DEFAULT_CONFIG.learning, ...((raw.learning as object) ?? {}) },
+    skillsDirs: (Array.isArray(raw.skillsDirs) ? (raw.skillsDirs as string[]) : DEFAULT_CONFIG.skillsDirs)
+      .filter((d): d is string => typeof d === "string" && d.trim() !== "")
+      .map((d) => resolveDataPath(d, workspaceDir, d)),
   };
 }
 
