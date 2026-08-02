@@ -1,5 +1,88 @@
 # @akalsey/sapience-thinking
 
+## 0.5.6
+
+### Patch Changes
+
+- 03135fa: Retire queued deliveries once you've answered what they were about.
+
+  Deliveries are capped per cycle and the overflow waits in a durable queue the
+  delivery cron drains every 15 minutes. Nothing ever reconsidered that queue, so
+  it behaved as a time-delay line: a burst of proposals written in one minute
+  arrived over the following hours, with no regard for what the user said in
+  between.
+
+  Production, 2026-08-02: one pass produced an observation about a reasoning flaw
+  and the action derived from it. The user gave explicit direction on the
+  observation at 18:17. The sibling action was still queued and the cron delivered
+  it at 18:30 as a fresh "would you like me to go ahead, or shall I check with you
+  first?" about the subject just settled — 13 minutes after they settled it.
+
+  `record_outcome` now retires queued deliveries the answer speaks for. Two ways
+  an entry qualifies: it came from the same pass — one pass is one unit of
+  reasoning, and its observation plus the action derived from that observation are
+  facets of a single thought — or its text is near-identical to the answered one,
+  which catches the case where the same remark was emitted under several pass ids.
+  Entries with no outcome record are left alone, since absence isn't evidence of
+  staleness. A `stale_deliveries_dropped` event names what went.
+
+  Replayed against the production tracker, the same-pass rule is what does the
+  work here: the two items score 0.196 on text similarity, far under the 0.6 bar.
+
+  Removal applies to the queue as it is on disk at write time, not to the snapshot
+  read a moment earlier. The file has three unsynchronized writers across two
+  plugin processes and no shared lock, so writing back a stale snapshot could
+  clobber a concurrent drain and put already-delivered items back in the queue —
+  the same repeat, through a different door.
+
+  Also adds a diagnostic for a related fault still under investigation: post-task
+  noticing fires several times for a single turn (four in 604ms on 2026-08-02;
+  82% of bursts over 27 days involved more than one fire, up to nine), each
+  side-pass wording the same remark differently so text dedup can't collapse them.
+  The cooldown is not the cause — it is correct within an instance — so each
+  `TurnWatcher` now reports an `instanceId` and pid on every `noticed` event,
+  which distinguishes accumulating listeners from multiple gateway processes. The
+  four side-passes in that burst quote heavily overlapping evidence spans (one
+  pair shares all three; six distinct spans across the whole burst), so they read
+  the same transcript rather than successive slices of it — which is what several
+  watchers holding identical buffers would produce, and not what one watcher
+  firing repeatedly would, since it clears its buffer on every fire.
+
+  Fixes two tests that passed for the wrong reason: the cooldown test fed a
+  12-character turn to `minTurnChars: 500` and returned at the length gate without
+  ever reaching the cooldown, and both it and the tiny-turn test used a session key
+  that `isNoticeableSession` rejects outright.
+
+## 0.5.5
+
+### Patch Changes
+
+- a39c1d0: Stop proposing skills the install already has.
+
+  A thinking pass proposed building a skill that was already installed, and the
+  ledger logged it and told the operator about it. Nothing in the suite had ever
+  looked at the installed skills: `skill_proposal` deduped only against its own
+  earlier entries, and a pass runs in an isolated cron session with no skill
+  context at all — so "this task keeps repeating, make it a skill" had no way to
+  notice that someone already did.
+
+  Both ends now read the same inventory: `<workspace>/skills`, the state dir's
+  `skills/`, and any roots listed in the new `skillsDirs` key (both plugins),
+  parsed from each skill's `SKILL.md` frontmatter.
+
+  - **sapience-thinking** renders an "Installed Skills — Already Built" section
+    into the pass prompt, ahead of the open-proposals section, and the pass
+    instruction now orders the two checks: if an installed skill does the job the
+    finding is that it wasn't used, not that something needs building; if one
+    nearly does, extend that skill by name.
+  - **sapience** enforces it at the ledger's door, which is the one point every
+    path goes through. A proposal naming an installed skill is refused outright.
+    A proposal that overlaps one is refused once with the closest skills named,
+    and goes through only when the caller re-calls with `not_covered_by` saying
+    what the existing skill can't do — which is then recorded in the spec, so the
+    human reading it sees the ruling. Refusals emit
+    `skill_proposal_duplicate_blocked`.
+
 ## 0.5.4
 
 ### Patch Changes
