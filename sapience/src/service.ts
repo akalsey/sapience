@@ -28,6 +28,7 @@ import { executeActItems } from "./act-executor.js";
 import { checkDueWatches } from "./watch-checker.js";
 import { addWatch, removeWatch, loadWatches, renderWatches, type DeltaPolicy } from "./watches.js";
 import { upsertProposal, updateProposalStatus, loadProposals, renderProposalsList, type SkillProposalStatus } from "./skill-proposals.js";
+import { resolveSkillDirs, discoverInstalledSkills, checkAgainstInstalledSkills, renderInstalledSkills } from "./installed-skills.js";
 import { compileExtraDomains } from "./domains.js";
 import { handleProfileCommand } from "./profile-command.js";
 import { registerSapienceDoctorCli } from "./doctor/cli.js";
@@ -50,6 +51,9 @@ function mergeConfig(raw: Record<string, unknown>, workspaceDir: string): Sapien
     investigation: { ...DEFAULT_CONFIG.investigation, ...((raw.investigation as object) ?? {}) },
     act: { ...DEFAULT_CONFIG.act, ...((raw.act as object) ?? {}) },
     watch: { ...DEFAULT_CONFIG.watch, ...((raw.watch as object) ?? {}) },
+    skillsDirs: (Array.isArray(raw.skillsDirs) ? (raw.skillsDirs as string[]) : DEFAULT_CONFIG.skillsDirs)
+      .filter((d): d is string => typeof d === "string" && d.trim() !== "")
+      .map((d) => resolveDataPath(d, workspaceDir, d)),
     output: {
       ...DEFAULT_CONFIG.output,
       ...((raw.output as object) ?? {}),
@@ -116,6 +120,11 @@ export default definePluginEntry({
     }
 
     const extraDomains = compileExtraDomains((api.pluginConfig as Record<string, unknown>)?.domains);
+
+    // Roots scanned for skills that already exist, so skill_proposal can refuse
+    // to log a second copy of one. Resolved once; the scan itself happens per
+    // call, since skills get installed while the gateway is up.
+    const skillDirs = resolveSkillDirs(api, workspaceDir, config.skillsDirs);
 
     // Write presence marker synchronously so sapience-thinking's .present check is race-free.
     // It is refreshed on every routing run; thinking treats a stale marker as "router gone".
@@ -237,13 +246,14 @@ export default definePluginEntry({
 
     api.registerTool({
       name: "skill_proposal",
-      description: "Log (or add evidence to) a skill proposal. Call this whenever you notice you've done the same multi-step task more than once — querying a data warehouse, pulling a CRM report, refreshing a recurring slide. Include the concrete queries, scripts, and examples you used: the entry doubles as the spec for building the skill. Never build or install the skill yourself; this surfaces the pattern to the human.",
+      description: "Log (or add evidence to) a skill proposal. Call this whenever you notice you've done the same multi-step task more than once — querying a data warehouse, pulling a CRM report, refreshing a recurring slide. Check the installed skills first: this is for work nothing already does, and a proposal that duplicates an existing skill is rejected. Include the concrete queries, scripts, and examples you used: the entry doubles as the spec for building the skill. Never build or install the skill yourself; this surfaces the pattern to the human.",
       parameters: {
         type: "object",
         properties: {
           name: { type: "string", description: "Short skill name, e.g. 'weekly-usage-divergence-analysis'" },
           summary: { type: "string", description: "One line: what the skill would do" },
           spec_markdown: { type: "string", description: "Markdown spec detail: what it would do, what triggered this, queries/scripts/examples used, cadence, output shape, dependencies" },
+          not_covered_by: { type: "string", description: "Only when an installed skill looks close: name the nearest existing skill and say what it can't do. Required to log a proposal that overlaps one." },
         },
         required: ["name", "summary", "spec_markdown"],
       },
@@ -252,12 +262,40 @@ export default definePluginEntry({
           const name = typeof params?.name === "string" ? params.name.trim() : "";
           const summary = typeof params?.summary === "string" ? params.summary.trim() : "";
           const spec = typeof params?.spec_markdown === "string" ? params.spec_markdown.trim() : "";
+          const notCoveredBy = typeof params?.not_covered_by === "string" ? params.not_covered_by.trim() : "";
           if (!name || !summary || !spec) {
             return { content: [{ type: "text", text: "skill_proposal requires name, summary, and spec_markdown." }] };
           }
+
+          // Nothing checked this until a production pass proposed a skill the
+          // install already had. Thinking passes run in isolated cron sessions
+          // with no skill context, so the check has to live at the ledger's
+          // door — it's the one point every path goes through.
+          const installed = await discoverInstalledSkills(skillDirs);
+          const verdict = checkAgainstInstalledSkills(installed, name, summary, notCoveredBy || undefined);
+          if (verdict.blocked) {
+            await appendEvent(config.output.eventsPath, {
+              plugin: "sapience", type: "skill_proposal_duplicate_blocked",
+              proposed_name: name, existing_skill: verdict.matched.name, reason: verdict.reason,
+            });
+            return { content: [{ type: "text", text: verdict.message }] };
+          }
+
           const { created, proposal } = await upsertProposal(
             config.output.skillProposalsPath, config.output.skillProposalsDocPath,
-            { name, summary, spec_markdown: spec }
+            {
+              name, summary,
+              // The overlap ruling belongs in the spec: the human reading it
+              // deserves to see which installed skill was nearly this one, and
+              // the reason the agent gave for logging it anyway.
+              spec_markdown: notCoveredBy && verdict.overlaps.length > 0
+                ? [
+                    spec,
+                    `**Not covered by existing skills:** ${notCoveredBy}`,
+                    `**Closest installed skills:**\n${renderInstalledSkills(verdict.overlaps.map((o) => o.skill))}`,
+                  ].join("\n\n")
+                : spec,
+            }
           );
           await appendEvent(config.output.eventsPath, {
             plugin: "sapience",

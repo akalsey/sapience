@@ -209,7 +209,7 @@ The next `check_goals` cron run (within 15 minutes, during active hours) picks i
 
 **Skill proposals:**
 
-When the agent notices it has done the same multi-step task more than once — the same warehouse query, the same CRM pull, the same recurring slide — it logs a spec via `skill_proposal` instead of quietly redoing the work forever. Specs accumulate in `<workspace>/skill-proposals.md` (append-only, safe to hand-edit), open ones resurface in the weekly digest, and nothing is ever built or installed unless you ask. `skill_proposal_list` shows the ledger; telling the agent you want one (or don't) records the decision.
+When the agent notices it has done the same multi-step task more than once — the same warehouse query, the same CRM pull, the same recurring slide — it logs a spec via `skill_proposal` instead of quietly redoing the work forever. It checks your installed skills first: a proposal for something you already have is refused rather than logged, and one that overlaps an existing skill only goes through with a stated reason why that skill doesn't cover it. Specs accumulate in `<workspace>/skill-proposals.md` (append-only, safe to hand-edit), open ones resurface in the weekly digest, and nothing is ever built or installed unless you ask. `skill_proposal_list` shows the ledger; telling the agent you want one (or don't) records the decision.
 
 ---
 

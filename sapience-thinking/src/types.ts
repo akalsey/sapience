@@ -97,6 +97,9 @@ export interface ContextBundle {
   // Skill proposals awaiting the human's decision (sapience's ledger), so
   // passes append evidence instead of re-proposing the same pattern.
   openSkillProposals?: string;
+  // Skills this install already has. A cron pass sees no skills otherwise, and
+  // proposed building ones that already existed.
+  installedSkills?: string;
   // Non-empty when recent proposal deliveries failed: tells the pass the user
   // never saw its output, so silence must not be read as unresponsiveness.
   deliveryWarning?: string;
@@ -112,6 +115,10 @@ export interface PluginConfig {
   // Post-task incidental noticing over live session transcripts.
   noticing: { enabled: boolean; minTurnChars: number; cooldownMinutes: number };
   learning: { trackOutcomes: boolean; adjustPromptBasedOnSignal: boolean; bootstrapDays: number };
+  // Extra roots to scan for installed skills, on top of `<workspace>/skills`
+  // and the state dir's `skills/`. Keep in step with sapience's key of the
+  // same name: the pass and the ledger guard should see the same inventory.
+  skillsDirs: string[];
 }
 
 export const DEFAULT_CONFIG: PluginConfig = {
@@ -128,4 +135,5 @@ export const DEFAULT_CONFIG: PluginConfig = {
   delivery: { heartbeatTrigger: true, priorityThreshold: 4, maxProposalsPerHeartbeat: 3 },
   noticing: { enabled: true, minTurnChars: 1500, cooldownMinutes: 15 },
   learning: { trackOutcomes: true, adjustPromptBasedOnSignal: true, bootstrapDays: 14 },
+  skillsDirs: [],
 };
