@@ -1,4 +1,5 @@
 import { readJsonSafe, writeJsonAtomic } from "./safe-json.js";
+import { tokens, isNearDuplicate } from "./text-match.js";
 
 // The hypothesis ledger: hunches that don't clear the evidence bar persist as
 // open cases instead of evaporating, get re-tested opportunistically (thinking
@@ -22,16 +23,6 @@ export interface Hypothesis {
   last_seen: string;
   last_tested?: string;
 }
-
-const SIMILARITY_THRESHOLD = 0.6;
-// Jaccard alone under-merges a restatement that adds detail: the extra tokens
-// land in the union and sink the score. Two production entries describing the
-// same over-broad-scopes finding scored 0.528 and opened as separate cases.
-// Containment (shared / smaller side) catches "B restates A with more detail",
-// but on its own it merges anything short into anything long — a six-token
-// hunch shares half its tokens with unrelated prose — so it needs a floor.
-const CONTAINMENT_THRESHOLD = 0.65;
-const CONTAINMENT_MIN_TOKENS = 8;
 
 // Ledger bounds. Without them a production ledger reached 185 live hypotheses
 // — every stale crisis-era suspicion fed every subsequent thinking pass, which
@@ -80,27 +71,6 @@ function pruneHypotheses(list: Hypothesis[], nowMs: number): Hypothesis[] {
   return kept.filter((h) => !cutoff.has(h.id));
 }
 
-function tokens(text: string): Set<string> {
-  // Light plural/verb-form folding ("decays" ≈ "decay") — case matching should
-  // be slightly looser than proposal dedup.
-  return new Set(
-    text.toLowerCase().split(/[^a-z0-9]+/)
-      .filter((w) => w.length >= 3)
-      .map((w) => w.replace(/s$/, ""))
-  );
-}
-
-function similar(a: string, b: string): boolean {
-  const ta = tokens(a);
-  const tb = tokens(b);
-  if (ta.size === 0 || tb.size === 0) return false;
-  let intersection = 0;
-  for (const w of ta) if (tb.has(w)) intersection++;
-  if (intersection / (ta.size + tb.size - intersection) >= SIMILARITY_THRESHOLD) return true;
-  const smaller = Math.min(ta.size, tb.size);
-  return smaller >= CONTAINMENT_MIN_TOKENS && intersection / smaller >= CONTAINMENT_THRESHOLD;
-}
-
 export async function loadHypotheses(path: string): Promise<Hypothesis[]> {
   const list = await readJsonSafe<Hypothesis[]>(path, []);
   return Array.isArray(list) ? list : [];
@@ -114,7 +84,7 @@ export async function noteSighting(
 ): Promise<Hypothesis> {
   const list = pruneHypotheses(await loadHypotheses(path), Date.now());
   const now = new Date().toISOString();
-  const existing = list.find((h) => h.status !== "refuted" && similar(h.text, hunch.text));
+  const existing = list.find((h) => h.status !== "refuted" && isNearDuplicate(h.text, hunch.text));
   if (existing) {
     const updated: Hypothesis = { ...existing, sightings: existing.sightings + 1, last_seen: now };
     await writeJsonAtomic(path, list.map((h) => (h.id === existing.id ? updated : h)));
@@ -143,9 +113,9 @@ function nextStatus(current: Hypothesis["status"], verdict: HypothesisEvidence["
 }
 
 // Does every meaningful word of `query` appear in `text`? Deliberately NOT
-// similar(): that metric compares two full hypothesis statements, and a real
-// correction is short ("google auth", "the scopes thing"). Two tokens sit
-// below the containment floor and score near zero on Jaccard, so similar()
+// isNearDuplicate(): that metric compares two full hypothesis statements, and
+// a real correction is short ("google auth", "the scopes thing"). Two tokens
+// sit below the containment floor and score near zero on Jaccard, so it
 // would reject exactly the phrasing a human actually uses.
 function matchesQuery(query: string, text: string): boolean {
   const q = [...tokens(query)];

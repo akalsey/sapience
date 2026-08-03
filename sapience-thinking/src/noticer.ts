@@ -57,6 +57,12 @@ export class TurnWatcher {
 
   constructor(private opts: WatcherOptions) {}
 
+  // Adopt a later registration's config without discarding buffers or the
+  // per-session cooldown clock.
+  reconfigure(opts: WatcherOptions): void {
+    this.opts = opts;
+  }
+
   observe(update: TranscriptUpdate): void {
     const key = update.sessionKey ?? "";
     if (!isNoticeableSession(key)) return;
@@ -80,6 +86,53 @@ export class TurnWatcher {
 
     this.opts.onTurn(key, turnText);
   }
+}
+
+// One watcher per process, however many times register() runs.
+//
+// Confirmed in production 2026-08-03: four `noticed` events for a single turn
+// carrying four distinct watcher ids and one pid. register() executes more than
+// once per gateway process, and the old code built a new TurnWatcher and
+// subscribed it every time, discarding whatever the runtime handed back. The
+// listeners accumulated, so one turn ran one side-pass per accumulated
+// listener. Each of those is an independent LLM call over the same transcript,
+// so they word the same remark differently — which is what got past text dedup
+// downstream and reached the user as several near-identical proposals.
+//
+// Keeping this at module scope rather than inside register() is the point: it
+// has to outlive the registration that created it.
+let installed: { watcher: TurnWatcher; dispose?: () => void } | null = null;
+
+export function installTurnWatcher(
+  subscribe: (listener: (update: unknown) => void) => unknown,
+  opts: WatcherOptions
+): TurnWatcher {
+  // A later registration carries fresher config, so the live watcher adopts it
+  // rather than being replaced — swapping instances would lose the per-session
+  // cooldown state that stops a burst in the first place.
+  if (installed) {
+    installed.watcher.reconfigure(opts);
+    // Only re-subscribe when the runtime gave us a way to detach the previous
+    // listener. Without a disposer, subscribing again is exactly the leak.
+    if (installed.dispose) {
+      installed.dispose();
+      installed.dispose = asDisposer(subscribe((u) => installed?.watcher.observe(u as TranscriptUpdate)));
+    }
+    return installed.watcher;
+  }
+  const watcher = new TurnWatcher(opts);
+  const handle = subscribe((u) => watcher.observe(u as TranscriptUpdate));
+  installed = { watcher, dispose: asDisposer(handle) };
+  return watcher;
+}
+
+function asDisposer(handle: unknown): (() => void) | undefined {
+  return typeof handle === "function" ? (handle as () => void) : undefined;
+}
+
+// Tests only: module state would otherwise leak between cases.
+export function resetInstalledTurnWatcher(): void {
+  installed = null;
 }
 
 export function buildNoticerPrompt(turnText: string): string {

@@ -22,7 +22,7 @@ import { recordOutcome, RECORDABLE_OUTCOMES, type RecordableOutcome } from "./ou
 import { dedupeProposals } from "./dedup.js";
 import { loadPlaybooks } from "./playbooks.js";
 import { scheduleAudit } from "./audit-scheduler.js";
-import { TurnWatcher, buildNoticerPrompt, parseNoticedObservations, recordNoticedObservations } from "./noticer.js";
+import { TurnWatcher, installTurnWatcher, buildNoticerPrompt, parseNoticedObservations, recordNoticedObservations } from "./noticer.js";
 import { readDeliveryStatus, formatDeliveryWarning } from "./delivery-status.js";
 
 // How far back unresolved delivery failures still color a pass's view of user
@@ -138,10 +138,15 @@ export default definePluginEntry({
     const subscribeTranscripts = api?.runtime?.events?.onSessionTranscriptUpdate;
     const llmComplete = api?.runtime?.llm?.complete;
     if (config.noticing.enabled && typeof subscribeTranscripts === "function" && typeof llmComplete === "function") {
-      const watcher = new TurnWatcher({
+      // installTurnWatcher, not `new TurnWatcher` + subscribe: register() runs
+      // several times in one gateway process and every extra subscription was
+      // another full side-pass over the same turn. See noticer.ts. It owns the
+      // subscribe call, so there is deliberately no separate subscribe here.
+      let watcher: TurnWatcher | undefined;
+      const options = {
         minTurnChars: config.noticing.minTurnChars,
         cooldownMs: config.noticing.cooldownMinutes * 60 * 1000,
-        onTurn: (sessionKey, turnText) => {
+        onTurn: (sessionKey: string, turnText: string) => {
           void (async () => {
             try {
               const { text } = await llmComplete({
@@ -162,15 +167,15 @@ export default definePluginEntry({
                   session: sessionKey, observations: recorded.observations.length,
                   // Provenance for the duplicate-side-pass investigation; see
                   // the note on TurnWatcher.instanceId.
-                  watcher: watcher.instanceId, pid: process.pid,
+                  watcher: watcher?.instanceId, pid: process.pid,
                 });
               }
             } catch { /* peripheral vision must never disturb the main flow */ }
           })();
         },
-      });
+      };
       try {
-        subscribeTranscripts((update: any) => watcher.observe(update));
+        watcher = installTurnWatcher(subscribeTranscripts, options);
       } catch { /* subscription unavailable */ }
     }
 

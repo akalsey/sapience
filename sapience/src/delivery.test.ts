@@ -29,6 +29,20 @@ const base: RoutedItem = {
   tier: "act", confidence: 0.9,
 };
 
+// Distinct subjects, because the pending queue now rejects a restatement of
+// something already waiting. Spreading `base` gives every item the SAME text,
+// which the queue is right to collapse — these tests are about overflow
+// ordering and injection fallback, so they need items that really are
+// different findings.
+const SUBJECTS = [
+  "Fix the typo in the dashboard query",
+  "Archive the stale Salesforce contacts nobody has touched this quarter",
+  "Rotate the PostHog API key that expires next month",
+  "Publish the weekly activation funnel export to the shared drive",
+  "Investigate the duplicate Apple accounts in the CRM",
+];
+const subject = (n: number) => SUBJECTS[(n - 1) % SUBJECTS.length]!;
+
 // Mirrors the real gateway contract: enqueueNextTurnInjection resolves
 // { enqueued, id, sessionKey } and requires a sessionKey in the injection.
 const fakeApi = {
@@ -173,7 +187,7 @@ describe("deliverItems", () => {
       output: sandboxOutput({ actionLogPath: join(dir, "action-log.md"), eventsPath, pendingDeliveriesPath }),
     };
     const items = [1, 2, 3, 4, 5].map((n) => ({
-      ...base, id: `p${n}`, tier: "learning" as const, priority: (n <= 2 ? 5 : 2) as 5 | 2,
+      ...base, id: `p${n}`, text: subject(n), tier: "learning" as const, priority: (n <= 2 ? 5 : 2) as 5 | 2,
     }));
     await deliverItems(items, fakeApi, config);
     const events = (await readFile(eventsPath, "utf-8")).trim().split("\n").map((l) => JSON.parse(l));
@@ -274,9 +288,9 @@ describe("deliverItems", () => {
         pushStatePath: join(dir, "push-state.json"),
       }),
     };
-    const high1 = { ...base, id: "a1", tier: "act" as const, priority: 5 };
-    const high2 = { ...base, id: "a2", tier: "act" as const, priority: 5 };
-    const low = { ...base, id: "a3", tier: "propose" as const, priority: 2 };
+    const high1 = { ...base, id: "a1", text: subject(1), tier: "act" as const, priority: 5 };
+    const high2 = { ...base, id: "a2", text: subject(2), tier: "act" as const, priority: 5 };
+    const low = { ...base, id: "a3", text: subject(3), tier: "propose" as const, priority: 2 };
     await deliverItems([high1, low, high2], pushApi, config);
 
     // Budget of 1: only the first high-priority item pushes.
@@ -317,7 +331,7 @@ describe("deliverItems", () => {
       delivery: { ...DEFAULT_CONFIG.delivery, maxPerCycle: 3 },
       output: sandboxOutput({ actionLogPath: join(dir, "action-log.md"), eventsPath, pendingDeliveriesPath: join(dir, "pending.json") }),
     };
-    const items = [1, 2, 3].map((n) => ({ ...base, id: `p${n}`, text: `item text ${n}`, tier: "learning" as const }));
+    const items = [1, 2, 3].map((n) => ({ ...base, id: `p${n}`, text: subject(n), tier: "learning" as const }));
     await deliverItems(items, api, config);
 
     expect(injections).toHaveLength(1);
@@ -339,7 +353,7 @@ describe("deliverItems", () => {
       push: { ...DEFAULT_CONFIG.push, enabled: false },
       output: sandboxOutput({ actionLogPath: join(dir, "action-log.md"), eventsPath: join(dir, "events.jsonl"), pendingDeliveriesPath }),
     };
-    const items = [1, 2, 3, 4].map((n) => ({ ...base, id: `p${n}`, tier: "learning" as const }));
+    const items = [1, 2, 3, 4].map((n) => ({ ...base, id: `p${n}`, text: subject(n), tier: "learning" as const }));
     await deliverItems(items, api, config);
 
     expect(DEFAULT_CONFIG.delivery.maxPerCycle).toBe(1);
@@ -358,7 +372,7 @@ describe("deliverItems", () => {
       delivery: { ...DEFAULT_CONFIG.delivery, maxPerCycle: 2 },
       output: sandboxOutput({ actionLogPath: join(dir, "action-log.md"), eventsPath, pendingDeliveriesPath }),
     };
-    const items = [1, 2].map((n) => ({ ...base, id: `p${n}`, tier: "propose" as const }));
+    const items = [1, 2].map((n) => ({ ...base, id: `p${n}`, text: subject(n), tier: "propose" as const }));
     await deliverItems(items, decliningApi, config);
 
     const { drainPendingDeliveries } = await import("./pending-deliveries.js");

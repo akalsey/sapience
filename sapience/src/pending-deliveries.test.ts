@@ -22,6 +22,58 @@ describe("addPendingDelivery", () => {
     expect(drained[0]!.queued_at).toBeTruthy();
   });
 
+  // The queue is drained one item per cron cycle, so twins don't arrive
+  // together — they arrive as the same point made again 15 minutes later. The
+  // user may not respond for days, so these must not be aged out; they must
+  // never be queued. Production 2026-08-03 queued twelve items in one second
+  // containing clusters of three near-identical observations apiece.
+  it("rejects an entry that restates one already queued", async () => {
+    const first = await addPendingDelivery(path(), {
+      id: "a", kind: "item", prompt: "p1",
+      text: "Lovable scrapers that previously provided customer insights were removed for fabricating data.",
+    });
+    const second = await addPendingDelivery(path(), {
+      id: "b", kind: "item", prompt: "p2",
+      text: "Previous customer insight scrapers ('Lovable scrapers') were removed for fabricating data.",
+    });
+    expect(first).toBe(true);
+    expect(second).toBe(false);
+    expect(await drainPendingDeliveries(path())).toHaveLength(1);
+  });
+
+  it("still queues a genuinely different finding", async () => {
+    await addPendingDelivery(path(), {
+      id: "a", kind: "item", prompt: "p1",
+      text: "Lovable scrapers that previously provided customer insights were removed for fabricating data.",
+    });
+    const other = await addPendingDelivery(path(), {
+      id: "b", kind: "item", prompt: "p2",
+      text: "A scheduled audit found the Google Apps Script API is disabled for my cloud project.",
+    });
+    expect(other).toBe(true);
+    expect(await drainPendingDeliveries(path())).toHaveLength(2);
+  });
+
+  // Entries queued before this field existed carry no text; they must still
+  // queue and drain rather than being treated as matching everything.
+  it("queues entries with no text alongside ones that have it", async () => {
+    await addPendingDelivery(path(), { id: "a", kind: "item", prompt: "p1" });
+    expect(await addPendingDelivery(path(), { id: "b", kind: "item", prompt: "p2" })).toBe(true);
+    expect(await addPendingDelivery(path(), {
+      id: "c", kind: "item", prompt: "p3", text: "Something entirely new about billing.",
+    })).toBe(true);
+    expect(await drainPendingDeliveries(path())).toHaveLength(3);
+  });
+
+  // A digest is not a finding and must never be suppressed by text overlap.
+  it("never content-dedupes a digest", async () => {
+    const shared = "The weekly digest covering proposals, outcomes and calibration for this week.";
+    await addPendingDelivery(path(), { id: "item-1", kind: "item", prompt: "p", text: shared });
+    expect(await addPendingDelivery(path(), {
+      id: "digest-2026-08-03", kind: "digest", prompt: "d", text: shared,
+    })).toBe(true);
+  });
+
   it("dedupes by id so retry loops cannot queue the same delivery twice", async () => {
     await addPendingDelivery(path(), { id: "digest-2026-07-18", kind: "digest", prompt: "digest" });
     const again = await addPendingDelivery(path(), { id: "digest-2026-07-18", kind: "digest", prompt: "digest" });

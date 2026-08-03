@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { similarity, dedupeProposals } from "./dedup.js";
+import { similarity, isNearDuplicate, dedupeProposals } from "./dedup.js";
 import type { OutcomeMap, ProposalSet } from "./types.js";
 
 const basePass: ProposalSet = {
@@ -37,7 +37,65 @@ describe("similarity", () => {
   });
 });
 
+describe("isNearDuplicate", () => {
+  // Jaccard alone under-matches a RESTATEMENT of an ongoing situation: each
+  // re-description adds tokens that land in the union and sink the score.
+  // Production 2026-08-03 delivered the same "stuck in a failure loop"
+  // observation to the user four times in 75 minutes at priority 5; every pair
+  // scored 0.243-0.556, all under the 0.60 bar. Containment (shared / smaller
+  // side) is what catches "B restates A with more detail".
+  it("matches a restatement that Jaccard alone misses", () => {
+    const a = "I remain in a critical failure loop, unable to answer the user's direct question about the 30% increase in AI minutes despite repeated attempts and explicit guidance.";
+    const b = "I remain in a critical failure loop, unable to answer the user's direct question about the 30% increase in AI minutes. My attempts to use the correct tool have failed, and I have not made progress.";
+    expect(similarity(a, b)).toBeLessThan(0.6);
+    expect(isNearDuplicate(a, b)).toBe(true);
+  });
+
+  it("keeps genuinely distinct findings apart", () => {
+    const loop = "I remain in a critical failure loop, unable to answer the user's direct question about the 30% increase in AI minutes despite repeated attempts and explicit guidance.";
+    const audit = "A scheduled audit found that the Google Apps Script API is disabled for my cloud project, which will cause the copy-slide skill to fail.";
+    expect(isNearDuplicate(loop, audit)).toBe(false);
+  });
+
+  // Containment alone would fold anything short into anything long — a short
+  // hunch shares most of its few tokens with unrelated prose — so it needs a
+  // floor on the smaller side.
+  it("does not fold a short fragment into a long unrelated one", () => {
+    const short = "A new Voice of Customer MCP is not yet integrated.";
+    const long = "The agent attempted to fetch Salesforce documentation directly, but it failed due to a security error, which suggests an underlying access control issue that is not yet integrated into the runbook.";
+    expect(isNearDuplicate(short, long)).toBe(false);
+  });
+});
+
 describe("dedupeProposals", () => {
+  // The four production repeats, in the order they were emitted, run through
+  // the real sequential algorithm rather than compared pairwise.
+  it("collapses successive restatements of an unresolved situation", () => {
+    const texts = [
+      "I am stuck in a failure loop trying to answer the user's question about the 30% increase in AI minutes. I have repeatedly failed to use the correct tool (`weekly-product-review` skill) as directed, instead attempting multiple incorrect methods.",
+      "I remain in a critical failure loop, unable to answer the user's direct question about the 30% increase in AI minutes despite repeated attempts and explicit guidance.",
+      "I remain in a critical failure loop, unable to answer the user's direct question about the 30% increase in AI minutes. My attempts to use the correct tool have failed, and I have not made progress.",
+      "I remain in a critical failure loop, unable to answer the user's direct question about the 30% increase in AI minutes. Despite identifying the existence of relevant skills like `weekly-product-review`, I have not successfully used them to provide an answer.",
+    ];
+    const outcomes: OutcomeMap = {};
+    const surfaced: string[] = [];
+    texts.forEach((text, i) => {
+      const pass: ProposalSet = {
+        ...basePass,
+        pass_id: `pass-${i}`,
+        observations: [{ id: `obs-${i}`, text, evidence: "", priority: 5 }],
+      };
+      const { kept } = dedupeProposals(pass, outcomes);
+      for (const o of kept.observations) {
+        surfaced.push(o.id);
+        outcomes[o.id] = outcome(o.id, o.text, "pending", 0);
+      }
+    });
+    // Was 4 of 4 before containment. The first and second are far enough apart
+    // in wording to stay separate; everything after collapses into the second.
+    expect(surfaced).toEqual(["obs-0", "obs-1"]);
+  });
+
   // The only repeat-guard was "last 3 passes in the prompt". A proposal the
   // user dismissed two days ago could resurface on pass four — the fastest
   // way to teach the user to ignore the suite.

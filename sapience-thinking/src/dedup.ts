@@ -18,13 +18,55 @@ function tokens(text: string): Set<string> {
   );
 }
 
-export function similarity(a: string, b: string): number {
+interface Overlap { intersection: number; union: number; smaller: number }
+
+function overlap(a: string, b: string): Overlap | null {
   const ta = tokens(a);
   const tb = tokens(b);
-  if (ta.size === 0 || tb.size === 0) return 0;
+  if (ta.size === 0 || tb.size === 0) return null;
   let intersection = 0;
   for (const w of ta) if (tb.has(w)) intersection++;
-  return intersection / (ta.size + tb.size - intersection);
+  return {
+    intersection,
+    union: ta.size + tb.size - intersection,
+    smaller: Math.min(ta.size, tb.size),
+  };
+}
+
+export function similarity(a: string, b: string): number {
+  const o = overlap(a, b);
+  return o ? o.intersection / o.union : 0;
+}
+
+// Jaccard alone under-matches a RESTATEMENT of a situation that hasn't changed.
+// Every re-description adds tokens, those extra tokens land in the union, and
+// the score falls — so the longer the pass talks about the same stuck thing,
+// the less it looks like a repeat.
+//
+// Production 2026-08-03: once passes could finally read session transcripts,
+// an unresolved task got freshly re-observed every 15 minutes and the same
+// "I remain in a critical failure loop, unable to answer the user's question
+// about AI minutes" reached the user four times in 75 minutes, at priority 5
+// each time. Every pair scored 0.243-0.556 — all under the 0.60 bar.
+//
+// Containment (shared / smaller side) is what catches "B restates A with more
+// detail". On its own it would fold anything short into anything long, since a
+// six-token fragment shares most of its tokens with unrelated prose, so it
+// needs a floor on the smaller side.
+//
+// sapience's `text-match.ts` carries the same thresholds for the hypothesis
+// ledger — separate npm packages can't share a module. They are NOT
+// interchangeable: that tokenizer also folds trailing "s", deliberately, since
+// case matching runs looser than proposal dedup. Changing one does not change
+// the other.
+const CONTAINMENT_THRESHOLD = 0.65;
+const CONTAINMENT_MIN_TOKENS = 8;
+
+export function isNearDuplicate(a: string, b: string, threshold = DEFAULT_THRESHOLD): boolean {
+  const o = overlap(a, b);
+  if (!o) return false;
+  if (o.intersection / o.union >= threshold) return true;
+  return o.smaller >= CONTAINMENT_MIN_TOKENS && o.intersection / o.smaller >= CONTAINMENT_THRESHOLD;
 }
 
 export interface DedupOptions {
@@ -49,7 +91,7 @@ export function dedupeProposals(
   if (history.length === 0) return { kept: proposals, dropped: 0 };
 
   const isDuplicate = (text: string): boolean =>
-    history.some((h) => similarity(text, h) >= threshold);
+    history.some((h) => isNearDuplicate(text, h, threshold));
 
   let dropped = 0;
   const keep = <T>(items: T[], textOf: (item: T) => string): T[] =>

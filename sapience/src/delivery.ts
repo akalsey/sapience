@@ -110,8 +110,11 @@ ${outcomeInstruction(item, 'After they respond, record their reaction — "accep
 // fallback hand the item to the same durable queue the delivery cron drains;
 // share the construction so the two can't drift on shape.
 async function queueForDeliveryCron(item: RoutedItem, config: SapienceConfig): Promise<boolean> {
+  // `text` carries the raw finding so the queue can reject a restatement of
+  // something already waiting — the prompt alone can't, being mostly shared
+  // tier boilerplate.
   return addPendingDelivery(config.output.pendingDeliveriesPath, {
-    id: item.id, kind: "item", prompt: buildTierPrompt(item),
+    id: item.id, kind: "item", prompt: buildTierPrompt(item), text: item.text,
   }).catch(() => false);
 }
 

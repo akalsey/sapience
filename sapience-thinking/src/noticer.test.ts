@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtemp, readFile, rm } from "fs/promises";
 import { join } from "path";
 import { tmpdir } from "os";
-import { TurnWatcher, parseNoticedObservations, buildNoticerPrompt, recordNoticedObservations, isNoticeableSession } from "./noticer.js";
+import { TurnWatcher, parseNoticedObservations, buildNoticerPrompt, recordNoticedObservations, isNoticeableSession, installTurnWatcher, resetInstalledTurnWatcher } from "./noticer.js";
 
 let dir: string;
 beforeEach(async () => { dir = await mkdtemp(join(tmpdir(), "noticer-")); });
@@ -51,10 +51,8 @@ describe("TurnWatcher", () => {
     expect(turns).toHaveLength(1);
   });
 
-  // Diagnostic: production emits several side-passes for one turn even though
-  // the cooldown above provably prevents that within a single instance. Each
-  // watcher is tagged so the `noticed` event can say whether the duplicates
-  // come from distinct instances (a listener leak) or one (a logic fault).
+  // Diagnostic: the `noticed` event reports which watcher produced it, which is
+  // how the leak below was confirmed in production.
   it("tags each instance with a distinct id", () => {
     const a = new TurnWatcher({ minTurnChars: 10, cooldownMs: 0, onTurn: () => {} });
     const b = new TurnWatcher({ minTurnChars: 10, cooldownMs: 0, onTurn: () => {} });
@@ -85,6 +83,72 @@ describe("TurnWatcher", () => {
       watcher.observe({ sessionKey: key, message: msg("assistant", "Today high 91°F. Tomorrow high 94°F. Heartbeat checks complete.") });
     }
     expect(turns).toHaveLength(0);
+  });
+});
+
+describe("installTurnWatcher", () => {
+  beforeEach(() => { resetInstalledTurnWatcher(); });
+  afterEach(() => { resetInstalledTurnWatcher(); });
+
+  // Confirmed in production 2026-08-03: four `noticed` events for one turn
+  // carrying four distinct watcher ids and a SINGLE pid (190). register() runs
+  // more than once per gateway process and every run subscribed another
+  // watcher, so one turn produced one side-pass per accumulated listener —
+  // each wording the same remark differently, which is what defeated text
+  // dedup downstream.
+  it("subscribes once per process no matter how often register runs", () => {
+    const listeners: Array<(u: unknown) => void> = [];
+    const subscribe = (cb: (u: unknown) => void) => { listeners.push(cb); };
+    const turns: string[] = [];
+    const opts = { minTurnChars: 20, cooldownMs: 0, onTurn: (_k: string, t: string) => { turns.push(t); } };
+
+    for (let i = 0; i < 4; i++) installTurnWatcher(subscribe, opts);
+    expect(listeners).toHaveLength(1);
+
+    listeners[0]!({ sessionKey: CHANNEL, message: msg("user", "a question with plenty of text in it") });
+    listeners[0]!({ sessionKey: CHANNEL, message: msg("assistant", "a substantial reply about the export") });
+    expect(turns).toHaveLength(1);
+  });
+
+  it("returns the same watcher instance on re-registration", () => {
+    const subscribe = () => {};
+    const opts = { minTurnChars: 10, cooldownMs: 0, onTurn: () => {} };
+    expect(installTurnWatcher(subscribe, opts).instanceId)
+      .toBe(installTurnWatcher(subscribe, opts).instanceId);
+  });
+
+  // Later registrations carry fresher config, so the live watcher must adopt
+  // them — otherwise a config change silently keeps running the old settings.
+  it("adopts the newest options without adding a listener", () => {
+    const listeners: Array<(u: unknown) => void> = [];
+    const subscribe = (cb: (u: unknown) => void) => { listeners.push(cb); };
+    const first: string[] = [];
+    const second: string[] = [];
+
+    installTurnWatcher(subscribe, { minTurnChars: 20, cooldownMs: 0, onTurn: (_k, t) => { first.push(t); } });
+    installTurnWatcher(subscribe, { minTurnChars: 20, cooldownMs: 0, onTurn: (_k, t) => { second.push(t); } });
+
+    listeners[0]!({ sessionKey: CHANNEL, message: msg("user", "a question with plenty of text in it") });
+    listeners[0]!({ sessionKey: CHANNEL, message: msg("assistant", "a substantial reply about the export") });
+
+    expect(listeners).toHaveLength(1);
+    expect(first).toHaveLength(0);
+    expect(second).toHaveLength(1);
+  });
+
+  // If the runtime hands back a disposer, use it: re-subscribing fresh is
+  // safer than trusting that a subscription from a torn-down registration is
+  // still live, but doing so must not leave the old listener attached.
+  it("disposes the previous subscription when the runtime provides one", () => {
+    const disposed: number[] = [];
+    let n = 0;
+    const subscribe = () => { const id = n++; return () => { disposed.push(id); }; };
+    const opts = { minTurnChars: 10, cooldownMs: 0, onTurn: () => {} };
+
+    installTurnWatcher(subscribe, opts);
+    installTurnWatcher(subscribe, opts);
+
+    expect(disposed).toEqual([0]);
   });
 });
 

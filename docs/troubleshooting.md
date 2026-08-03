@@ -130,9 +130,19 @@ If it still repeats, check whether the repeats carry *different* `proposal_id`s 
 
 **The same observation shows up several times in slightly different words**
 
-Look for several `noticed` events for one session within a second or two. Post-task noticing is meant to fire once per turn per cooldown (`noticing.cooldownMinutes`, default 15); a production install has been seen firing up to nine times, each side-pass wording the same remark differently so text dedup doesn't collapse them. Downstream this inflates one remark into several proposals and can get it graded `replicated`, as though independently confirmed.
+Two causes, both fixed in 0.5.7 — and they compounded, so you may have been seeing them together.
 
-From 0.5.6 each `noticed` event carries `watcher` and `pid` to localize it — see [observability](./observability.md) for reading them. This is under investigation; the root cause is not in the cooldown itself, which is covered by test. Setting `noticing.enabled: false` disables the feature outright if the noise outweighs the value.
+*Accumulating transcript listeners.* Look for several `noticed` events for one session within a second or two. Post-task noticing fires once per turn per cooldown (`noticing.cooldownMinutes`, default 15), but `register()` runs more than once per gateway process and each run used to subscribe another watcher. One turn then ran one side-pass per accumulated listener — a production install reached nine, and 82% of bursts over 27 days fired more than once. Because each side-pass is an independent LLM call over the same transcript, each words the same remark differently, which is precisely what text dedup cannot collapse. If the `watcher` values on those events differ while `pid` stays the same, that's this. Fixed by keeping one watcher per process.
+
+*Restatements slipping past dedup.* A pass that can read your conversation will re-observe an unresolved situation every 15 minutes, and each re-description is worded differently. Plain token-overlap scoring gets *worse* as a description grows, because the extra words count against it — production sent the same "stuck in a failure loop" observation four times in 75 minutes at priority 5, and no two of them scored close to the duplicate threshold. Matching now also accepts containment, which catches "B restates A with more detail".
+
+Setting `noticing.enabled: false` disables incidental noticing outright if the noise still outweighs the value.
+
+**A proposal I haven't answered keeps coming back**
+
+Check `<workspace>/sapience/pending-deliveries.json`. Overflow beyond `delivery.maxPerCycle` waits there and the `sapience-delivery` cron releases one per cycle, so a batch of near-identical items queued in the same second reaches you as the same point repeated over hours. From 0.5.7 a restatement of something already queued is never added, so the queue holds one entry per finding.
+
+Queued items are deliberately **not** aged out — a proposal may legitimately sit for days until you get to it — so a full queue after a quiet week is expected, not a fault.
 
 **A state file went missing / a `.corrupt-<timestamp>` file appeared**
 

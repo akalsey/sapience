@@ -1,5 +1,5 @@
 import { readJsonSafe, writeJsonAtomic } from "./safe-json.js";
-import { similarity, DEFAULT_THRESHOLD } from "./dedup.js";
+import { isNearDuplicate } from "./dedup.js";
 import type { OutcomeMap } from "./types.js";
 
 // Answering a proposal has to retire the rest of the queue it came from.
@@ -59,7 +59,7 @@ export async function dropStaleQueuedDeliveries(
     if (!record) return false;
     if (record.pass_id && record.pass_id === resolved.pass_id) return true;
     if (!record.text || !resolved.text) return false;
-    return similarity(record.text, resolved.text) >= DEFAULT_THRESHOLD;
+    return isNearDuplicate(record.text, resolved.text);
   };
 
   const staleIds = new Set((await load()).filter(isStale).map((e) => e.id));
