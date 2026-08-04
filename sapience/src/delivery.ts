@@ -144,6 +144,12 @@ export async function deliverItems(
       proposal_id: item.id, domain: item.domain, priority: item.priority,
     });
   }
+  // Counts what was SELECTED for delivery, not what was confirmed delivered —
+  // the same shape as notePush, which also writes before the send is known to
+  // have landed. An admitted item can still fall out later (the pending queue
+  // rejects a duplicate id or a restatement), and its slot is not refunded. So
+  // the ceiling can under-deliver slightly, never over-deliver, which is the
+  // safe direction for a circuit breaker.
   const admittedCalibrate = admitted.filter((i) => i.tier === "learning").length;
   if (admittedCalibrate > 0) {
     await writeJsonAtomic(

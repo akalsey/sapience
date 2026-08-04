@@ -50,9 +50,9 @@ describe("splitByCalibrateBudget", () => {
     expect(splitByCalibrateBudget(items, yesterday, "2026-08-03", 3).admitted).toHaveLength(2);
   });
 
-  // 0 disables calibrate delivery entirely; a negative or absent cap must not
-  // silently mean "none".
-  it("treats a non-positive budget as unlimited rather than silencing everything", () => {
+  // The two must not collapse into one branch: 0 is a real off-switch, and
+  // only a negative means "no ceiling".
+  it("treats negative as unlimited but zero as a real off-switch", () => {
     const items = [1, 2, 3].map((n) => item(`c${n}`, "learning"));
     expect(splitByCalibrateBudget(items, fresh, "2026-08-03", -1).overBudget).toHaveLength(0);
     expect(splitByCalibrateBudget(items, fresh, "2026-08-03", 0).overBudget).toHaveLength(3);
