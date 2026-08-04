@@ -106,6 +106,7 @@ Every event has `ts` (ISO-8601), `plugin` (`thinking` | `sapience` | `feedback` 
 - `act_executed` / `act_failed` — an act-tier item finished (or failed) executing in its isolated subagent session; fields: `proposal_id`, `domain`, `report`
 - `investigation_completed` — a hunch got its bounded read-only investigation; fields: `proposal_id`, `domain`, `verdict` (`supported`/`refuted`/`inconclusive`)
 - `hypotheses_resolved` — the agent settled tracked hypotheses via `hypothesis_resolve`, usually after a user correction or a first-hand check; fields: `match`, `verdict`, `count` (0 means nothing matched)
+- `calibrate_budget_exhausted` — a CALIBRATE item was dropped because the local day's `delivery.maxCalibratePerDay` ceiling was already spent; fields: `proposal_id`, `domain`, `priority`. Dropped, not deferred — it will not arrive tomorrow. Only the learning tier is ever capped.
 - `push_requested` — a high-priority item requested a channel push (heartbeat to the last active channel); fields: `tier`, `domain`, `priority`, `requested`
 - `watch_added` / `watch_removed` — a metric watch was created or removed; field: `watch`
 - `watch_checked` — a due watch was checked; fields: `watch`, `value`, `notable`

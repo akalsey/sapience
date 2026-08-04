@@ -52,7 +52,9 @@ export interface SapienceConfig {
   // the user's own message is nobody's idea of a calibration conversation.
   // dedupeWindowHours: an item whose text matches something already delivered
   // within this window is suppressed instead of re-delivered.
-  delivery: { maxPerCycle: number; dedupeWindowHours: number };
+  // maxCalibratePerDay: ceiling on CALIBRATE notes per local day. Negative
+  // means unlimited; 0 turns them off. Actionable tiers are never capped.
+  delivery: { maxPerCycle: number; dedupeWindowHours: number; maxCalibratePerDay: number };
   // Proactive channel push for initiative-worthy items (act/propose at or
   // above minPriority), budgeted per local day.
   push: { enabled: boolean; maxPerDay: number; minPriority: number };
@@ -75,6 +77,7 @@ export interface SapienceConfig {
     dashboardPath: string;
     goalsPath: string;
     pushStatePath: string;
+    calibrateStatePath: string;
     investigationStatePath: string;
     hypothesesPath: string;
     watchesPath: string;
@@ -103,7 +106,7 @@ export const DEFAULT_CONFIG: SapienceConfig = {
     domainFloors: {},
   },
   digest: { enabled: true, day: "friday", time: "17:00" },
-  delivery: { maxPerCycle: 1, dedupeWindowHours: 72 },
+  delivery: { maxPerCycle: 1, dedupeWindowHours: 72, maxCalibratePerDay: 3 },
   push: { enabled: true, maxPerDay: 6, minPriority: 4 },
   investigation: { enabled: true, maxPerDay: 3, minPriority: 3, timeoutSec: 120 },
   act: { execute: true, timeoutSec: 300 },
@@ -117,6 +120,7 @@ export const DEFAULT_CONFIG: SapienceConfig = {
     dashboardPath: "sapience/dashboard.md",
     goalsPath: "goals/goals.json",
     pushStatePath: "sapience/push-state.json",
+    calibrateStatePath: "sapience/calibrate-state.json",
     investigationStatePath: "sapience/investigation-state.json",
     hypothesesPath: "sapience/hypotheses.json",
     watchesPath: "sapience/watches.json",

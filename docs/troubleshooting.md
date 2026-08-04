@@ -138,6 +138,18 @@ Two causes, both fixed in 0.5.7 — and they compounded, so you may have been se
 
 Setting `noticing.enabled: false` disables incidental noticing outright if the noise still outweighs the value.
 
+**Too many notes, all circling one thing**
+
+Check the tier mix in `events.jsonl`. If `item_delivered` is nearly all `"tier":"learning"`, the CALIBRATE path is the source. Those exist to sample how much initiative you want in a domain, so a few a day saturates the signal — but until 0.5.8 nothing bounded them, and a production install sent 28 in a day, 27 at priority 5, almost all restating one unresolved task in fresh words each pass.
+
+`delivery.maxCalibratePerDay` (default 3) now caps them per local day; excess is dropped, not deferred, and logged as `calibrate_budget_exhausted`. Set it to `0` to switch CALIBRATE notes off entirely, or a negative number for no ceiling. Actionable tiers are never capped, so this cannot suppress something you need to act on.
+
+Note that similarity-based dedup does **not** solve this on its own. When a pass re-describes an ongoing situation every 15 minutes, its account of the problem evolves, and evolving commentary is not a repeated sentence — that is why the ceiling exists alongside the matching.
+
+**The agent keeps telling me it's stuck on something I asked it to do**
+
+Fixed in 0.5.8. A pass that can read your conversation would see the agent failing at your request and file that as an observation — every 15 minutes, at rising priority, while you watched it happen. The pass no longer reports its own difficulty with an in-flight task; it comments on its own conduct only when a pattern spans different tasks over time.
+
 **A proposal I haven't answered keeps coming back**
 
 Check `<workspace>/sapience/pending-deliveries.json`. Overflow beyond `delivery.maxPerCycle` waits there and the `sapience-delivery` cron releases one per cycle, so a batch of near-identical items queued in the same second reaches you as the same point repeated over hours. From 0.5.7 a restatement of something already queued is never added, so the queue holds one entry per finding.

@@ -183,7 +183,10 @@ describe("deliverItems", () => {
     const config = {
       ...DEFAULT_CONFIG,
       push: { ...DEFAULT_CONFIG.push, enabled: false },
-      delivery: { ...DEFAULT_CONFIG.delivery, maxPerCycle: 2 },
+      // maxCalibratePerDay: -1 disables the daily CALIBRATE ceiling. These
+      // cases are about maxPerCycle and overflow ordering; leaving the ceiling
+      // on would make them assert the budget instead.
+      delivery: { ...DEFAULT_CONFIG.delivery, maxPerCycle: 2, maxCalibratePerDay: -1 },
       output: sandboxOutput({ actionLogPath: join(dir, "action-log.md"), eventsPath, pendingDeliveriesPath }),
     };
     const items = [1, 2, 3, 4, 5].map((n) => ({
@@ -345,12 +348,57 @@ describe("deliverItems", () => {
     for (const item of items) expect(note).toContain(`proposal_id: "${item.id}"`);
   });
 
+  // 2026-08-03: 28 CALIBRATE notes reached the user in one day, 27 at priority
+  // 5, almost all restating one unresolved task. Over-budget items are DROPPED,
+  // not queued — deferring a runaway just delivers it tomorrow.
+  it("caps CALIBRATE notes per local day and drops the excess without queueing", async () => {
+    const { api, injections } = recordingApi();
+    const pendingDeliveriesPath = join(dir, "pending-deliveries.json");
+    const eventsPath = join(dir, "events.jsonl");
+    const config = {
+      ...DEFAULT_CONFIG,
+      push: { ...DEFAULT_CONFIG.push, enabled: false },
+      delivery: { ...DEFAULT_CONFIG.delivery, maxPerCycle: 1, maxCalibratePerDay: 2 },
+      output: sandboxOutput({ actionLogPath: join(dir, "action-log.md"), eventsPath, pendingDeliveriesPath }),
+    };
+    const items = [1, 2, 3, 4, 5].map((n) => ({ ...base, id: `c${n}`, text: subject(n), tier: "learning" as const }));
+    await deliverItems(items, api, config);
+
+    expect(injections).toHaveLength(1);
+    const { drainPendingDeliveries } = await import("./pending-deliveries.js");
+    // Budget 2: one delivered, one queued, the other three dropped entirely.
+    expect((await drainPendingDeliveries(pendingDeliveriesPath)).map((q) => q.id)).toEqual(["c2"]);
+    const events = (await readFile(eventsPath, "utf-8")).trim().split("\n").map((l) => JSON.parse(l));
+    expect(events.filter((e) => e.type === "calibrate_budget_exhausted").map((e) => e.proposal_id))
+      .toEqual(["c3", "c4", "c5"]);
+  });
+
+  it("never withholds an actionable item because CALIBRATE spent the day", async () => {
+    const { api, injections } = recordingApi();
+    const config = {
+      ...DEFAULT_CONFIG,
+      push: { ...DEFAULT_CONFIG.push, enabled: false },
+      delivery: { ...DEFAULT_CONFIG.delivery, maxPerCycle: 1, maxCalibratePerDay: 0 },
+      output: sandboxOutput({ actionLogPath: join(dir, "action-log.md"), eventsPath: join(dir, "events.jsonl") }),
+    };
+    const items = [
+      { ...base, id: "c1", text: subject(1), tier: "learning" as const },
+      { ...base, id: "prop", text: subject(2), tier: "propose" as const, priority: 5 as const },
+    ];
+    await deliverItems(items, api, config);
+    expect(injections).toHaveLength(1);
+    expect(injections[0]!).toContain("[SAPIENCE: PROPOSE]");
+  });
+
   it("defaults to one item per routing run", async () => {
     const { api, injections } = recordingApi();
     const pendingDeliveriesPath = join(dir, "pending-deliveries.json");
     const config = {
       ...DEFAULT_CONFIG,
       push: { ...DEFAULT_CONFIG.push, enabled: false },
+      // See note above: the daily CALIBRATE ceiling is off so this asserts the
+      // per-cycle default, not the budget.
+      delivery: { ...DEFAULT_CONFIG.delivery, maxCalibratePerDay: -1 },
       output: sandboxOutput({ actionLogPath: join(dir, "action-log.md"), eventsPath: join(dir, "events.jsonl"), pendingDeliveriesPath }),
     };
     const items = [1, 2, 3, 4].map((n) => ({ ...base, id: `p${n}`, text: subject(n), tier: "learning" as const }));
@@ -369,7 +417,10 @@ describe("deliverItems", () => {
     const config = {
       ...DEFAULT_CONFIG,
       push: { ...DEFAULT_CONFIG.push, enabled: false },
-      delivery: { ...DEFAULT_CONFIG.delivery, maxPerCycle: 2 },
+      // maxCalibratePerDay: -1 disables the daily CALIBRATE ceiling. These
+      // cases are about maxPerCycle and overflow ordering; leaving the ceiling
+      // on would make them assert the budget instead.
+      delivery: { ...DEFAULT_CONFIG.delivery, maxPerCycle: 2, maxCalibratePerDay: -1 },
       output: sandboxOutput({ actionLogPath: join(dir, "action-log.md"), eventsPath, pendingDeliveriesPath }),
     };
     const items = [1, 2].map((n) => ({ ...base, id: `p${n}`, text: subject(n), tier: "propose" as const }));

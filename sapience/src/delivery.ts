@@ -4,6 +4,7 @@ import { appendEvent } from "./events.js";
 import { enqueueMainSessionInjection } from "./main-session.js";
 import { addPendingDelivery } from "./pending-deliveries.js";
 import { shouldPush, notePush, requestChannelPush, localDateIn, type PushState } from "./push.js";
+import { splitByCalibrateBudget, noteCalibrateUse, type DailyCount } from "./calibrate-budget.js";
 import { readJsonSafe, writeJsonAtomic } from "./safe-json.js";
 
 // The recording instruction closes the learning loop: without it every
@@ -127,6 +128,31 @@ export async function deliverItems(
     ((a.tier === "act" ? 0 : 1) - (b.tier === "act" ? 0 : 1)) || (b.priority - a.priority)
   );
 
+  // Bound the day's CALIBRATE volume before anything is delivered OR queued.
+  // Over-budget items are dropped outright rather than deferred: a runaway that
+  // queues today just arrives tomorrow, and calibration signal is fungible —
+  // the point is a few samples, not every instance. See calibrate-budget.ts for
+  // the day this became necessary.
+  const localDate = localDateIn(config.activeHours.timezone);
+  const budgetState = await readJsonSafe<DailyCount>(config.output.calibrateStatePath, { date: "", count: 0 });
+  const { admitted, overBudget } = splitByCalibrateBudget(
+    sorted, budgetState, localDate, config.delivery?.maxCalibratePerDay ?? 3
+  );
+  for (const item of overBudget) {
+    await appendEvent(config.output.eventsPath, {
+      plugin: "sapience", type: "calibrate_budget_exhausted",
+      proposal_id: item.id, domain: item.domain, priority: item.priority,
+    });
+  }
+  const admittedCalibrate = admitted.filter((i) => i.tier === "learning").length;
+  if (admittedCalibrate > 0) {
+    await writeJsonAtomic(
+      config.output.calibrateStatePath,
+      noteCalibrateUse(budgetState, localDate, admittedCalibrate)
+    ).catch(() => {});
+  }
+  if (admitted.length === 0) return;
+
   // A routing run can drain a whole backlog of thinking passes (19 in one run
   // the morning after active hours resumed); injecting them all buries the
   // user under a wall of boilerplate in one turn. Take the top few, queue the
@@ -134,8 +160,8 @@ export async function deliverItems(
   // The cap spans the RUN: callers pass every item from every pass they
   // drained, because enforcing it per pass multiplied it by the backlog depth.
   const maxPerCycle = config.delivery?.maxPerCycle ?? 1;
-  const selected = sorted.slice(0, maxPerCycle);
-  const overflow = sorted.slice(maxPerCycle);
+  const selected = admitted.slice(0, maxPerCycle);
+  const overflow = admitted.slice(maxPerCycle);
   for (const item of overflow) {
     const queued = await queueForDeliveryCron(item, config);
     await appendEvent(config.output.eventsPath, {
@@ -194,7 +220,6 @@ export async function deliverItems(
     // Initiative: high-priority act/propose items wake the agent to deliver
     // through the last active channel instead of waiting for the user's next
     // turn. Budgeted per local day.
-    const localDate = localDateIn(config.activeHours.timezone);
     const state = await readJsonSafe<PushState>(config.output.pushStatePath, { date: "", count: 0 });
     if (shouldPush(item, config.push, state, localDate)) {
       await writeJsonAtomic(config.output.pushStatePath, notePush(state, localDate));

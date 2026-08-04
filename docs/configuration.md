@@ -77,6 +77,7 @@ Not configurable here: thinking passes read analytical playbooks from `<workspac
 | `digest.time` | `"17:00"` | Digest time, `HH:MM` — minutes are honored; fires on the first routing run at/after this, once per day |
 | `delivery.maxPerCycle` | `1` | Items carried by the single note injected per routing run (act-tier first, then priority); the overflow queues for the `sapience-delivery` cron, which composes it into one message |
 | `delivery.dedupeWindowHours` | `72` | An item whose normalized text was already delivered within this window is suppressed (`item_suppressed`) instead of re-delivered — the thinking model re-emits the same finding under a fresh id, which pass-id dedupe never catches |
+| `delivery.maxCalibratePerDay` | `3` | Ceiling on CALIBRATE (learning-tier) notes per local day. They exist to sample how much initiative you want, so a few saturates the signal; without a ceiling one install sent 28 in a day, nearly all restating a single unresolved task. Excess is dropped, not deferred (`calibrate_budget_exhausted`). `0` turns CALIBRATE notes off; a negative number means no ceiling. Actionable tiers are never capped |
 | `delivery.sessionKey` | *(unset)* | Explicit target session for injections — see [Delivery target](#delivery-target) |
 | `push.enabled` | `true` | Proactive channel push: wake the agent to deliver high-priority act/propose items through the last active channel instead of waiting for your next turn |
 | `push.maxPerDay` | `6` | Push budget per local day (the weekly digest always pushes and doesn't count) |
@@ -103,6 +104,7 @@ Not configurable here: thinking passes read analytical playbooks from `<workspac
 | `output.watchesPath` | `"sapience/watches.json"` | Metric watches and their reading history |
 | `output.pendingDeliveriesPath` | `"sapience/pending-deliveries.json"` | Queue drained by the `sapience-delivery` cron (failed injections + per-cycle overflow) |
 | `output.deliveredLedgerPath` | `"sapience/delivered-ledger.json"` | Content hashes of recently delivered items, for `delivery.dedupeWindowHours` |
+| `output.calibrateStatePath` | `"sapience/calibrate-state.json"` | Per-day CALIBRATE delivery counter for `delivery.maxCalibratePerDay` |
 | `output.skillProposalsPath` | `"sapience/skill-proposals.json"` | Skill-proposal ledger (machine state) |
 | `output.skillProposalsDocPath` | `"skill-proposals.md"` | Append-only human-readable specs, at the workspace root where you'd actually read them |
 
