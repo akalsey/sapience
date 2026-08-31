@@ -316,7 +316,7 @@ export default definePluginEntry({
 
     api.registerTool({
       name: "goal_submit",
-      description: "Submit a new long-running goal. Call this when the user expresses a fuzzy objective that spans multiple sessions. Returns the new goal's id.",
+      description: "Submit a new long-running goal that persists across sessions. Call this when the user expresses a fuzzy objective that spans multiple sessions — anything phrased as ongoing, recurring, or 'over time'. This is the ONLY tool that creates a durable goal; the core create_goal tool is a per-thread token-budget tracker whose goal dies with the session, so never use it for a user's actual objective. Returns the new goal's id.",
       parameters: {
         type: "object",
         properties: {

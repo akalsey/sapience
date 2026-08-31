@@ -120,6 +120,8 @@ The plugin registers ten tools the agent calls in conversation — you never inv
 
 So "mark the OKR goal complete" or "measure this by SMB churn rate, target 5%" work as plain conversation. `goals.json` is still plain JSON if you prefer to edit directly.
 
+Note that OpenClaw core registers its own `create_goal` / `get_goal` / `update_goal`. Those track a per-thread token budget and expire with the session — unrelated to the goals here, despite the names. If a goal you asked for vanished by the next session, the agent probably reached for `create_goal` instead of `goal_submit`.
+
 ---
 
 ## Weekly status

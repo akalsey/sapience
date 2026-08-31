@@ -1,5 +1,11 @@
 # Using sapience-goals
 
+## These are not the core goal tools
+
+OpenClaw core registers `create_goal` / `get_goal` / `update_goal`. Those track a **per-thread token budget** — the "goal" is scoped to one session and disappears with it. They have nothing to do with the user's objectives.
+
+Every tool below — `goal_submit`, `goal_progress`, `goal_blocker`, `goal_list`, `goal_update`, `check_goals` — belongs to this plugin, and these are the only goals that outlive a session. When the user asks for a goal that survives sessions, use `goal_submit`. `create_goal` is always wrong for that.
+
 ## When to submit a goal
 
 Call `goal_submit` when the user expresses a fuzzy, long-running objective — something that can't be finished in one session and doesn't have an obvious single action:
