@@ -446,6 +446,48 @@ if [[ ${#CONFIGS_TO_FIX[@]} -gt 0 ]]; then
   fi
 fi
 
+# ── core goal tool collision ─────────────────────────────────────────────────
+# Core's create_goal/get_goal/update_goal track a per-thread token budget that
+# dies with the session — nothing like sapience-goals' durable goal_* tools, but
+# close enough in name that agents reach for create_goal when asked for a goal
+# that outlives the session, and the objective is silently lost.
+#
+# The detection and the merged tools.deny value both come from the doctor
+# (sapience/src/doctor/report.ts) — deliberately NOT reimplemented here. The
+# CRON_TOOLS regression happened because this script kept its own copy of logic
+# the doctor also had, and the two drifted.
+header "Checking for the core goal-tool name collision..."
+COLLISION=$(openclaw sapience doctor --json 2>/dev/null \
+  | node -e '
+    let raw = "";
+    process.stdin.on("data", (d) => (raw += d));
+    process.stdin.on("end", () => {
+      try {
+        const r = JSON.parse(raw);
+        const f = r.sections.flatMap((s) => s.findings).find((f) => f.id === "tools:goal-collision");
+        if (f && f.severity === "warn") console.log(f.message);
+      } catch { /* no report to read — stay silent and skip the offer */ }
+    });
+  ' 2>/dev/null || true)
+
+if [[ -n "$COLLISION" ]]; then
+  warn "$COLLISION"
+  echo "  Core's goal tools mean something entirely different from goal_submit:"
+  echo "  they budget tokens within one thread and vanish with the session. An"
+  echo "  agent that picks create_goal for a long-running goal loses it silently."
+  echo ""
+  echo "  Denying them affects EVERY session on this host, not just sapience."
+  echo "  Say no if this agent also does coding work and uses token budgets."
+  if confirm "Deny core's create_goal/get_goal/update_goal?"; then
+    openclaw sapience doctor --fix --only tools:goal-collision >/dev/null
+    ok "Denied core's goal tools (merged into any existing tools.deny)."
+  else
+    info "Left as is. To do it later: openclaw sapience doctor --fix --only tools:goal-collision"
+  fi
+else
+  ok "No goal-tool collision."
+fi
+
 # ── verification ─────────────────────────────────────────────────────────────
 header "Verifying with 'openclaw sapience doctor'..."
 if openclaw sapience doctor; then

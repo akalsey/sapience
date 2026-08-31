@@ -104,5 +104,17 @@ export const MEMORY_SETTINGS: ReadonlyArray<{
   { key: "searchCorpus", path: "plugins.entries.memory-wiki.config.search.corpus", expected: "all", label: "memory-wiki search corpus" },
 ];
 
+// OpenClaw core's own goal tools. They track a per-thread token budget that dies
+// with the session — nothing to do with sapience-goals' durable goal_* tools, but
+// the names collide well enough that agents reach for create_goal when asked for a
+// goal that survives sessions, and the user's objective is silently lost.
+export const CORE_GOAL_TOOLS = ["create_goal", "get_goal", "update_goal"];
+
+// Tool profiles whose scope includes core's goal tools. Per
+// docs.openclaw.ai/gateway/config-tools: "coding" covers filesystem, runtime, web,
+// sessions, memory, goals, generation; "full" (or unset) restricts nothing.
+// "minimal" and "messaging" exclude them, so there is no collision to fix there.
+export const GOAL_TOOL_PROFILES = ["coding", "full"];
+
 // A status artifact older than this is treated as stale (plugin may not be loading).
 export const ARTIFACT_STALE_MS = 60 * 60 * 1000; // 1 hour

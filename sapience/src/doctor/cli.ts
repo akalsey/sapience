@@ -108,9 +108,10 @@ export function registerSapienceDoctorCli(api: any): void {
       const group = program.command("sapience").description("Sapience suite diagnostics");
       const cmd = group.command("doctor").description("Diagnose the sapience suite (crons, paths, memory config)");
       cmd.option("--fix", "apply the safe, auto-fixable findings (memory config, missing crons)");
+      cmd.option("--only <id>", "with --fix, apply only the finding with this id (e.g. tools:goal-collision)");
       cmd.option("--json", "output the report as JSON");
       cmd.option("--probe", "trigger one real thinking pass end-to-end and verify it writes output");
-      cmd.action(async (opts: { fix?: boolean; json?: boolean; probe?: boolean }) => {
+      cmd.action(async (opts: { fix?: boolean; only?: string; json?: boolean; probe?: boolean }) => {
         if (opts.probe) {
           console.log("Probing: triggering one sapience-thinking cron run and watching for writes (up to ~3 minutes)...");
           const result = await runThinkingProbe(makeProbeEffects(), { withinHours: thinkingWithinHours(config) });
@@ -124,7 +125,9 @@ export function registerSapienceDoctorCli(api: any): void {
         let report = buildSuiteDoctorReport(await gatherInputs({ api, config, env: process.env, nowMs }));
 
         if (opts.fix) {
-          const actions = planFixes(report);
+          // --only lets a caller (install.sh) apply one finding without also
+          // applying fixes the user was separately asked about and declined.
+          const actions = planFixes(report).filter((a) => !opts.only || a.finding?.id === opts.only);
           if (actions.length === 0) {
             console.log("Nothing to auto-fix.");
           } else {

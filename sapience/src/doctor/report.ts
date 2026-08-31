@@ -7,7 +7,7 @@ import type {
   PluginObservation,
   VersionObservation,
 } from "./types.js";
-import { MEMORY_SETTINGS, ARTIFACT_STALE_MS, SUITE_CRONS, SUITE_FILES, CRON_REFRESHED_PLUGINS } from "./inventory.js";
+import { MEMORY_SETTINGS, ARTIFACT_STALE_MS, SUITE_CRONS, SUITE_FILES, CRON_REFRESHED_PLUGINS, CORE_GOAL_TOOLS } from "./inventory.js";
 
 function durationStr(nowMs: number, thenMs: number): string {
   return ageStr(nowMs, thenMs).replace(/ ago$/, "");
@@ -309,6 +309,38 @@ function memorySection(i: DoctorInputs): Section {
   return { title: "MEMORY", findings };
 }
 
+// Core's create_goal/get_goal/update_goal collide by name with sapience-goals'
+// goal_* tools, and the two mean opposite things: core's goal is a per-thread
+// token budget that dies with the session, ours survives it. An agent asked for a
+// long-running goal that reaches for create_goal loses the objective silently, so
+// on installs that aren't doing coding work the fix is to remove the collision.
+function goalToolSection(i: DoctorInputs): Section {
+  const c = i.goalToolCollision;
+  if (c.reachable.length === 0) {
+    // Nothing reachable means one of two causes, and they deserve different
+    // messages: the tools were denied, or the profile never exposed them. Testing
+    // deny is enough to tell them apart — goalToolCollision() only empties
+    // `reachable` for those two reasons.
+    return { title: "TOOLS", findings: [{
+      id: "tools:goal-collision", severity: "ok", source: "config",
+      message: c.deny.length > 0 && CORE_GOAL_TOOLS.some((t) => c.deny.includes(t))
+        ? "core goal tools denied — no collision with goal_submit"
+        : `tools.profile "${c.profile}" does not expose core's goal tools`,
+    }] };
+  }
+  // Merge rather than replace: tools.deny is shared config and may already be
+  // denying unrelated tools (browser, exec). Writing a bare array would drop them.
+  const merged = [...c.deny, ...c.reachable];
+  return { title: "TOOLS", findings: [{
+    id: "tools:goal-collision", severity: "warn", source: "config",
+    message: `core's ${c.reachable.join("/")} reachable alongside sapience-goals`,
+    detail: `Core's goal tools track a per-thread token budget and expire with the session — unrelated to goal_submit despite the names. Agents asked for a goal that survives sessions reach for create_goal and the goal is lost. Denying them removes the ambiguity. Skip this fix if this agent also does coding work and uses per-thread token budgets: it takes the tools away from every session on this host.`,
+    fix: { autofixable: true, kind: "config-set",
+      description: `deny ${c.reachable.join(", ")}`,
+      payload: { path: "tools.deny", value: merged } },
+  }] };
+}
+
 export function buildSuiteDoctorReport(i: DoctorInputs): DoctorReport {
   // When the listing itself failed we could not observe crons at all — one
   // honest error, no per-cron "not registered" assertions, no autofix bait.
@@ -336,6 +368,11 @@ export function buildSuiteDoctorReport(i: DoctorInputs): DoctorReport {
     pathsSection(i),
     memorySection(i),
   ];
+  // Only meaningful while sapience-goals is installed — without it there are no
+  // goal_* tools for core's to be confused with.
+  if (i.goalToolCollision.goalsPluginInstalled) {
+    sections.push(goalToolSection(i));
+  }
   if (i.versions.length > 0) {
     sections.push({ title: "VERSIONS", findings: i.versions.map(versionFinding) });
   }

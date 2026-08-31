@@ -3,7 +3,7 @@ import { mkdtemp, mkdir, writeFile, rm } from "fs/promises";
 import { join } from "path";
 import { tmpdir } from "os";
 import {
-  parseCronListJson, toCronObservation, pluginToolsAllowedGlobally,
+  parseCronListJson, toCronObservation, pluginToolsAllowedGlobally, goalToolCollision,
   scanInstalledVersions, readLegacyRootPins, findCorruptFiles,
 } from "./sources.js";
 
@@ -115,6 +115,53 @@ describe("pluginToolsAllowedGlobally", () => {
   it("is true when alsoAllow or allow grants group:plugins past the profile", () => {
     expect(pluginToolsAllowedGlobally({ tools: { profile: "coding", alsoAllow: ["group:plugins"] } })).toBe(true);
     expect(pluginToolsAllowedGlobally({ tools: { profile: "coding", allow: ["group:plugins"] } })).toBe(true);
+  });
+});
+
+describe("goalToolCollision", () => {
+  const withGoals = (tools: any) => ({
+    tools,
+    plugins: { entries: { "sapience-goals": {} } },
+  });
+
+  it("reports all three core goal tools reachable under the coding profile", () => {
+    expect(goalToolCollision(withGoals({ profile: "coding" })).reachable)
+      .toEqual(["create_goal", "get_goal", "update_goal"]);
+  });
+
+  it("reports them reachable when no profile filters anything", () => {
+    expect(goalToolCollision(withGoals({})).reachable).toHaveLength(3);
+    expect(goalToolCollision(withGoals({ profile: "full" })).reachable).toHaveLength(3);
+  });
+
+  it("reports no collision for profiles whose scope excludes goals", () => {
+    expect(goalToolCollision(withGoals({ profile: "messaging" })).reachable).toEqual([]);
+    expect(goalToolCollision(withGoals({ profile: "minimal" })).reachable).toEqual([]);
+  });
+
+  it("treats deny as winning over the profile", () => {
+    expect(goalToolCollision(withGoals({ profile: "coding", deny: ["create_goal", "get_goal", "update_goal"] })).reachable)
+      .toEqual([]);
+  });
+
+  it("reports a partial deny as still colliding", () => {
+    // Denying only create_goal leaves the other two to be picked instead.
+    expect(goalToolCollision(withGoals({ profile: "coding", deny: ["create_goal"] })).reachable)
+      .toEqual(["get_goal", "update_goal"]);
+  });
+
+  it("catches goal tools granted back by name past an excluding profile", () => {
+    expect(goalToolCollision(withGoals({ profile: "messaging", alsoAllow: ["create_goal"] })).reachable)
+      .toEqual(["create_goal"]);
+  });
+
+  it("preserves unrelated deny entries in the observation", () => {
+    expect(goalToolCollision(withGoals({ profile: "coding", deny: ["browser"] })).deny).toEqual(["browser"]);
+  });
+
+  it("reports whether the goals plugin is installed at all", () => {
+    expect(goalToolCollision({ tools: { profile: "coding" } }).goalsPluginInstalled).toBe(false);
+    expect(goalToolCollision(withGoals({ profile: "coding" })).goalsPluginInstalled).toBe(true);
   });
 });
 

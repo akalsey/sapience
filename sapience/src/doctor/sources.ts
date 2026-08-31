@@ -3,7 +3,7 @@ import { join } from "path";
 import { execFile } from "child_process";
 import { promisify } from "util";
 import { readStatusArtifacts, resolveStateBase } from "../status-artifact.js";
-import { SUITE_PLUGINS, SUITE_CRON_BASES, SUITE_FILES, MEMORY_SETTINGS } from "./inventory.js";
+import { SUITE_PLUGINS, SUITE_CRON_BASES, SUITE_FILES, MEMORY_SETTINGS, CORE_GOAL_TOOLS, GOAL_TOOL_PROFILES } from "./inventory.js";
 import type {
   DoctorInputs,
   PluginObservation,
@@ -11,6 +11,7 @@ import type {
   FileObservation,
   WorkspaceObservation,
   MemoryObservation,
+  GoalToolCollisionObservation,
   StatusArtifact,
   VersionObservation,
 } from "./types.js";
@@ -198,6 +199,12 @@ export async function fetchRegistryVersions(pluginIds: readonly string[], timeou
   return out;
 }
 
+// Names granted back to every session via tools.allow/alsoAllow (e.g.
+// "group:plugins", or a specific tool name past an excluding profile).
+function toolGrants(tools: any): string[] {
+  return [...(Array.isArray(tools?.allow) ? tools.allow : []), ...(Array.isArray(tools?.alsoAllow) ? tools.alsoAllow : [])];
+}
+
 // Whether the gateway config exposes plugin tools to every session. A tools
 // profile (other than "full") filters out plugin-registered tools unless
 // tools.allow/alsoAllow grants them back — group:plugins covers all of them.
@@ -205,8 +212,26 @@ export function pluginToolsAllowedGlobally(config: any): boolean {
   const tools = config?.tools;
   const profile = tools?.profile;
   if (!profile || profile === "full") return true;
-  const grants = [...(Array.isArray(tools?.allow) ? tools.allow : []), ...(Array.isArray(tools?.alsoAllow) ? tools.alsoAllow : [])];
-  return grants.includes("group:plugins");
+  return toolGrants(tools).includes("group:plugins");
+}
+
+// Which of core's goal tools an agent session can actually still call. `deny`
+// wins over both the profile and the allow lists (documented precedence), so a
+// denied tool is gone regardless of how it was granted.
+export function goalToolCollision(config: any): GoalToolCollisionObservation {
+  const tools = config?.tools;
+  const profile = typeof tools?.profile === "string" ? tools.profile : undefined;
+  const deny = Array.isArray(tools?.deny) ? tools.deny.filter((t: unknown) => typeof t === "string") : [];
+  const grants = new Set(toolGrants(tools));
+  // No profile means no filtering at all. A profile that excludes goals can still
+  // have them granted back by name through allow/alsoAllow.
+  const inProfile = !profile || GOAL_TOOL_PROFILES.includes(profile);
+  return {
+    goalsPluginInstalled: pluginInstalled(config, "sapience-goals"),
+    ...(profile !== undefined ? { profile } : {}),
+    deny,
+    reachable: CORE_GOAL_TOOLS.filter((t) => !deny.includes(t) && (inProfile || grants.has(t))),
+  };
 }
 
 function resolveWorkspace(api: any, config: any, artifacts: Record<string, StatusArtifact>): WorkspaceObservation {
@@ -328,6 +353,7 @@ export async function gatherInputs(deps: { api: any; config: any; env?: NodeJS.P
     cronListing: listing.ok ? { available: true } : { available: false, error: listing.error },
     modelAllowlist: modelAllowlist(config),
     pluginToolsAllowedGlobally: pluginToolsAllowedGlobally(config),
+    goalToolCollision: goalToolCollision(config),
     versions,
     corruptFiles,
     pendingProposals,

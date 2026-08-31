@@ -106,6 +106,17 @@ export interface MemoryObservation {
   searchCorpus?: string;
 }
 
+// The create_goal/goal_submit name collision: whether core's goal tools are
+// actually reachable in agent sessions while sapience-goals is installed.
+export interface GoalToolCollisionObservation {
+  goalsPluginInstalled: boolean;
+  profile?: string;                 // tools.profile, if set
+  deny: string[];                   // tools.deny as configured
+  // Core goal tools the profile exposes that tools.deny has not removed. Empty
+  // means no collision — either the profile excludes them or they're denied.
+  reachable: string[];
+}
+
 export interface DoctorInputs {
   plugins: PluginObservation[];
   crons: CronObservation[];
@@ -113,6 +124,7 @@ export interface DoctorInputs {
   // True when the gateway config exposes plugin tools to every session (no
   // restrictive tools.profile, or group:plugins in tools.allow/alsoAllow).
   pluginToolsAllowedGlobally: boolean;
+  goalToolCollision: GoalToolCollisionObservation;
   // Whether `openclaw cron list --json` actually succeeded. When it didn't,
   // crons is empty because we COULDN'T LOOK — not because nothing exists.
   cronListing: { available: boolean; error?: string };

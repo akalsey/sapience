@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { buildSuiteDoctorReport } from "./report.js";
+import { CORE_GOAL_TOOLS } from "./inventory.js";
 import type { DoctorInputs, Finding } from "./types.js";
 
 const NOW = 1_800_000_000_000;
@@ -27,6 +28,8 @@ function healthy(): DoctorInputs {
       { base: "sapience-goals-check", job: { name: "sapience-goals-check", enabled: true, lastStatus: "ok", consecutiveErrors: 0, toolsAllow: ["check_goals"] } },
     ],
     pluginToolsAllowedGlobally: false,
+    // Default to the resolved state: goals installed, core's tools already denied.
+    goalToolCollision: { goalsPluginInstalled: true, profile: "coding", deny: [...CORE_GOAL_TOOLS], reachable: [] },
     cronListing: { available: true },
     pendingProposals: { count: 0 },
     versions: [],
@@ -60,8 +63,39 @@ describe("buildSuiteDoctorReport", () => {
     const r = buildSuiteDoctorReport(healthy());
     expect(r.summary.error).toBe(0);
     expect(r.exitCode).toBe(0);
-    expect(r.sections.map((s) => s.title)).toEqual(["PLUGINS", "CRONS", "PATHS", "MEMORY"]);
+    expect(r.sections.map((s) => s.title)).toEqual(["PLUGINS", "CRONS", "PATHS", "MEMORY", "TOOLS"]);
     expect(all(r).every((f) => f.severity === "ok")).toBe(true);
+  });
+
+  it("warns when core's goal tools are reachable alongside sapience-goals", () => {
+    const i = healthy();
+    i.goalToolCollision = { goalsPluginInstalled: true, profile: "coding", deny: [], reachable: [...CORE_GOAL_TOOLS] };
+    const f = byId(buildSuiteDoctorReport(i), "tools:goal-collision");
+    expect(f?.severity).toBe("warn");
+    expect(f?.fix?.autofixable).toBe(true);
+    expect(f?.fix?.payload).toEqual({ path: "tools.deny", value: [...CORE_GOAL_TOOLS] });
+  });
+
+  it("merges into an existing tools.deny rather than replacing it", () => {
+    const i = healthy();
+    i.goalToolCollision = { goalsPluginInstalled: true, profile: "coding", deny: ["browser", "exec"], reachable: [...CORE_GOAL_TOOLS] };
+    const f = byId(buildSuiteDoctorReport(i), "tools:goal-collision");
+    // Dropping browser/exec here would silently re-enable tools the operator denied.
+    expect(f?.fix?.payload?.value).toEqual(["browser", "exec", ...CORE_GOAL_TOOLS]);
+  });
+
+  it("only proposes denying the goal tools that are still reachable", () => {
+    const i = healthy();
+    i.goalToolCollision = { goalsPluginInstalled: true, profile: "coding", deny: ["create_goal"], reachable: ["get_goal", "update_goal"] };
+    const f = byId(buildSuiteDoctorReport(i), "tools:goal-collision");
+    expect(f?.fix?.payload?.value).toEqual(["create_goal", "get_goal", "update_goal"]);
+  });
+
+  it("omits the TOOLS section entirely when sapience-goals is not installed", () => {
+    const i = healthy();
+    i.goalToolCollision = { goalsPluginInstalled: false, profile: "coding", deny: [], reachable: [...CORE_GOAL_TOOLS] };
+    const r = buildSuiteDoctorReport(i);
+    expect(r.sections.map((s) => s.title)).not.toContain("TOOLS");
   });
 
   it("flags an uninstalled plugin as an error", () => {
