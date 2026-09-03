@@ -7,7 +7,8 @@ import type {
   PluginObservation,
   VersionObservation,
 } from "./types.js";
-import { MEMORY_SETTINGS, ARTIFACT_STALE_MS, SUITE_CRONS, SUITE_FILES, CRON_REFRESHED_PLUGINS, CORE_GOAL_TOOLS } from "./inventory.js";
+import { MEMORY_SETTINGS, ARTIFACT_STALE_MS, SUITE_CRONS, SUITE_FILES, CRON_REFRESHED_PLUGINS, CORE_GOAL_TOOLS, DELIVERY_POLL_CRON_BASE, cronSpecFor } from "./inventory.js";
+import { hasStrictSilenceContract, isSupportedHost, MIN_SUPPORTED_HOST_VERSION } from "./host-version.js";
 
 function durationStr(nowMs: number, thenMs: number): string {
   return ageStr(nowMs, thenMs).replace(/ ago$/, "");
@@ -83,7 +84,12 @@ function pluginFinding(
   return { id, severity: "ok", source: "artifact", message: `${p.id} v${p.artifact.version} initialized` };
 }
 
-function cronFinding(c: CronObservation, allowlist: string[], pluginToolsGlobal: boolean): Finding {
+function cronFinding(
+  c: CronObservation,
+  allowlist: string[],
+  pluginToolsGlobal: boolean,
+  strictSilenceHost: boolean,
+): Finding {
   const id = `cron:${c.base}`;
   if (!c.job) {
     return { id, severity: "error", source: "cron", message: `cron ${c.base} is not registered`,
@@ -91,6 +97,71 @@ function cronFinding(c: CronObservation, allowlist: string[], pluginToolsGlobal:
       fix: { autofixable: true, kind: "cron-register", description: `register cron ${c.base}`, payload: { base: c.base } } };
   }
   const j = c.job;
+  const spec = cronSpecFor(c.base);
+
+  // Checked before anything about the job's run state, because it is a
+  // structural property and its fix subsumes the rest: replacing the job
+  // re-registers it with the current prompt, tools, delivery route and enabled
+  // state in one step. Ordering this after the enabled/disabled checks meant a
+  // job that had been disabled by hand reported as healthy and was never
+  // offered the fix — which is the state an operator lands in after muting a
+  // noisy job themselves.
+  //
+  // openclaw's upsert matches on the declaration key alone, so a job registered
+  // before the suite adopted keys cannot be matched and must be replaced rather
+  // than updated. Registering over it leaves the original running.
+  if (!j.declarationKey) {
+    return { id, severity: "warn", source: "cron",
+      message: `cron ${j.name} predates declaration keys and must be replaced, not updated`,
+      detail: "Re-registering it without deleting it first leaves two copies running, and the old one keeps whatever delivery route it was created with. This fix deletes it and registers the current definition in its place."
+        // The suite never sets a model, so a replacement drops any per-job pin.
+        // Name it rather than carrying it: the choice of model is the
+        // operator's, and it should be theirs to re-make knowingly.
+        + (j.payloadModel
+          ? ` This job pins the model ${j.payloadModel}; the replacement will not, so it reverts to the agent default. Re-pin it with \`openclaw cron edit <new-job-id> --model ${j.payloadModel}\` if you still want it.`
+          : ""),
+      fix: { autofixable: true, kind: "cron-register",
+        description: `replace pre-declaration-key cron ${j.name}`,
+        // Carry the job's own delivery route across. Unlike a model pin, this
+        // is routing the suite owns and would otherwise silently downgrade to
+        // announce/last — which is the noisy configuration.
+        payload: { base: c.base, replaceName: j.name,
+          ...(j.deliveryTo ? { deliveryTo: j.deliveryTo } : {}),
+          ...(j.deliveryChannel ? { deliveryChannel: j.deliveryChannel } : {}) } } };
+  }
+
+  // A prompt naming the constant instead of its value. The runtime recognizes
+  // only the literal NO_REPLY, so such a job can never complete silently.
+  if (j.message?.includes("SILENT_REPLY_TOKEN")) {
+    return { id, severity: "error", source: "cron",
+      message: `cron ${j.name} asks the model to reply "SILENT_REPLY_TOKEN", which the runtime does not recognize`,
+      detail: "The silent token is the literal string NO_REPLY. A job with this prompt cannot complete silently, and on a job with a delivery route it announces on every run. Re-register it (re-run install.sh or `openclaw sapience doctor --fix` after deleting the job)." };
+  }
+
+  // Command payloads never start an agent turn, so tool grants, model pinning
+  // and bootstrap context do not apply. Checking them would report a healthy
+  // poll job as broken.
+  if (j.isCommandPayload) {
+    if (j.lastStatus === "error" || (j.consecutiveErrors ?? 0) > 0) {
+      return { id, severity: "error", source: "cron",
+        message: `cron ${j.name} last run failed (${j.consecutiveErrors ?? 0} consecutive errors)`,
+        detail: `Its payload is \`openclaw sapience deliver-check\`. Run that by hand to see the failure, then inspect with \`openclaw cron get ${j.id ?? "<job-id from cron list>"}\`.` };
+    }
+    if (!j.enabled) {
+      return { id, severity: "error", source: "cron",
+        message: `cron ${j.name} is disabled — queued deliveries will never be sent`,
+        detail: "This job is what starts the delivery turn. With it disabled the delivery job never runs, because it has no schedule of its own." };
+    }
+    return { id, severity: "ok", source: "cron", message: `cron ${j.name} ok` };
+  }
+
+  // An on-demand job carrying a live announce route is the 2026.8+ hazard: any
+  // run that ends without text delivers the runner's placeholder sentence.
+  if (strictSilenceHost && spec?.onDemand && j.announces) {
+    return { id, severity: "warn", source: "cron",
+      message: `cron ${j.name} announces on a host that delivers empty-turn placeholder text`,
+      detail: "On OpenClaw 2026.8+ an announce job's run is marked as requiring visible text, so a turn that ends without any is given a placeholder sentence and the route delivers it. A better model does not help — the substitution happens precisely when the model produced nothing — and no prompt wording prevents it. Pin an explicit destination (SAPIENCE_DELIVERY_CHANNEL / SAPIENCE_DELIVERY_TO) and re-run install.sh: --no-deliver plus an explicit target drops the requirement to optional while still resolving a route for the message tool, so an empty turn delivers nothing at all." };
+  }
   if (j.payloadModel && !allowlist.includes(j.payloadModel)) {
     return { id, severity: "error", source: "cron",
       message: `cron ${j.name} pins model '${j.payloadModel}' not in the agents.defaults.models allowlist`,
@@ -118,14 +189,84 @@ function cronFinding(c: CronObservation, allowlist: string[], pluginToolsGlobal:
     }
   }
   if (!j.enabled) {
+    // The delivery job ships disabled on purpose: sapience-poll-delivery runs
+    // it only when the queue is non-empty, which is what keeps ~95% of its runs
+    // (and their announcements) from happening at all.
+    if (spec?.onDemand) {
+      return { id, severity: "ok", source: "cron",
+        message: `cron ${j.name} ok (on demand — started by ${DELIVERY_POLL_CRON_BASE})` };
+    }
     return { id, severity: "warn", source: "cron", message: `cron ${j.name} is disabled` };
+  }
+  if (spec?.onDemand && j.enabled) {
+    return { id, severity: "warn", source: "cron",
+      message: `cron ${j.name} runs on its own schedule instead of on demand`,
+      detail: `Its queue is empty on the great majority of runs, so a scheduled copy spends model turns discovering there is nothing to do — and on OpenClaw 2026.8+ each empty turn delivers a placeholder sentence. Re-run install.sh so ${DELIVERY_POLL_CRON_BASE} gates it, or disable it with \`openclaw cron disable ${j.id ?? "<job-id>"}\`.` };
   }
   if (c.extraMatches?.length) {
     return { id, severity: "warn", source: "cron",
-      message: `cron ${j.name} ok, but legacy duplicate job(s) exist: ${c.extraMatches.join(", ")}`,
-      detail: "Old jobs from a previous installer can shadow the real one in ad-hoc checks. Delete them with `openclaw cron delete`." };
+      message: `cron ${j.name} ok, but duplicate job(s) exist: ${c.extraMatches.join(", ")}`,
+      detail: "Old jobs from a previous installer can shadow the real one in ad-hoc checks, and they keep running on their own schedules.",
+      fix: { autofixable: true, kind: "cron-delete",
+        description: `delete duplicate job(s) ${c.extraMatches.join(", ")}`,
+        payload: { names: c.extraMatches } } };
   }
   return { id, severity: "ok", source: "cron", message: `cron ${j.name} ok` };
+}
+
+// The suite's earlier naming generation. Not cosmetic: those jobs shipped
+// `delivery: { mode: "announce" }` alongside prompts asking for the literal
+// "SILENT_REPLY_TOKEN", so on 2026.8+ they announce on every single run. The
+// rename to the current names was never a migration, so an install that
+// upgraded across it runs both generations at once.
+function legacyCronFinding(i: DoctorInputs): Finding | undefined {
+  if (!i.legacyCronJobs?.length) return undefined;
+  return {
+    id: "cron:legacy-pass-jobs", severity: "error", source: "cron",
+    message: `${i.legacyCronJobs.length} superseded job(s) from an older sapience install are still registered: ${i.legacyCronJobs.join(", ")}`,
+    detail: "These predate the current job names and were never migrated. They carry an announce delivery route and a prompt that asks for a silent token the runtime does not recognize, so on OpenClaw 2026.8+ every one of their runs delivers text to your chat. The current jobs already do their work.",
+    fix: { autofixable: true, kind: "cron-delete",
+      description: `delete superseded job(s) ${i.legacyCronJobs.join(", ")}`,
+      payload: { names: i.legacyCronJobs } },
+  };
+}
+
+// SAP-8: report, do not assume. openclaw documents that "jobs created by an
+// agent are capped to the tools available to that creating turn", which fully
+// explains a snapshot of suite tool names in an unrelated job — but the
+// alternative (the suite widening a third-party job's policy) would be a
+// permissions problem, and only looking tells them apart.
+function foreignToolPolicyFinding(i: DoctorInputs): Finding | undefined {
+  if (!i.foreignJobsWithSuiteTools?.length) return undefined;
+  return {
+    id: "cron:foreign-tool-policy", severity: "ok", source: "cron",
+    message: `${i.foreignJobsWithSuiteTools.length} non-suite job(s) carry suite tool names in their tool policy: ${i.foreignJobsWithSuiteTools.join(", ")}`,
+    detail: "Expected when the job was created during a turn that had the suite's tools loaded — openclaw caps an agent-created job to that turn's tools and stores the snapshot. Nothing to fix unless you created one of these jobs somewhere the suite's tools were not loaded.",
+  };
+}
+
+function hostSection(i: DoctorInputs): Section {
+  const { version, error } = i.host ?? {};
+  if (!version) {
+    return { title: "HOST", findings: [{
+      id: "host:version", severity: "warn", source: "config",
+      message: "could not determine the OpenClaw version",
+      detail: `The suite supports OpenClaw ${MIN_SUPPORTED_HOST_VERSION} and newer; without a version it cannot check whether this host is one of them. \`openclaw --version\` ${error ? `failed: ${error}` : "returned nothing recognizable"}.`,
+    }] };
+  }
+  if (!isSupportedHost(version)) {
+    return { title: "HOST", findings: [{
+      id: "host:version", severity: "error", source: "config",
+      message: `OpenClaw ${version} is older than the suite's supported floor (${MIN_SUPPORTED_HOST_VERSION})`,
+      detail: `The suite registers jobs with --declaration-key, --light-context and command payloads, none of which this host understands. Upgrade OpenClaw, or pin the suite to a release that supported ${version}.`,
+    }] };
+  }
+  const strict = hasStrictSilenceContract(version);
+  return { title: "HOST", findings: [{
+    id: "host:version", severity: "ok", source: "config",
+    message: `OpenClaw ${version} supported${strict ? " (strict silence: only a bare NO_REPLY is quiet)" : ""}`,
+    ...(strict ? { detail: "From 2026.8.1 a scheduled job with a delivery route has one quiet path: a reply that is the bare token and nothing else. Saying anything alongside the token delivers the remainder, and producing no text at all delivers a placeholder sentence. The suite's jobs are configured for that." } : {}),
+  }] };
 }
 
 function allCronsGreen(i: DoctorInputs): boolean {
@@ -344,8 +485,12 @@ function goalToolSection(i: DoctorInputs): Section {
 export function buildSuiteDoctorReport(i: DoctorInputs): DoctorReport {
   // When the listing itself failed we could not observe crons at all — one
   // honest error, no per-cron "not registered" assertions, no autofix bait.
+  const strictSilenceHost = hasStrictSilenceContract(i.host?.version);
   const cronFindings: Finding[] = i.cronListing.available
-    ? i.crons.map((c) => cronFinding(c, i.modelAllowlist, i.pluginToolsAllowedGlobally))
+    ? [
+        ...i.crons.map((c) => cronFinding(c, i.modelAllowlist, i.pluginToolsAllowedGlobally, strictSilenceHost)),
+        ...[legacyCronFinding(i), foreignToolPolicyFinding(i)].filter((f): f is Finding => Boolean(f)),
+      ]
     : [{
         id: "cron:listing", severity: "error", source: "cron",
         message: "could not list cron jobs — cron state is unverified this run",
@@ -360,6 +505,7 @@ export function buildSuiteDoctorReport(i: DoctorInputs): DoctorReport {
   );
 
   const sections: Section[] = [
+    hostSection(i),
     { title: "PLUGINS", findings: i.plugins.map((p) => pluginFinding(p, i.nowMs, {
       siblingAlive: [...freshIds].some((fid) => fid !== p.id),
       onDisk: onDiskByPlugin.get(p.id),

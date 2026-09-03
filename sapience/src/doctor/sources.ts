@@ -3,7 +3,8 @@ import { join } from "path";
 import { execFile } from "child_process";
 import { promisify } from "util";
 import { readStatusArtifacts, resolveStateBase } from "../status-artifact.js";
-import { SUITE_PLUGINS, SUITE_CRON_BASES, SUITE_FILES, MEMORY_SETTINGS, CORE_GOAL_TOOLS, GOAL_TOOL_PROFILES } from "./inventory.js";
+import { SUITE_PLUGINS, SUITE_CRON_BASES, ALL_SUITE_CRON_BASES, SUITE_TOOL_NAMES, SUITE_FILES, MEMORY_SETTINGS, CORE_GOAL_TOOLS, GOAL_TOOL_PROFILES, DELIVERING_PLUGINS } from "./inventory.js";
+import { parseHostVersion, type HostVersionObservation } from "./host-version.js";
 import type {
   DoctorInputs,
   PluginObservation,
@@ -90,6 +91,21 @@ async function listCronJobs(): Promise<{ ok: true; jobs: any[] } | { ok: false; 
   }
 }
 
+// `openclaw --version` rather than a config read: what matters is the binary
+// the gateway is actually running, and it is the same command a user would run
+// to answer the question themselves.
+async function readHostVersion(): Promise<HostVersionObservation> {
+  try {
+    const { stdout } = await exec("openclaw", ["--version"]);
+    const raw = stdout.trim();
+    const version = parseHostVersion(raw);
+    return version ? { version, raw } : { raw, error: "could not parse a version from `openclaw --version`" };
+  } catch (err) {
+    const e = err as { stderr?: string; message?: string };
+    return { error: (e.stderr?.trim() || e.message || String(err)).slice(0, 300) };
+  }
+}
+
 export function toCronObservation(base: string, jobs: any[]): CronObservation {
   // Exact name wins; prefix matches (multi-agent "-<agent>" suffixes, but also
   // legacy jobs like "sapience-thinking-pass") are fallbacks. Extra matches are
@@ -109,9 +125,80 @@ export function toCronObservation(base: string, jobs: any[]): CronObservation {
       lastStatus: st.lastRunStatus ?? st.lastStatus,
       consecutiveErrors: st.consecutiveErrors ?? 0,
       toolsAllow: Array.isArray(job.payload?.toolsAllow) ? job.payload.toolsAllow : undefined,
+      ...(typeof job.declarationKey === "string" ? { declarationKey: job.declarationKey } : {}),
+      announces: job.delivery?.mode === "announce",
+      ...(typeof job.delivery?.channel === "string" && job.delivery.channel !== "last"
+        ? { deliveryChannel: job.delivery.channel } : {}),
+      ...(typeof job.delivery?.to === "string" && job.delivery.to
+        ? { deliveryTo: job.delivery.to } : {}),
+      ...(typeof job.payload?.message === "string" ? { message: job.payload.message } : {}),
+      isCommandPayload: isCommandPayload(job),
     },
     ...(extraMatches.length > 0 ? { extraMatches } : {}),
   };
+}
+
+// Command payloads run a process, never an agent turn. openclaw has labelled
+// the payload kind differently across versions, so recognize the argv/command
+// fields too rather than trusting one spelling.
+function isCommandPayload(job: any): boolean {
+  const payload = job?.payload ?? {};
+  return job?.payloadKind === "command" || payload.kind === "command" ||
+    Array.isArray(payload.argv) || typeof payload.command === "string";
+}
+
+// Jobs from the suite's earlier naming generation ("sapience-thinking-pass" and
+// friends). They are not just cosmetic duplicates: that generation shipped
+// `delivery: { mode: "announce" }` together with prompts that told the model to
+// reply with the literal string "SILENT_REPLY_TOKEN" — a token the runtime does
+// not recognize — so on openclaw 2026.8+ they announce on every run. Because
+// the rename was never a migration, an install that upgraded across it keeps
+// running them alongside the current jobs.
+export const LEGACY_CRON_SUFFIX = "-pass";
+
+// `openclaw cron rm` takes a job id positionally; there is no --name option on
+// it (verified in both 2026.7.1 and 2026.8.x — only `cron add` has --name), and
+// the gateway's cron.remove rejects anything that is not an id with
+// "id not found". Deletes must therefore resolve the name first.
+//
+// Returns every id, not the first: a job name is not unique, and duplicates are
+// exactly what the delete paths exist to clean up. Deleting one of two copies
+// would leave the other running on its original schedule and delivery route.
+export function resolveCronJobIds(jobs: any[], name: string): string[] {
+  return jobs
+    .filter((j) => j?.name === name && typeof j?.id === "string" && j.id)
+    .map((j) => j.id as string);
+}
+
+export function findLegacySuiteCronJobs(jobs: any[], bases: readonly string[]): string[] {
+  return jobs
+    .filter((j) => typeof j?.name === "string" &&
+      bases.some((base) => j.name === `${base}${LEGACY_CRON_SUFFIX}` ||
+        j.name.startsWith(`${base}${LEGACY_CRON_SUFFIX}-`)))
+    .map((j) => j.name as string);
+}
+
+// Jobs outside the suite whose stored tool policy carries suite tool names.
+// The benign explanation is openclaw's documented behavior — "jobs created by
+// an agent are capped to the tools available to that creating turn", so a job
+// created while the suite's tools were loaded snapshots all of them. The
+// alternative, the suite widening a third-party job's policy, would be a
+// permissions problem. Reporting the list is what tells the two apart.
+export function findForeignJobsCarryingSuiteTools(
+  jobs: any[],
+  suiteBases: readonly string[],
+  suiteTools: readonly string[],
+): string[] {
+  const isSuiteJob = (name: string) =>
+    suiteBases.some((base) => name === base || name.startsWith(`${base}-`));
+  return jobs
+    .filter((j) => {
+      const name = typeof j?.name === "string" ? j.name : "";
+      if (!name || isSuiteJob(name)) return false;
+      const allow = Array.isArray(j?.payload?.toolsAllow) ? j.payload.toolsAllow : [];
+      return allow.some((t: unknown) => typeof t === "string" && suiteTools.includes(t));
+    })
+    .map((j) => j.name as string);
 }
 
 // ── filesystem scans for version skew and quarantined state ────────────────
@@ -287,7 +374,7 @@ function isOperatorSessionKey(key: string): boolean {
 async function gatherDeliveryTarget(config: any, stateBase: string): Promise<DoctorInputs["deliveryTarget"]> {
   const dmScope = config?.session?.dmScope;
   const configuredKeys: Record<string, string | undefined> = {};
-  for (const id of ["sapience", "sapience-thinking", "sapience-goals"]) {
+  for (const id of DELIVERING_PLUGINS) {
     const v = readPluginConfig(config, `plugins.entries.${id}.config.delivery.sessionKey`);
     configuredKeys[id] = typeof v === "string" && v.trim() ? v.trim() : undefined;
   }
@@ -349,8 +436,13 @@ export async function gatherInputs(deps: { api: any; config: any; env?: NodeJS.P
   return {
     nowMs,
     plugins,
-    crons: listing.ok ? SUITE_CRON_BASES.map((base) => toCronObservation(base, jobs)) : [],
+    crons: listing.ok ? ALL_SUITE_CRON_BASES.map((base) => toCronObservation(base, jobs)) : [],
     cronListing: listing.ok ? { available: true } : { available: false, error: listing.error },
+    host: await readHostVersion(),
+    legacyCronJobs: listing.ok ? findLegacySuiteCronJobs(jobs, SUITE_CRON_BASES) : [],
+    foreignJobsWithSuiteTools: listing.ok
+      ? findForeignJobsCarryingSuiteTools(jobs, ALL_SUITE_CRON_BASES, SUITE_TOOL_NAMES)
+      : [],
     modelAllowlist: modelAllowlist(config),
     pluginToolsAllowedGlobally: pluginToolsAllowedGlobally(config),
     goalToolCollision: goalToolCollision(config),

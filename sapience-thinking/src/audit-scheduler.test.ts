@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { auditCronName, buildAuditCronArgs, scheduleAudit } from "./audit-scheduler.js";
+import { auditCronName, auditDeclarationKey, buildAuditCronArgs, scheduleAudit } from "./audit-scheduler.js";
 
 describe("auditCronName", () => {
   it("builds a stable sapience-audit slug from the audit text", () => {
@@ -14,16 +14,62 @@ describe("auditCronName", () => {
   });
 });
 
+describe("auditDeclarationKey", () => {
+  it("namespaces the job under sapience so re-registration converges", () => {
+    expect(auditDeclarationKey("sapience-audit-x")).toBe("sapience:audit:sapience-audit-x");
+  });
+
+  it("stays clear of the gateway's reserved namespaces", () => {
+    const key = auditDeclarationKey("sapience-audit-x");
+    expect(key.startsWith("heartbeat:")).toBe(false);
+    expect(key.startsWith("heartbeat-task:")).toBe(false);
+    expect(key.startsWith("skill-collection-review:")).toBe(false);
+  });
+});
+
 describe("buildAuditCronArgs", () => {
+  const argValue = (args: string[], flag: string) => args[args.indexOf(flag) + 1];
+
   it("registers a weekly isolated job that reports findings", () => {
     const args = buildAuditCronArgs("sapience-audit-x", "salesforce: dupes", "main");
     expect(args.slice(0, 2)).toEqual(["cron", "add"]);
-    expect(args[args.indexOf("--name") + 1]).toBe("sapience-audit-x");
-    expect(args[args.indexOf("--cron") + 1]).toBe("0 9 * * 1");
-    expect(args[args.indexOf("--agent") + 1]).toBe("main");
-    const message = args[args.indexOf("--message") + 1]!;
+    expect(argValue(args, "--name")).toBe("sapience-audit-x");
+    expect(argValue(args, "--cron")).toBe("0 9 * * 1");
+    expect(argValue(args, "--agent")).toBe("main");
+    const message = argValue(args, "--message")!;
     expect(message).toContain("salesforce: dupes");
     expect(message.toLowerCase()).toContain("audit");
+  });
+
+  it("asks for silence rather than a one-line summary on the clean-bill path", () => {
+    // A one-line "nothing to report" is still a delivered message on any job
+    // that later gains a delivery route, and it does not match the silent-token
+    // shape every other job in the suite uses.
+    const message = argValue(buildAuditCronArgs("sapience-audit-x", "dupes", "main"), "--message")!;
+    expect(message).toContain("NO_REPLY");
+    expect(message).not.toMatch(/keep it to one line/i);
+  });
+
+  it("carries a declaration key so re-registering converges instead of duplicating", () => {
+    const args = buildAuditCronArgs("sapience-audit-x", "dupes", "main");
+    expect(argValue(args, "--declaration-key")).toBe("sapience:audit:sapience-audit-x");
+  });
+
+  it("skips workspace bootstrap injection", () => {
+    expect(buildAuditCronArgs("sapience-audit-x", "dupes", "main")).toContain("--light-context");
+  });
+
+  it("keeps the job off any delivery route", () => {
+    expect(buildAuditCronArgs("sapience-audit-x", "dupes", "main")).toContain("--no-deliver");
+  });
+
+  it("omits --agent entirely when no agent id is known", () => {
+    // Storing a guessed id is what produced jobs that fail every run with
+    // "cron job agent is unavailable: default". With the flag absent the
+    // scheduler resolves the configured default itself.
+    const args = buildAuditCronArgs("sapience-audit-x", "dupes", undefined);
+    expect(args).not.toContain("--agent");
+    expect(args).not.toContain("default");
   });
 });
 

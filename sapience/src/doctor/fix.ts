@@ -1,4 +1,5 @@
 import type { DoctorReport, Finding, FixDescriptor } from "./types.js";
+import { DELIVERING_PLUGINS } from "./inventory.js";
 
 export interface FixAction {
   finding?: Finding;
@@ -19,7 +20,8 @@ export function planFixes(r: DoctorReport): FixAction[] {
 // config writer / cron registrar.
 export interface FixEffectors {
   setConfig(path: string, value: unknown): Promise<void>;
-  registerCron(base: string): Promise<void>;
+  registerCron(base: string, opts?: { deliveryTarget?: { channel: string; to: string } }): Promise<void>;
+  deleteCron(name: string): Promise<void>;
   updatePlugin(pluginId: string): Promise<void>;
 }
 
@@ -30,13 +32,32 @@ export async function applyFixes(actions: FixAction[], eff: FixEffectors): Promi
       await eff.setConfig(a.payload.path as string, a.payload.value);
       done.push(`set ${a.payload.path} = ${String(a.payload.value)}`);
     } else if (a.kind === "cron-register") {
-      await eff.registerCron(a.payload.base as string);
-      done.push(`registered cron ${a.payload.base}`);
+      // A job predating declaration keys cannot be matched by the upsert, so it
+      // must be deleted first or the new registration joins it rather than
+      // replacing it — leaving the old delivery route live.
+      const replaceName = a.payload.replaceName as string | undefined;
+      if (replaceName) {
+        await eff.deleteCron(replaceName);
+        done.push(`deleted pre-declaration-key cron ${replaceName}`);
+      }
+      const to = a.payload.deliveryTo as string | undefined;
+      const channel = (a.payload.deliveryChannel as string | undefined) ?? "telegram";
+      await eff.registerCron(a.payload.base as string, to ? { deliveryTarget: { channel, to } } : undefined);
+      done.push(`registered cron ${a.payload.base}${to ? ` (kept delivery route ${channel}:${to})` : ""}`);
+    } else if (a.kind === "cron-delete") {
+      // One failed delete must not abandon the rest: these jobs are each
+      // independently costing the user a message every fifteen minutes.
+      for (const name of (a.payload.names as string[]) ?? []) {
+        try {
+          await eff.deleteCron(name);
+          done.push(`deleted superseded cron ${name}`);
+        } catch (err) {
+          done.push(`could not delete cron ${name}: ${String(err).slice(0, 200)}`);
+        }
+      }
     } else if (a.kind === "delivery-target-set") {
-      // The three delivering plugins share the delivery.sessionKey convention
-      // (sapience-feedback never injects).
       const sessionKey = a.payload.sessionKey as string;
-      for (const id of ["sapience", "sapience-thinking", "sapience-goals"]) {
+      for (const id of DELIVERING_PLUGINS) {
         await eff.setConfig(`plugins.entries.${id}.config.delivery.sessionKey`, sessionKey);
       }
       done.push(`routed suite deliveries to ${sessionKey}`);
@@ -68,7 +89,7 @@ export function patchConfigForAppliedFixes(config: any, actions: FixAction[]): v
     if (a.kind === "config-set") {
       setPath(a.payload.path as string, a.payload.value);
     } else if (a.kind === "delivery-target-set") {
-      for (const id of ["sapience", "sapience-thinking", "sapience-goals"]) {
+      for (const id of DELIVERING_PLUGINS) {
         setPath(`plugins.entries.${id}.config.delivery.sessionKey`, a.payload.sessionKey);
       }
     }

@@ -7,10 +7,12 @@ export type FindingSource = "artifact" | "fs" | "resolver" | "config" | "cron";
 export interface FixDescriptor {
   autofixable: boolean;
   description: string;
-  kind: "config-set" | "cron-register" | "plugin-update" | "delivery-target-set";
+  kind: "config-set" | "cron-register" | "cron-delete" | "plugin-update" | "delivery-target-set";
   // For config-set: { path, value }. For cron-register: { base }.
-  // For plugin-update: { pluginId }. For delivery-target-set: { sessionKey }
-  // (applied to every suite plugin's delivery.sessionKey).
+  // For cron-delete: { names: string[] } — superseded jobs from an earlier
+  // naming generation. For plugin-update: { pluginId }. For
+  // delivery-target-set: { sessionKey } (applied to every suite plugin's
+  // delivery.sessionKey).
   payload?: Record<string, unknown>;
 }
 
@@ -69,6 +71,24 @@ export interface CronObservation {
     lastStatus?: string;
     consecutiveErrors?: number;
     toolsAllow?: string[];          // payload.toolsAllow — the session's plugin-tool grant
+    declarationKey?: string;        // stable identity; absent on pre-declaration-key jobs
+    // Whether the job carries a live announce delivery route. On openclaw
+    // 2026.8+ an announce job publishes the runner's empty-turn placeholder
+    // text, so a route on a job that should be silent is a defect.
+    announces?: boolean;
+    // The job's own explicit delivery route, when it has one. Replacing a job
+    // must not lose it: the doctor learns the operator's target from
+    // SAPIENCE_DELIVERY_* env vars, which are set when install.sh runs but not
+    // when someone types `openclaw sapience doctor --fix`. Without this the
+    // replacement silently reverts a pinned job to announce/last.
+    deliveryChannel?: string;
+    deliveryTo?: string;
+    // payload.message — checked for the literal "SILENT_REPLY_TOKEN", which an
+    // earlier generation of these prompts shipped in place of its value.
+    message?: string;
+    // Command payloads never start an agent turn, so tool grants, light
+    // context and model pinning do not apply to them.
+    isCommandPayload?: boolean;
   };
   // Other jobs whose names also matched this base (e.g. a legacy
   // "sapience-thinking-pass" left behind by an old installer). These can
@@ -146,5 +166,16 @@ export interface DoctorInputs {
     candidateSessions: Array<{ key: string; updatedAt?: number }>;
     configuredKeyExists?: boolean;
   };
+  // The OpenClaw host the suite is running against. Its version decides what a
+  // scheduled job has to do to stay quiet — see doctor/host-version.ts.
+  host: import("./host-version.js").HostVersionObservation;
+  // Suite jobs from the earlier "-pass" naming generation. Those carry an
+  // announce route AND a prompt asking for the literal "SILENT_REPLY_TOKEN", so
+  // on 2026.8+ they announce on every run.
+  legacyCronJobs: string[];
+  // Non-suite jobs whose stored toolsAllow carries suite tool names. Usually
+  // benign (openclaw caps an agent-created job to the creating turn's tools),
+  // but worth being able to confirm rather than assume.
+  foreignJobsWithSuiteTools: string[];
   nowMs: number;                    // injected for deterministic mtime/staleness math
 }

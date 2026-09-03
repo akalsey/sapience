@@ -23,10 +23,13 @@ function healthy(): DoctorInputs {
       },
     })),
     crons: [
-      { base: "sapience-thinking", job: { name: "sapience-thinking", enabled: true, lastStatus: "ok", consecutiveErrors: 0, toolsAllow: ["get_thinking_context", "record_thinking_output"] } },
-      { base: "sapience-routing", job: { name: "sapience-routing", enabled: true, lastStatus: "ok", consecutiveErrors: 0, toolsAllow: ["process_proposals"] } },
-      { base: "sapience-goals-check", job: { name: "sapience-goals-check", enabled: true, lastStatus: "ok", consecutiveErrors: 0, toolsAllow: ["check_goals"] } },
+      { base: "sapience-thinking", job: { name: "sapience-thinking", enabled: true, lastStatus: "ok", consecutiveErrors: 0, toolsAllow: ["get_thinking_context", "record_thinking_output"], declarationKey: "sapience:thinking" } },
+      { base: "sapience-routing", job: { name: "sapience-routing", enabled: true, lastStatus: "ok", consecutiveErrors: 0, toolsAllow: ["process_proposals"], declarationKey: "sapience:routing" } },
+      { base: "sapience-goals-check", job: { name: "sapience-goals-check", enabled: true, lastStatus: "ok", consecutiveErrors: 0, toolsAllow: ["check_goals"], declarationKey: "sapience:goals-check" } },
     ],
+    host: { version: "2026.8.1", raw: "2026.8.1" },
+    legacyCronJobs: [],
+    foreignJobsWithSuiteTools: [],
     pluginToolsAllowedGlobally: false,
     // Default to the resolved state: goals installed, core's tools already denied.
     goalToolCollision: { goalsPluginInstalled: true, profile: "coding", deny: [...CORE_GOAL_TOOLS], reachable: [] },
@@ -63,7 +66,7 @@ describe("buildSuiteDoctorReport", () => {
     const r = buildSuiteDoctorReport(healthy());
     expect(r.summary.error).toBe(0);
     expect(r.exitCode).toBe(0);
-    expect(r.sections.map((s) => s.title)).toEqual(["PLUGINS", "CRONS", "PATHS", "MEMORY", "TOOLS"]);
+    expect(r.sections.map((s) => s.title)).toEqual(["HOST", "PLUGINS", "CRONS", "PATHS", "MEMORY", "TOOLS"]);
     expect(all(r).every((f) => f.severity === "ok")).toBe(true);
   });
 
@@ -552,5 +555,198 @@ describe("buildSuiteDoctorReport", () => {
     const f = byId(r, "file:sapience/events.jsonl");
     expect(f?.severity).toBe("warn");
     expect(f?.detail).toContain("/ws/sapience/events.jsonl");
+  });
+
+  describe("host version", () => {
+    it("reports the running version and names the strict-silence contract on 2026.8+", () => {
+      const f = byId(buildSuiteDoctorReport(healthy()), "host:version");
+      expect(f?.severity).toBe("ok");
+      expect(f?.message).toContain("2026.8.1");
+      expect(f?.message).toContain("strict silence");
+    });
+
+    it("reports 2026.7 as supported without the strict-silence note", () => {
+      const i = healthy();
+      i.host = { version: "2026.7.1" };
+      const f = byId(buildSuiteDoctorReport(i), "host:version");
+      expect(f?.severity).toBe("ok");
+      expect(f?.message).not.toContain("strict silence");
+    });
+
+    it("errors below the supported floor and says what the host is missing", () => {
+      const i = healthy();
+      i.host = { version: "2026.6.11" };
+      const r = buildSuiteDoctorReport(i);
+      const f = byId(r, "host:version");
+      expect(f?.severity).toBe("error");
+      expect(f?.detail).toContain("--declaration-key");
+      expect(r.exitCode).toBe(1);
+    });
+
+    it("warns rather than assuming health when the version cannot be read", () => {
+      const i = healthy();
+      i.host = { error: "openclaw: command not found" };
+      const f = byId(buildSuiteDoctorReport(i), "host:version");
+      expect(f?.severity).toBe("warn");
+      expect(f?.detail).toContain("command not found");
+    });
+  });
+
+  describe("superseded and duplicate jobs", () => {
+    it("errors on leftover -pass jobs and offers to delete them", () => {
+      const i = healthy();
+      i.legacyCronJobs = ["sapience-thinking-pass", "sapience-routing-pass"];
+      const r = buildSuiteDoctorReport(i);
+      const f = byId(r, "cron:legacy-pass-jobs");
+      expect(f?.severity).toBe("error");
+      expect(f?.fix?.autofixable).toBe(true);
+      expect(f?.fix?.kind).toBe("cron-delete");
+      expect(f?.fix?.payload?.names).toEqual(["sapience-thinking-pass", "sapience-routing-pass"]);
+    });
+
+    it("stays quiet when no superseded jobs exist", () => {
+      expect(byId(buildSuiteDoctorReport(healthy()), "cron:legacy-pass-jobs")).toBeUndefined();
+    });
+
+    it("offers to delete duplicate copies of a live job", () => {
+      const i = healthy();
+      i.crons[0]!.extraMatches = ["sapience-thinking-2"];
+      const f = byId(buildSuiteDoctorReport(i), "cron:sapience-thinking");
+      expect(f?.severity).toBe("warn");
+      expect(f?.fix?.kind).toBe("cron-delete");
+      expect(f?.fix?.payload?.names).toEqual(["sapience-thinking-2"]);
+    });
+
+    it("replaces rather than re-registers a job that predates declaration keys", () => {
+      // openclaw's upsert matches on the key alone, so a keyless job cannot be
+      // matched. Registering over it without deleting leaves the original
+      // running on its old schedule and delivery route — for the delivery job
+      // that means an announce-mode copy still firing every fifteen minutes.
+      const i = healthy();
+      delete i.crons[1]!.job!.declarationKey;
+      const f = byId(buildSuiteDoctorReport(i), "cron:sapience-routing");
+      expect(f?.severity).toBe("warn");
+      expect(f?.message).toContain("declaration key");
+      expect(f?.fix?.kind).toBe("cron-register");
+      expect(f?.fix?.payload?.replaceName).toBe("sapience-routing");
+    });
+  });
+
+  describe("delivery job configuration", () => {
+    const withDelivery = (job: Partial<NonNullable<DoctorInputs["crons"][number]["job"]>>) => {
+      const i = healthy();
+      i.crons.push({
+        base: "sapience-delivery",
+        job: {
+          name: "sapience-delivery", enabled: false, lastStatus: "ok", consecutiveErrors: 0,
+          toolsAllow: ["get_pending_deliveries"], declarationKey: "sapience:delivery", ...job,
+        },
+      });
+      return i;
+    };
+
+    it("treats the disabled delivery job as healthy, since the poll job starts it", () => {
+      const f = byId(buildSuiteDoctorReport(withDelivery({})), "cron:sapience-delivery");
+      expect(f?.severity).toBe("ok");
+      expect(f?.message).toContain("on demand");
+    });
+
+    it("carries an existing delivery route across the replacement", () => {
+      // `openclaw sapience doctor --fix` has no SAPIENCE_DELIVERY_* env vars —
+      // those are set when install.sh runs. Without reading the route off the
+      // job being replaced, the replacement silently reverts a pinned job to
+      // announce/last, which is the configuration that announces the host's
+      // empty-turn placeholder.
+      const i = withDelivery({ announces: true, deliveryChannel: "telegram", deliveryTo: "8728003761" });
+      delete i.crons.at(-1)!.job!.declarationKey;
+      const f = byId(buildSuiteDoctorReport(i), "cron:sapience-delivery");
+      expect(f?.fix?.payload).toMatchObject({
+        replaceName: "sapience-delivery",
+        deliveryChannel: "telegram",
+        deliveryTo: "8728003761",
+      });
+    });
+
+    it("still offers the replace fix for a keyless job an operator disabled by hand", () => {
+      // The state you land in after muting a noisy job yourself: disabled, and
+      // predating declaration keys. Checking the disabled state first reported
+      // this as healthy and never surfaced the fix.
+      const i = withDelivery({ announces: true });
+      delete i.crons.at(-1)!.job!.declarationKey;
+      const f = byId(buildSuiteDoctorReport(i), "cron:sapience-delivery");
+      expect(f?.message).toContain("declaration keys");
+      expect(f?.fix?.payload?.replaceName).toBe("sapience-delivery");
+    });
+
+    it("warns when the delivery job runs on its own schedule again", () => {
+      const f = byId(buildSuiteDoctorReport(withDelivery({ enabled: true })), "cron:sapience-delivery");
+      expect(f?.severity).toBe("warn");
+      expect(f?.message).toContain("on demand");
+    });
+
+    it("warns about a live announce route on a strict-silence host", () => {
+      // The 2026.8+ hazard: a run that ends without text is given a
+      // placeholder sentence, and announce delivers it.
+      const f = byId(buildSuiteDoctorReport(withDelivery({ announces: true })), "cron:sapience-delivery");
+      expect(f?.severity).toBe("warn");
+      expect(f?.detail).toContain("SAPIENCE_DELIVERY_TO");
+    });
+
+    it("does not raise the announce warning on a 2026.7 host", () => {
+      const i = withDelivery({ announces: true });
+      i.host = { version: "2026.7.1" };
+      const f = byId(buildSuiteDoctorReport(i), "cron:sapience-delivery");
+      expect(f?.severity).toBe("ok");
+    });
+  });
+
+  describe("command-payload poll job", () => {
+    const withPoll = (job: Partial<NonNullable<DoctorInputs["crons"][number]["job"]>>) => {
+      const i = healthy();
+      i.crons.push({
+        base: "sapience-poll-delivery",
+        job: {
+          name: "sapience-poll-delivery", enabled: true, lastStatus: "ok", consecutiveErrors: 0,
+          declarationKey: "sapience:poll-delivery", isCommandPayload: true, ...job,
+        },
+      });
+      return i;
+    };
+
+    it("does not demand a plugin-tool grant from a job that never starts an agent turn", () => {
+      const f = byId(buildSuiteDoctorReport(withPoll({})), "cron:sapience-poll-delivery");
+      expect(f?.severity).toBe("ok");
+    });
+
+    it("errors when the poll job is disabled, because nothing else starts delivery", () => {
+      const f = byId(buildSuiteDoctorReport(withPoll({ enabled: false })), "cron:sapience-poll-delivery");
+      expect(f?.severity).toBe("error");
+      expect(f?.message).toContain("queued deliveries");
+    });
+
+    it("points at the command to run by hand when it fails", () => {
+      const f = byId(buildSuiteDoctorReport(withPoll({ lastStatus: "error", consecutiveErrors: 3 })), "cron:sapience-poll-delivery");
+      expect(f?.severity).toBe("error");
+      expect(f?.detail).toContain("openclaw sapience deliver-check");
+    });
+  });
+
+  it("errors on a job prompt that names the silent-token constant instead of its value", () => {
+    const i = healthy();
+    i.crons[1]!.job!.message = "Call process_proposals(). Reply SILENT_REPLY_TOKEN after the tool call.";
+    const f = byId(buildSuiteDoctorReport(i), "cron:sapience-routing");
+    expect(f?.severity).toBe("error");
+    expect(f?.message).toContain("SILENT_REPLY_TOKEN");
+    expect(f?.detail).toContain("NO_REPLY");
+  });
+
+  it("reports non-suite jobs carrying suite tool names without calling it a fault", () => {
+    // openclaw caps an agent-created job to the creating turn's tools, which
+    // explains this benignly — but only looking can confirm that.
+    const i = healthy();
+    i.foreignJobsWithSuiteTools = ["competitor-pricing-report"];
+    const f = byId(buildSuiteDoctorReport(i), "cron:foreign-tool-policy");
+    expect(f?.severity).toBe("ok");
+    expect(f?.message).toContain("competitor-pricing-report");
   });
 });

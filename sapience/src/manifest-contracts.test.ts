@@ -30,4 +30,33 @@ describe("openclaw.plugin.json contracts", () => {
       expect(declared, `contracts.tools is missing "${name}"`).toContain(name);
     }
   });
+
+  // Without cliCommands, an external plugin falls into openclaw's legacy path
+  // (src/plugins/cli-root-descriptors.ts) and the host LOADS the plugin runtime
+  // to collect CLI registrars. That load is the "cli-metadata" registration in
+  // which reading api.runtime throws — which failed the whole plugin and took
+  // `openclaw sapience doctor` down with it. Declaring the command here means
+  // the host never executes plugin code to learn the CLI surface.
+  it("declares its root CLI command so the host never loads plugin code for CLI metadata", () => {
+    const pkgRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
+    const manifest = JSON.parse(readFileSync(join(pkgRoot, "openclaw.plugin.json"), "utf-8"));
+    const cliCommands: Array<Record<string, unknown>> = manifest?.cliCommands ?? [];
+
+    expect(cliCommands.length).toBeGreaterThan(0);
+    for (const row of cliCommands) {
+      // The host requires all three fields on every row.
+      expect(typeof row.name).toBe("string");
+      expect(typeof row.description).toBe("string");
+      expect(typeof row.hasSubcommands).toBe("boolean");
+    }
+
+    // The manifest and the runtime registrar must name the same root command,
+    // or `openclaw --help` advertises one the plugin does not actually add.
+    const cliSrc = readFileSync(join(pkgRoot, "src", "doctor", "cli.ts"), "utf-8");
+    const registrarRoots = [...cliSrc.matchAll(/program\.command\("([a-z-]+)"\)/g)].map((m) => m[1]!);
+    expect(registrarRoots.length).toBeGreaterThan(0);
+    for (const root of registrarRoots) {
+      expect(cliCommands.map((c) => c.name), `cliCommands is missing "${root}"`).toContain(root);
+    }
+  });
 });

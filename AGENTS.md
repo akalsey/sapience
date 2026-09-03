@@ -26,7 +26,7 @@ sapience-suite/
 ├── AGENTS.md                  ← this file
 ├── CLAUDE.md                  ← Claude Code pointer to this file
 ├── README.md                  ← the suite's front door
-├── install.sh                 ← interactive installer: plugins, 4 crons, delivery target, memory config
+├── install.sh                 ← interactive installer: plugins, 5 crons, delivery target, memory config
 ├── .gitignore
 ├── .changeset/                ← pending changesets (see Versioning)
 ├── docs/                      ← end-user documentation (in git)
@@ -85,6 +85,41 @@ sapience-<name>/
 The plugin entry is always `src/service.ts`, exported via `index.ts`.
 
 ---
+
+## Host Compatibility
+
+The suite supports **OpenClaw 2026.7.1 and newer**. That floor is declared in every plugin's `package.json` as `openclaw.install.minHostVersion` (plus `openclaw.compat.pluginApi` and `peerDependencies.openclaw`), and OpenClaw skips a plugin whose floor the host doesn't meet. `sapience/src/doctor/host-version.ts` holds the same constants for the doctor's HOST section; change both together.
+
+There is no version-conditional code. `--declaration-key`, `--light-context` and command payloads all exist in both the 2026.07 and 2026.08 lines — verified against the published 2026.7.1 tarball, not assumed. What changed at **2026.8.1** is how a scheduled job stays quiet:
+
+- The heartbeat-ack filter (`isHeartbeatOnlyResponse`, `resolveHeartbeatAckMaxChars`) is gone; only `NO_REPLY` is recognized.
+- Suppression is strict about form — a bare token is silent, `Nothing pending. NO_REPLY` delivers "Nothing pending."
+- An empty post-tool turn is no longer silent: the runner substitutes placeholder text, which a delivery route then delivers.
+
+The design rule that follows: **never let a scheduled job depend on a model choosing silence.** Gate the run in plugin code, or give the job no delivery route the runner can fall back to. The delivery pair is the worked example — `sapience-poll-delivery` (command payload, no model) reads the queue and starts `sapience-delivery` (registered disabled) only when there is something to send.
+
+The host mechanism, verified in source rather than inferred, decides which job configurations are safe:
+
+```ts
+// src/cron/delivery-plan.ts
+requested: resolvedMode === "announce",
+// src/cron/isolated-agent/run-executor.ts
+terminalReplyExpectation: params.deliveryRequested === true && params.resolvedDeliveryOk ? "required" : "optional",
+```
+
+`--announce` makes visible terminal text *required*, so an empty turn gets placeholder text synthesized. `--no-deliver` sets `requested: false` even with `--channel`/`--to` present, dropping the expectation to `optional` while still resolving a route for the `message` tool. That is why a pinned delivery target is the silent configuration and announce is not.
+
+Two corollaries worth not relitigating: **a better model does not fix an empty turn** (tested — `gemini-2.5-pro` still produced the placeholder; the substitution happens precisely when the model produces nothing), and **upgrading the host is not on its own a fix** (later 2026.8.1 builds dropped `SETTLED_TOOL_FINALIZATION_FALLBACK_TEXT` and treat a `completed-empty` run as silent, but only where a visible terminal reply is not required — which still excludes announce jobs).
+
+Related conventions:
+
+- **Every registered cron carries `--declaration-key sapience:<name>`**, qualified `:<agent>` on multi-agent installs. Registration is an upsert; re-running the installer converges rather than duplicating. Never go back to delete-then-re-add.
+- **Never store a guessed agent id.** Omit `--agent` and let the scheduler resolve the configured default. `resolveRegistrableAgentId` returns `undefined` rather than a guess for exactly this. A job created with an id the install lacks fails every run forever.
+- **`config.agent.id` does not exist.** The roster is `agents.entries`, a keyed object on a real install. Use `resolve-agent.ts` (duplicated into each plugin, like `main-session.ts`).
+- **Command-payload jobs must never write to stderr.** Cron derives a command job's delivered text from its output, and non-empty stdout *and* stderr are delivered together as a combined block. Diagnostics go to `events.jsonl`.
+- Command payloads are preferred over `--trigger-script`: trigger scripts require `cron.triggers.enabled`, which grants headless `exec` with the owning agent's full tool policy.
+
+`install.sh` (bash) and `sapience/src/doctor/cron-args.ts` (TypeScript) build the same `cron add` invocations and must change in lockstep; `cron-args.test.ts` asserts the shapes both depend on.
 
 ## Critical Rules
 

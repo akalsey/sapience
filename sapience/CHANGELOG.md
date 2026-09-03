@@ -1,5 +1,127 @@
 # @akalsey/sapience
 
+## 0.6.6
+
+### Patch Changes
+
+- Register the delivery poll job with an absolute argv, and make the installer and the doctor agree on declaration keys.
+
+  **`sh: 1: openclaw: not found`.** The poll job was registered as a shell command, `--command "openclaw sapience deliver-check"`. The Gateway runs a command payload through `sh -lc`, and on Debian/Ubuntu `sh` is dash, whose login shell reads `/etc/profile` but not `~/.bashrc` — where an npm-global bin directory usually lands. Every run exited 127 while the identical command worked by hand in the operator's own shell, and after ten consecutive failures the scheduler auto-disabled the job. It is now registered with `--command-argv` and an absolute path to the binary: `install.sh` resolves it with `command -v`, and the doctor resolves it the same way, falling back to the node executable plus its own entry script.
+
+  **Duplicate jobs from mismatched keys.** `install.sh` suffixes both the job name and the declaration key with the agent id on a multi-agent install, and neither on a single-agent one. The doctor registers base names but appended the agent id to the key whenever it could resolve one, so it wrote `sapience:delivery:main` where the installer wrote `sapience:delivery`. An installer run after a `doctor --fix` therefore could not match the doctor's job and minted a second copy beside it. The qualifier now derives from whether the job name is itself agent-scoped, so both paths produce the same key by construction, with a test asserting the two agree.
+
+- Stop `sapience-poll-delivery` recording failed runs.
+
+  A command job is recorded as an error on a non-zero exit **or** on producing no output for the no-output-timeout window, and an error can fire failure alerts — the opposite of what a job whose whole purpose is to stay quiet should do.
+
+  `openclaw sapience deliver-check` now prints the silent token before it does any work, rather than after. On the path that matters, a non-empty queue, the command shells out to `openclaw cron list` and `openclaw cron run`, which is two full CLI boots; emitting the token first means the run can never look stalled while that happens. It also sets a zero exit code explicitly at the end, so nothing set earlier in the CLI's lifecycle can leave a failure behind. Every genuine failure was already reported on the events log as `delivery_gate_blocked`, which remains the place to look.
+
+## 0.6.5
+
+### Patch Changes
+
+- Keep a job's delivery route when `openclaw sapience doctor --fix` replaces it.
+
+  The doctor learned the operator's delivery target only from `SAPIENCE_DELIVERY_CHANNEL` / `SAPIENCE_DELIVERY_TO`. Those are set when someone runs `install.sh`, and absent when they type `openclaw sapience doctor --fix` — so replacing a job that had an explicit `--channel`/`--to` reverted it to `announce` with the default `last` target. That is both a routing regression and the noisy configuration: an announce job's run is marked as requiring visible terminal text, so a turn that ends without any gets the host's placeholder sentence delivered.
+
+  The replace fix now carries the route off the job it is replacing. An explicit env var still wins; otherwise the existing `delivery.channel` / `delivery.to` are reused, which puts the job back on `--no-deliver` plus the `message` tool — the silent arrangement.
+
+## 0.6.4
+
+### Patch Changes
+
+- Survive OpenClaw's "cli-metadata" registration, which was failing every plugin in the suite.
+
+  The gateway calls `register()` in contexts where the runtime deliberately does not exist, and reading `api.runtime` there does not return undefined — it throws:
+
+  ```
+  Plugin "sapience" runtime is intentionally unavailable during "cli-metadata"
+  registration. Declare root commands in the manifest's cliCommands or defer
+  runtime access out of register().
+  ```
+
+  The suite already wrapped its one register-time runtime read in a try/catch, but the catch then asked `if (api?.runtime?.agent)` to tell a real fault from the expected bail. Optional chaining on `api` does nothing about a getter on `.runtime` that throws, so the second read threw again from inside the catch, escaped `register()`, and the gateway failed the whole plugin — taking `openclaw sapience doctor` with it, the command an operator would reach for to diagnose exactly this.
+
+  Runtime reads now go through a `readRuntime` helper that contains the throw and reports availability, so the failure path never touches `api.runtime` again. It still distinguishes a runtime that existed but failed to resolve a workspace (recorded as an init error, the silent death that once left a plugin reporting "vunknown" for nine days) from an absent one (quiet).
+
+  `sapience` also now declares its root command in the manifest's `cliCommands`. Without it, an external plugin falls into openclaw's legacy path (`src/plugins/cli-root-descriptors.ts`) and the host loads the plugin runtime purely to collect CLI registrars — which is the registration that throws. Declaring it means the host never executes plugin code to learn the CLI surface. A manifest test pins the declaration to the command the registrar actually adds.
+
+## 0.6.3
+
+### Patch Changes
+
+- Check a cron job's declaration key before its run state, so a job an operator disabled by hand still gets offered the replace fix.
+
+  The declaration-key check sat after the enabled/disabled checks, and the delivery job's disabled state is expected (the poll job starts it on demand). A job that was both keyless and disabled therefore matched the "healthy, on demand" branch and reported clean — which is exactly the state an operator lands in after muting a noisy job themselves, and precisely when they need the fix offered.
+
+  The key is a structural property rather than a run state, and its fix subsumes the others: replacing the job re-registers it with the current prompt, tools, delivery route and enabled state in one step. It is now the first thing checked.
+
+- Never set a per-job model, and say so when a replacement drops one.
+
+  The suite has no basis for an opinion about a user's model preferences, so it does not express one: no `--model` on any registration, and no carrying across a value found on an existing job. `cron-args.test.ts` pins the invariant across every job.
+
+  Replacing a job necessarily loses its per-job pin — `cron edit` cannot add a declaration key, so delete-and-recreate is the only migration path for jobs that predate them. That loss is now reported rather than silent. `install.sh` names the dropped model and prints the `openclaw cron edit <id> --model <model>` needed to restore it, and the doctor's replace finding does the same in its detail. The decision stays with the operator.
+
+## 0.6.2
+
+### Patch Changes
+
+- Delete cron jobs by id. Every delete path in the suite was passing a name and silently doing nothing.
+
+  `openclaw cron rm` (aliases `remove`, `delete`) takes a job id positionally. It has no `--name` option on any release — only `cron add` has one — and the gateway rejects a non-id with `invalid cron.remove params: id not found`. `install.sh` had been running `openclaw cron delete --name "$name" 2>/dev/null`, where the redirect hid the failure, so the "delete and re-register a broken job" path had never actually deleted anything.
+
+  Both `install.sh` and the doctor's `--fix` now resolve a name to job ids against `cron list --all --json` and delete each by id. They delete _every_ match rather than the first, because job names are not unique and duplicates are exactly what these paths clean up — removing one of two copies leaves the other running on its original schedule and delivery route.
+
+  `install.sh` also now lists jobs with `--all`, without which the intentionally disabled delivery job reads as missing on every subsequent run.
+
+- Replace jobs that predate declaration keys instead of registering a second copy beside them.
+
+  OpenClaw's declarative upsert matches on `declarationKey` alone. A job registered before the suite adopted keys carries none, so `cron add --declaration-key` cannot match it: it creates a new job and leaves the original running on its old schedule and delivery route. For an existing install that meant re-running the installer would have added a second `sapience-delivery` while the announce-mode original kept announcing every fifteen minutes — making the noise worse rather than better.
+
+  `install.sh` now distinguishes a keyless job from one that merely needs updating, and deletes it before registering the replacement (the manual-registration output prints the matching `cron delete` too). `openclaw sapience doctor` reports the same case as replace-not-update and its `--fix` deletes before registering.
+
+- Correct the model-pinning guidance and record the host mechanism behind the empty-turn placeholder.
+
+  Earlier docs implied that pinning a stronger model would help with both symptoms these jobs show. It only helps one. Pinning `gemini-2.5-pro` on the delivery job was tested and still produced the placeholder, because the substitution happens precisely when the model produces no text. The `--model` recommendation is now scoped to malformed tool calls, and both `docs/cron-setup.md` and `docs/troubleshooting.md` say plainly that a model upgrade will not quieten the placeholder.
+
+  The docs and the doctor's announce-route warning now name the mechanism instead of describing the symptom: `requested: resolvedMode === "announce"` (`src/cron/delivery-plan.ts`) feeds `terminalReplyExpectation`, so an announce job's run is marked as requiring visible text and gets a placeholder synthesized when the turn produced none. `--no-deliver` with an explicit `--channel`/`--to` sets `requested: false`, dropping the expectation to optional while still resolving a route for the `message` tool — which is why a pinned delivery target is the silent configuration. Also notes that later 2026.8.1 host builds have dropped the constant that produced the sentence, but that upgrading is not on its own a fix, since announce jobs still require a visible terminal reply.
+
+## 0.6.1
+
+### Patch Changes
+
+- Stop the delivery cron announcing OpenClaw's empty-turn placeholder every 15 minutes.
+
+  The delivery job's queue is empty on most cycles, and OpenClaw 2026.8.1 substitutes a placeholder sentence ("The tool run finished, but no final summary was produced…") when a model ends a tool-only turn without text — which an `announce` route then delivers. A new `sapience-poll-delivery` command-payload cron runs `openclaw sapience deliver-check`, reads the queue in plugin code, and starts the delivery job only when something is queued; `sapience-delivery` is now registered disabled and run on demand. When `SAPIENCE_DELIVERY_TO` pins a destination, the delivery job drops its announce route entirely and sends through the `message` tool, so an empty or malformed turn delivers nothing at all.
+
+- Declare OpenClaw 2026.7.1 as the supported host floor (`openclaw.install.minHostVersion`, `openclaw.compat.pluginApi`, `peerDependencies.openclaw`), so an older gateway skips the plugin at load with a warning rather than half-running it.
+
+  `openclaw sapience doctor` gains a HOST section reporting the detected version, erroring below the floor and noting when the host runs the strict silence contract introduced at 2026.8.1 — where the only quiet path for a job with a delivery route is a reply of the bare `NO_REPLY` token. On such hosts it also flags any suite job still carrying a live announce route. The CRONS section now understands command payloads (no tool grant to check) and treats the intentionally disabled delivery job as healthy, and it lists non-suite jobs whose stored tool policy carries suite tool names so that can be confirmed rather than assumed.
+
+- Register every cron job with a `sapience:`-namespaced `--declaration-key`, making registration an idempotent upsert instead of minting a duplicate on each installer run. Multi-agent installs qualify the key per agent.
+
+  `install.sh` and `openclaw sapience doctor --fix` now also sweep superseded jobs from the older `-pass` naming generation, which carried an announce route together with a prompt asking for the literal string `SILENT_REPLY_TOKEN` (the name of OpenClaw's constant rather than its value `NO_REPLY`) and so announced on every run. The doctor reports duplicate copies, jobs with no declaration key, and prompts containing that literal.
+
+- Register every agent cron with `--light-context`. These jobs get their instructions from their prompt and their data from a single tool, but were injecting the operator's full workspace bootstrap set on every run — roughly 15k input tokens per run to make one tool call.
+
+  Generated audit jobs now ask for `NO_REPLY` on the nothing-to-report path instead of a one-line clean bill, matching every other job in the suite; a one-line summary is still a delivered message on any job that later gains a delivery route. They also carry a declaration key and `--light-context`.
+
+- Resolve the agent id from the roster OpenClaw actually ships.
+
+  All four plugins read `config.agent.id`, a key no OpenClaw config has — the roster lives under `agents.entries`, a keyed object on a real install — so the read always missed and a hardcoded fallback decided instead: `"default"` in three plugins and `"main"` in the fourth. Three status artifacts therefore reported an agent id that did not exist, and generated audit jobs stored `agentId: "default"`, failing every run with `cron job agent is unavailable: default` on any install whose agent is named otherwise.
+
+  A shared `resolveAgentId` now reads `agents.entries` (object or array form), honoring an entry flagged `default`. Generated audit jobs omit `--agent` entirely unless the roster really has a name, letting the scheduler resolve the configured default. `resolveMainSessionKey` used the same broken read and is fixed with it.
+
+## 0.6.0
+
+### Minor Changes
+
+- 766410f: Detect and fix the core goal-tool name collision. A new TOOLS doctor section reports when core's `create_goal` / `get_goal` / `update_goal` are reachable in agent sessions alongside sapience-goals — they track a per-thread token budget that dies with the session, so an agent asked for a long-running goal that picks `create_goal` loses it silently.
+
+  The fix adds them to `tools.deny`, merged with any existing entries rather than replacing the array. It only fires when the tools are actually reachable (the `minimal` and `messaging` profiles already exclude them) and only when sapience-goals is installed.
+
+  Also adds `--fix --only <finding-id>` so a caller can apply one finding in isolation. `install.sh` uses it to offer this fix on its own — denying the tools affects every session on the host, so it stays behind an explicit prompt rather than riding along with the other auto-fixes.
+
 ## 0.5.7
 
 ### Patch Changes

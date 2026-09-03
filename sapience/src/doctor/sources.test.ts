@@ -4,8 +4,32 @@ import { join } from "path";
 import { tmpdir } from "os";
 import {
   parseCronListJson, toCronObservation, pluginToolsAllowedGlobally, goalToolCollision,
-  scanInstalledVersions, readLegacyRootPins, findCorruptFiles,
+  scanInstalledVersions, readLegacyRootPins, findCorruptFiles, resolveCronJobIds,
 } from "./sources.js";
+
+describe("resolveCronJobIds", () => {
+  it("resolves a name to its job id, because cron rm takes an id not a name", () => {
+    // `openclaw cron rm` has no --name option on any release (only `cron add`
+    // does), so passing one made every delete in the suite silently no-op.
+    const jobs = [{ name: "sapience-delivery", id: "df102c9a" }, { name: "other", id: "x" }];
+    expect(resolveCronJobIds(jobs, "sapience-delivery")).toEqual(["df102c9a"]);
+  });
+
+  it("returns every id when a name is duplicated", () => {
+    // Names are not unique, and duplicates are what the delete paths clean up.
+    // Deleting one of two copies leaves the other on its old delivery route.
+    const jobs = [
+      { name: "sapience-thinking", id: "40128baf" },
+      { name: "sapience-thinking", id: "4ba085cf" },
+    ];
+    expect(resolveCronJobIds(jobs, "sapience-thinking")).toEqual(["40128baf", "4ba085cf"]);
+  });
+
+  it("skips jobs with no usable id and reports nothing for an unknown name", () => {
+    expect(resolveCronJobIds([{ name: "a" }, { name: "a", id: "" }], "a")).toEqual([]);
+    expect(resolveCronJobIds([{ name: "a", id: "1" }], "missing")).toEqual([]);
+  });
+});
 
 describe("parseCronListJson", () => {
   it("extracts the jobs array from `openclaw cron list --json` output", () => {

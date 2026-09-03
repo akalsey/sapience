@@ -38,6 +38,7 @@ describe("applyFixes", () => {
     const eff: FixEffectors = {
       async setConfig(path, value) { calls.push(`config ${path}=${String(value)}`); },
       async registerCron(base) { calls.push(`cron ${base}`); },
+      async deleteCron() {},
       async updatePlugin(id) { calls.push(`update ${id}`); },
     };
     const done = await applyFixes(planFixes(report), eff);
@@ -49,11 +50,62 @@ describe("applyFixes", () => {
     ]);
   });
 
+  it("deletes a pre-declaration-key job before registering its replacement", async () => {
+    // Order matters and so does the delete: openclaw's upsert cannot match a
+    // keyless job, so registering without deleting leaves the original running
+    // beside the new one, still on its old delivery route.
+    const calls: string[] = [];
+    const eff: FixEffectors = {
+      async setConfig() {},
+      async registerCron(base) { calls.push(`register ${base}`); },
+      async deleteCron(name) { calls.push(`delete ${name}`); },
+      async updatePlugin() {},
+    };
+    const done = await applyFixes(
+      [{ kind: "cron-register", payload: { base: "sapience-delivery", replaceName: "sapience-delivery" } }],
+      eff,
+    );
+    expect(calls).toEqual(["delete sapience-delivery", "register sapience-delivery"]);
+    expect(done).toEqual([
+      "deleted pre-declaration-key cron sapience-delivery",
+      "registered cron sapience-delivery",
+    ]);
+  });
+
+  it("passes an existing delivery route to the registrar", async () => {
+    const seen: Array<{ base: string; target?: { channel: string; to: string } }> = [];
+    const eff: FixEffectors = {
+      async setConfig() {},
+      async registerCron(base, opts) { seen.push({ base, target: opts?.deliveryTarget }); },
+      async deleteCron() {},
+      async updatePlugin() {},
+    };
+    const done = await applyFixes([{ kind: "cron-register", payload: {
+      base: "sapience-delivery", replaceName: "sapience-delivery",
+      deliveryChannel: "telegram", deliveryTo: "8728003761",
+    } }], eff);
+    expect(seen[0]?.target).toEqual({ channel: "telegram", to: "8728003761" });
+    expect(done.at(-1)).toContain("kept delivery route telegram:8728003761");
+  });
+
+  it("registers without deleting when there is no job to replace", async () => {
+    const calls: string[] = [];
+    const eff: FixEffectors = {
+      async setConfig() {},
+      async registerCron(base) { calls.push(`register ${base}`); },
+      async deleteCron(name) { calls.push(`delete ${name}`); },
+      async updatePlugin() {},
+    };
+    await applyFixes([{ kind: "cron-register", payload: { base: "sapience-delivery" } }], eff);
+    expect(calls).toEqual(["register sapience-delivery"]);
+  });
+
   it("routes suite deliveries to a session across all three delivering plugins", async () => {
     const calls: string[] = [];
     const eff: FixEffectors = {
       async setConfig(path, value) { calls.push(`${path}=${String(value)}`); },
       async registerCron() {},
+      async deleteCron() {},
       async updatePlugin() {},
     };
     const done = await applyFixes(

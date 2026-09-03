@@ -6,6 +6,8 @@
 // dist): `agent:<agentId>:<mainKey>`, lowercased, with a "global"
 // short-circuit for global session scope.
 
+import { resolveAgentId } from "./resolve-agent.js";
+
 function normalize(value: unknown, fallback: string): string {
   const s = typeof value === "string" ? value.trim().toLowerCase() : "";
   return s || fallback;
@@ -13,10 +15,11 @@ function normalize(value: unknown, fallback: string): string {
 
 export function resolveMainSessionKey(config: any): string {
   if (config?.session?.scope === "global") return "global";
-  const agents: any[] = Array.isArray(config?.agents?.list) ? config.agents.list : [];
-  const agentId = normalize(agents.find((a) => a?.default)?.id ?? agents[0]?.id, "main");
+  // The roster read used to be `agents.list`, which no install actually has —
+  // openclaw keys it under `agents.entries`. It always fell through to "main",
+  // which is right only by luck on a single-agent install named main.
   const mainKey = normalize(config?.session?.mainKey, "main");
-  return `agent:${agentId}:${mainKey}`;
+  return `agent:${resolveAgentId(config)}:${mainKey}`;
 }
 
 export interface InjectionResult {

@@ -18,6 +18,7 @@ describe("goal collision fix, end to end", () => {
       modelAllowlist: [], pluginToolsAllowedGlobally: true, versions: [], corruptFiles: [],
       pendingProposals: { count: 0 }, workspace: { resolved: "/ws", source: "resolver" },
       files: [], memory: { wikiInstalled: true },
+      host: { version: "2026.8.1" }, legacyCronJobs: [], foreignJobsWithSuiteTools: [],
       goalToolCollision: goalToolCollision(config),
     };
     const report = buildSuiteDoctorReport(inputs);
@@ -27,7 +28,7 @@ describe("goal collision fix, end to end", () => {
     const writes: Array<[string, unknown]> = [];
     await applyFixes(actions, {
       setConfig: async (p, v) => { writes.push([p, v]); },
-      registerCron: async () => {}, updatePlugin: async () => {},
+      registerCron: async () => {}, deleteCron: async () => {}, updatePlugin: async () => {},
     });
     expect(writes).toEqual([["tools.deny", ["browser", "create_goal", "get_goal", "update_goal"]]]);
     // Exactly what the CLI hands to `openclaw config set ... --strict-json`.

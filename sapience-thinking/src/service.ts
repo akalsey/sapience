@@ -1,5 +1,7 @@
 import { join } from "path";
 import { definePluginEntry } from "openclaw/plugin-sdk/plugin-entry";
+import { readRuntime } from "./safe-runtime.js";
+import { resolveAgentId, resolveRegistrableAgentId } from "./resolve-agent.js";
 import { Type } from "@sinclair/typebox";
 
 import { buildContext, resolveContextDirs, getLastThreePasses } from "./context-builder.js";
@@ -59,27 +61,34 @@ export default definePluginEntry({
   description: "Periodic isolated thinking passes that produce structured proposals",
 
   register(api: any) {
-    let workspaceDir: string;
-    try {
-      workspaceDir = (api.runtime.agent.resolveAgentWorkspaceDir as (cfg: unknown) => string)(api.pluginConfig);
-    } catch (err) {
-      // In CLI-collection context the runtime is empty and this bail is
-      // expected — stay silent. In a REAL gateway runtime a failure here is
-      // exactly the silent death that left a plugin "vunknown" for 9 days;
-      // record it so the doctor can say why.
-      if (api?.runtime?.agent) {
+    // Reading api.runtime THROWS during "cli-metadata" registration, where the
+    // host walks plugins only to learn their root CLI commands. readRuntime
+    // contains that, and — critically — the failure path below never touches
+    // api.runtime again. The previous version asked `if (api?.runtime?.agent)`
+    // here to tell a real fault from the expected CLI bail; that second read
+    // threw straight out of register(), so the gateway failed the whole plugin
+    // and took `openclaw sapience doctor` down with it.
+    const resolved = readRuntime<string>(api, (runtime) =>
+      (runtime.agent.resolveAgentWorkspaceDir as (cfg: unknown) => string)(api.pluginConfig));
+    if (resolved.value === undefined) {
+      // `available` separates the two cases without a second read: a runtime
+      // that existed but failed to resolve a workspace is the silent death that
+      // once left a plugin "vunknown" for nine days, so record it. An absent or
+      // unavailable runtime is the CLI bail — stay quiet.
+      if (resolved.available) {
         void writeStatusArtifact({
           pluginId: "sapience-thinking",
           version: resolvePluginVersion(),
           agentId: "unknown",
           resolvedWorkspaceDir: "",
           outputPaths: {},
-          initError: String(err),
+          initError: String(resolved.error),
           initAt: new Date().toISOString(),
         }).catch(() => {});
       }
       return;
     }
+    const workspaceDir: string = resolved.value;
     const config = mergeConfig(api.pluginConfig as Record<string, unknown>, workspaceDir);
 
     // Invalid activeHours used to disable the plugin silently (NaN comparisons)
@@ -94,14 +103,11 @@ export default definePluginEntry({
 
     const lockFile = join(workspaceDir, "proactive-thinking", ".pass.lock");
     const skipStatePath = join(workspaceDir, "proactive-thinking", ".skip-state.json");
-    // A real OpenClaw config has no `agent` key — it has `agents.defaults` —
-    // so this read is undefined on every install and the fallback is what
-    // actually decides. It said "default"; the gateway's built-in agent is
-    // "main" (every session key on production is `agent:main:*`), so the pass
-    // resolved a sessions path that has never existed. resolveContextDirs
-    // verifies whatever comes out of here against the disk, but the fallback
-    // should still name the agent that really exists.
-    const agentId: string = ((api.config as Record<string, unknown>)?.agent as Record<string, unknown>)?.id as string ?? "main";
+    // This used to read `config.agent.id`, a key no OpenClaw config has — the
+    // roster lives under `agents.entries` — so the literal fallback decided
+    // every time, and passes resolved a sessions path that had never existed.
+    // resolveAgentId reads the roster openclaw actually ships.
+    const agentId: string = resolveAgentId(api.config);
 
     // A gateway restart means no pass can be running; drop any leftover lock.
     void clearLock(lockFile).catch(() => {});
@@ -261,7 +267,9 @@ export default definePluginEntry({
             // An accepted audit becomes recurring coverage: register the cron.
             const positive = outcome === "accepted" || outcome === "acted_on";
             if (positive && result.record?.proposal_type === "audit" && result.record.text) {
-              const scheduled = await scheduleAudit(result.record.text, agentId);
+              // Registrable, not resolved: pass a name only when the roster
+              // really has one, so the job never stores a guess it cannot run.
+              const scheduled = await scheduleAudit(result.record.text, resolveRegistrableAgentId(api.config));
               await appendEvent(config.output.eventsPath, {
                 plugin: "thinking",
                 type: scheduled.ok ? "audit_scheduled" : "audit_schedule_failed",

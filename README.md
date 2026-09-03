@@ -59,6 +59,8 @@ Goal trackers and project management tools require you to translate fuzzy object
 
 ### 1. Install
 
+**Requires OpenClaw 2026.7.1 or newer.** Each plugin declares that floor in its manifest, so an older gateway skips the plugin at load with a warning rather than half-running it. `openclaw sapience doctor` reports the detected version under HOST.
+
 The recommended way is the installer. It checks for and installs the plugins, registers the cron jobs, and sets up the memory configuration the suite needs — prompting before each change:
 
 ```bash
@@ -117,7 +119,7 @@ Each plugin works standalone. When sapience is installed alongside thinking, thi
 
 ### 2. Start a session
 
-Everything runs automatically. The thinking plugin fires every 15 minutes during active hours (08:00–20:00 local by default). The first routing run baselines any existing passes rather than delivering them, so expect the first proposals roughly 30–45 minutes in. Most deliveries are **next-turn injections into your session** — they appear when you next take a turn, at most three per routing cycle so a productive pass can't bury you. Anything over that cap, and anything whose injection is declined, queues for the `sapience-delivery` cron, which composes the backlog into one message and sends it through your channel within 15 minutes. High-priority items, notable metric moves, and the weekly digest also **push** through your last active channel, within a daily budget.
+Everything runs automatically. The thinking plugin fires every 15 minutes during active hours (08:00–20:00 local by default). The first routing run baselines any existing passes rather than delivering them, so expect the first proposals roughly 30–45 minutes in. Most deliveries are **next-turn injections into your session** — they appear when you next take a turn, at most three per routing cycle so a productive pass can't bury you. Anything over that cap, and anything whose injection is declined, queues for the `sapience-delivery` cron, which composes the backlog into one message and sends it through your channel within 15 minutes. That cron doesn't run on a schedule — a cheap `sapience-poll-delivery` job checks the queue every 15 minutes and starts it only when there's something waiting, so an empty queue costs no model turn at all. High-priority items, notable metric moves, and the weekly digest also **push** through your last active channel, within a daily budget.
 
 The first week is calibration. Proposals will arrive as `[SAPIENCE: CALIBRATE]` questions — the agent is learning what level of initiative you want for each type of action. Answer them and it calibrates. Ignore them and it stays conservative.
 
@@ -261,7 +263,7 @@ All relative paths in plugin config resolve under the **agent workspace director
 | `<workspace>/sapience/watches.json` | Metric watches and their reading history |
 | `<workspace>/sapience/push-state.json` | Daily channel-push budget tracking |
 | `<workspace>/sapience/investigation-state.json` | Daily investigation budget tracking |
-| `<workspace>/sapience/pending-deliveries.json` | Queue the `sapience-delivery` cron drains — overflow and failed injections |
+| `<workspace>/sapience/pending-deliveries.json` | Queue the `sapience-delivery` cron drains — overflow and failed injections. `sapience-poll-delivery` reads it every 15 minutes and starts that cron only when it isn't empty |
 | `<workspace>/sapience/delivered-ledger.json` | Content hashes of recent deliveries, so the same finding isn't repeated |
 | `<workspace>/sapience/skill-proposals.json` | Skill-proposal ledger — status and evidence counts |
 | `<workspace>/skill-proposals.md` | The human-readable skill specs (append-only) |
@@ -276,7 +278,7 @@ Large logs rotate automatically at 5 MB (see [docs/observability.md](docs/observ
 ## More documentation
 
 - [docs/configuration.md](docs/configuration.md) — complete config reference for all four plugins
-- [docs/cron-setup.md](docs/cron-setup.md) — the four cron jobs and how to register them manually
+- [docs/cron-setup.md](docs/cron-setup.md) — the five cron jobs, supported OpenClaw versions, and how to register them manually
 - [docs/troubleshooting.md](docs/troubleshooting.md) — `openclaw sapience doctor` and common failure modes
 - [docs/observability.md](docs/observability.md) — the dashboard and event log
 - [docs/memory-configuration.md](docs/memory-configuration.md) — how corrections persist via OpenClaw memory

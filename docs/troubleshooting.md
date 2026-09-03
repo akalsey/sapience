@@ -13,8 +13,9 @@ openclaw sapience doctor --probe  # trigger one real thinking pass and verify it
 
 What it checks:
 
+- **HOST** — the OpenClaw version the suite is running against, read from `openclaw --version`. The suite supports **2026.7.1 and newer**; below that it's an error with what the host is missing. On 2026.8.1 and later it also notes that the host runs a strict silence contract (see below), and flags any suite job still carrying a live announce route.
 - **PLUGINS** — all four plugins installed and initialized. Each plugin writes a status artifact at init (under `~/.openclaw/sapience/status/`) recording its version, agent, resolved workspace dir, and output paths; a missing or stale artifact means the plugin isn't loading. For sapience-feedback it also reports `captureMode` — `command-only` means passive capture is degraded and only `/feedback` works.
-- **CRONS** — the four jobs exist, are enabled, aren't erroring, don't pin a disallowed model, and grant their tools via `payload.toolsAllow` (see below).
+- **CRONS** — the five jobs exist, aren't erroring, don't pin a disallowed model, carry a declaration key, and grant their tools via `payload.toolsAllow` (see below). `sapience-delivery` is expected to be **disabled** — `sapience-poll-delivery` starts it on demand — so the doctor reports that as healthy and warns if it goes back to running on a schedule. It also reports superseded `-pass` jobs from an older install (auto-fixable: it deletes them), duplicate copies of a live job, prompts containing the literal `SILENT_REPLY_TOKEN`, and non-suite jobs whose stored tool policy carries suite tool names.
 - **PATHS** — the resolved workspace dir, whether each output file exists, and — critically — whether pipeline files are **fresh**. A green cron with a stale `log.md`/`proposals.jsonl`/`events.jsonl` (older than 24h) is flagged as an error: the cron runs but the tool handlers never execute. Files that are simply cold-start absent say which activity creates them (`action-log.md` needs a first act-tier execution, `goals.json` a first `goal_submit`, `skill-proposals.json` a first `skill_proposal`) rather than reading as breakage. Quarantined `.corrupt-*` files are reported here too. This section also carries the **delivery target** check (below).
 - **MEMORY** — memory-wiki installed, plus the four settings the suite needs (`memory-core` dreaming, wiki bridge mode, bridge enabled, search corpus `all`).
 - **TOOLS** — whether OpenClaw core's `create_goal` / `get_goal` / `update_goal` are reachable in agent sessions while sapience-goals is installed. Those track a per-thread token budget that expires with the session — unrelated to `goal_submit` despite the names — and an agent asked for a goal that survives sessions will sometimes reach for `create_goal`, losing the objective silently. Auto-fixable: the doctor adds them to `tools.deny` (merged with whatever is already denied). Only shown when sapience-goals is installed, and only when the tools are actually reachable — the `minimal` and `messaging` profiles exclude them already.
@@ -68,7 +69,45 @@ Set it by hand with `openclaw config set plugins.entries.<id>.config.delivery.se
 
 ---
 
+## The assistant messages you every 15 minutes with nothing to say
+
+If your chat is receiving this, verbatim, several times an hour:
+
+> The tool run finished, but no final summary was produced. I did not repeat any completed actions.
+
+that is OpenClaw's text, not the suite's. From 2026.8.1, when a model completes a tool call but ends its turn without writing any assistant text, the runner substitutes that sentence — and a cron job with an `announce` delivery route delivers whatever text a run ends with. The suite's delivery job used to run every 15 minutes on a queue that is empty the great majority of the time, so most of its runs were tool-call-then-nothing.
+
+**A better model will not fix this, and neither will rewording the prompt.** Both were tested on the install where this was found: moving the delivery job from `gemini-2.5-flash` to `gemini-2.5-pro` still recorded the placeholder. The substitution happens exactly when the model produces no text, so there is nothing for a sharper instruction to sharpen. Silence has to come from the job configuration.
+
+Two things fix it, and both ship in the current version:
+
+1. **Upgrade the suite and re-run `install.sh`.** The delivery job no longer runs on a schedule. `sapience-poll-delivery` reads the queue in plugin code and starts the delivery turn only when something is queued, so the runs that produced the placeholder stop happening.
+2. **Pin a delivery target** — `SAPIENCE_DELIVERY_CHANNEL` / `SAPIENCE_DELIVERY_TO`. The job is then registered with no announce route at all and sends through the `message` tool, so a run that ends without text delivers nothing rather than the placeholder. See [cron-setup](cron-setup.md#pinning-a-delivery-target-recommended).
+
+Then check for leftovers. An install that upgraded across the rename from the older `-pass` job names is running **both** generations: the old jobs carry an announce route and a prompt asking for the literal string `SILENT_REPLY_TOKEN` — the *name* of OpenClaw's constant rather than its value `NO_REPLY` — so they can never complete silently and announce on every run.
+
+```bash
+openclaw cron list --all --json | grep -i pass   # sapience-thinking-pass, sapience-routing-pass, …
+openclaw sapience doctor --fix                   # offers to delete them
+```
+
+`openclaw sapience doctor` reports all of this under CRONS. `--fix` deletes the superseded jobs; it does not re-register the current ones with a pinned target, because only you know the target — re-run `install.sh` with the env vars for that.
+
+Note that `delivery.bestEffort` does **not** help here. It suppresses inherited execution-failure alerts, not delivered content.
+
+### Why an unpinned install still has some exposure
+
+The underlying behavior is a host one, and it is not configurable away on a job that keeps `--announce`. The runner marks an announce job's run as requiring visible terminal text (`terminalReplyExpectation: "required"`, derived from `requested: resolvedMode === "announce"` in `src/cron/delivery-plan.ts`), and synthesizes text when the turn produced none.
+
+The poll job removes the great majority of the exposure by not starting those turns at all. Pinning a target removes the rest, because `--no-deliver` sets `requested: false` and the expectation drops to `"optional"`. If you cannot pin a target, expect the occasional placeholder on the runs that do fire, and know that it means "the model said nothing", not "something failed".
+
+OpenClaw has been moving on this. The specific constant that produced the sentence quoted above, `SETTLED_TOOL_FINALIZATION_FALLBACK_TEXT`, is already gone from later 2026.8.1 builds, and a `completed-empty` run is treated as silent there — but only where a visible terminal reply is not required, which still excludes announce jobs. Upgrading the host is worth doing and is not on its own a fix.
+
 ## Other common problems
+
+**The gateway says a sapience plugin "requires OpenClaw >= …" and skips it**
+
+The suite's manifests declare `openclaw.install.minHostVersion: ">=2026.7.1"`, and OpenClaw skips a plugin whose floor the host doesn't meet, with a warning at load. Upgrade OpenClaw, or install a suite version that supported your host. `openclaw sapience doctor` reports the same thing under HOST — though note that if the plugins were skipped, the `openclaw sapience` command itself won't exist, which is its own symptom.
 
 **Plugins installed but tools don't exist / old behavior persists**
 
@@ -76,7 +115,15 @@ The gateway loads plugins at startup. After `openclaw plugins install` or an upd
 
 **Crons erroring with an `agents.defaults.models` allowlist message**
 
-The job pins a `--model` the gateway doesn't permit; preflight rejects every run. Delete and re-register without `--model`.
+The job pins a `--model` the gateway doesn't permit; preflight rejects every run. Re-register without `--model`, or add the model to `agents.defaults.models`.
+
+**Crons erroring with `cron job agent is unavailable: default`**
+
+A job stored the literal string `"default"` as its agent id, which is valid only on installs that happen to have an agent by that name. Generated audit jobs did this before 0.6.1. Delete the job and let the current build re-create it — it omits `--agent` so the scheduler resolves the configured default itself.
+
+**Thinking passes failing with `MALFORMED_FUNCTION_CALL`**
+
+The model emitted source code where a tool call belonged, e.g. `print(default_api.record_thinking_output(...))`. This is a small-model failure, not a suite bug — these jobs need reliable structured tool calling. Pin a better model on that job specifically rather than changing your agent default; see [cron-setup](cron-setup.md#models).
 
 **Nothing arrives in my session**
 
@@ -87,7 +134,15 @@ Most deliveries are next-turn injections — they appear when you next take a tu
 - `delivery_failed` — the injection was declined (`reason` says why); the item falls back to the same pending queue.
 - `item_suppressed` — the same finding was already delivered inside `delivery.dedupeWindowHours` (default 72h), so it was dropped rather than repeated.
 
-If `delivery_failed` and `item_queued` are piling up but nothing reaches your chat, the `sapience-delivery` cron is the thing to check: it must exist, grant `get_pending_deliveries`, and be registered with `--announce` (plus `--channel`/`--to` when announce can't resolve a target). If deliveries are being *accepted* but you never see them, you're probably reading a different session than the one they land in — see the `delivery:target` section above.
+If `delivery_failed` and `item_queued` are piling up but nothing reaches your chat, check the delivery pair. `sapience-poll-delivery` must exist and be **enabled** — it is what starts the delivery turn, so with it disabled the queue never drains. `sapience-delivery` must exist, grant `get_pending_deliveries`, and have a route: either `--announce`, or `--channel`/`--to` plus the `message` tool when you've pinned a target. Run the poll payload by hand to see what it decides:
+
+```bash
+openclaw sapience deliver-check   # prints NO_REPLY either way
+```
+
+Then look for `delivery_gate_triggered` or `delivery_gate_blocked` in `events.jsonl` — the command records its outcome there rather than on stdout or stderr, because a command job delivers whatever it prints.
+
+If deliveries are being *accepted* but you never see them, you're probably reading a different session than the one they land in — see the `delivery:target` section above.
 
 **One proposal keeps arriving over and over**
 

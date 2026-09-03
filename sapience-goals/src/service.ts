@@ -1,5 +1,7 @@
 // src/service.ts
 import { definePluginEntry } from "openclaw/plugin-sdk/plugin-entry";
+import { readRuntime } from "./safe-runtime.js";
+import { resolveAgentId } from "./resolve-agent.js";
 import { DEFAULT_CONFIG, type GoalsConfig, type Goal, type GoalStatus } from "./types.js";
 import { resolveDataPath, generateId, nextWeeklyDate } from "./utils.js";
 import { validateActiveHours, isWithinActiveHours } from "./active-hours.js";
@@ -53,27 +55,34 @@ export default definePluginEntry({
   description: "Persistent fuzzy goal tracking with weekly status delivery",
 
   register(api: any) {
-    let workspaceDir: string;
-    try {
-      workspaceDir = (api.runtime.agent.resolveAgentWorkspaceDir as (cfg: unknown) => string)(api.pluginConfig);
-    } catch (err) {
-      // In CLI-collection context the runtime is empty and this bail is
-      // expected — stay silent. In a REAL gateway runtime a failure here is
-      // exactly the silent death that left a plugin "vunknown" for 9 days;
-      // record it so the doctor can say why.
-      if (api?.runtime?.agent) {
+    // Reading api.runtime THROWS during "cli-metadata" registration, where the
+    // host walks plugins only to learn their root CLI commands. readRuntime
+    // contains that, and — critically — the failure path below never touches
+    // api.runtime again. The previous version asked `if (api?.runtime?.agent)`
+    // here to tell a real fault from the expected CLI bail; that second read
+    // threw straight out of register(), so the gateway failed the whole plugin
+    // and took `openclaw sapience doctor` down with it.
+    const resolved = readRuntime<string>(api, (runtime) =>
+      (runtime.agent.resolveAgentWorkspaceDir as (cfg: unknown) => string)(api.pluginConfig));
+    if (resolved.value === undefined) {
+      // `available` separates the two cases without a second read: a runtime
+      // that existed but failed to resolve a workspace is the silent death that
+      // once left a plugin "vunknown" for nine days, so record it. An absent or
+      // unavailable runtime is the CLI bail — stay quiet.
+      if (resolved.available) {
         void writeStatusArtifact({
           pluginId: "sapience-goals",
           version: resolvePluginVersion(),
           agentId: "unknown",
           resolvedWorkspaceDir: "",
           outputPaths: {},
-          initError: String(err),
+          initError: String(resolved.error),
           initAt: new Date().toISOString(),
         }).catch(() => {});
       }
       return;
     }
+    const workspaceDir: string = resolved.value;
     const config = mergeConfig(api.pluginConfig as Record<string, unknown>, workspaceDir);
 
     // Invalid activeHours used to disable the plugin silently (NaN comparisons)
@@ -91,7 +100,7 @@ export default definePluginEntry({
     const touchArtifact = () => writeStatusArtifact({
       pluginId: "sapience-goals",
       version: resolvePluginVersion(),
-      agentId: ((api.config as Record<string, unknown>)?.agent as Record<string, unknown>)?.id as string ?? "default",
+      agentId: resolveAgentId(api.config),
       resolvedWorkspaceDir: workspaceDir,
       outputPaths: {
         goalsPath: config.output.goalsPath,

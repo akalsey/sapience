@@ -1,11 +1,13 @@
 import { stat } from "fs/promises";
 import { execFile } from "child_process";
 import { promisify } from "util";
-import { gatherInputs, parseCronListJson } from "./sources.js";
+import { gatherInputs, parseCronListJson, resolveCronJobIds } from "./sources.js";
 import { buildSuiteDoctorReport } from "./report.js";
 import { renderReport, renderJson } from "./render.js";
 import { planFixes, applyFixes, patchConfigForAppliedFixes, type FixEffectors } from "./fix.js";
-import { SUITE_CRONS } from "./inventory.js";
+import { cronRegisterArgs, deliveryPollRegisterArgs, type DeliveryTarget } from "./cron-args.js";
+import { DELIVERY_POLL_CRON_BASE } from "./inventory.js";
+import { makeDeliveryGateEffects, runDeliverCheckCommand } from "../delivery-gate-cli.js";
 import { runThinkingProbe, type ProbeEffects } from "./probe.js";
 import { readStatusArtifacts } from "../status-artifact.js";
 import { validateActiveHours, isWithinActiveHours } from "../active-hours.js";
@@ -63,34 +65,70 @@ function thinkingWithinHours(config: any): boolean {
   return isWithinActiveHours(hours);
 }
 
-// Registration args mirror install.sh so --fix registers identical jobs. No
-// --model: crons inherit the agent default (a pinned model outside the allowlist
-// fails preflight — the very thing the doctor reports). --tools grants the
-// plugin tools to the isolated session; without it the profile filters them out
-// and every run completes "ok" without the tool ever executing.
-export function cronRegisterArgs(base: string, agentId: string): string[] {
-  const spec = SUITE_CRONS.find((c) => c.base === base);
-  if (!spec) throw new Error(`no registration template for cron ${base}`);
-  return [
-    "cron", "add",
-    "--name", spec.base,
-    "--cron", "*/15 * * * *",
-    "--session", "isolated",
-    "--agent", agentId,
-    spec.announce ? "--announce" : "--no-deliver",
-    "--tools", spec.tools.join(","),
-    "--message", spec.message,
-    "--timeout-seconds", "120",
-  ];
+// Registration args live in cron-args.ts and mirror install.sh so --fix
+// registers identical jobs. The suite never sets --model: it has no basis for
+// an opinion about a user's model preferences.
+export { cronRegisterArgs, deliveryPollRegisterArgs } from "./cron-args.js";
+
+// The same env contract install.sh uses. On installs where DMs are scoped to
+// per-peer sessions, announce's "last active channel" resolution never finds a
+// route from the machine-only main session, so the operator pins one — and a
+// pinned target is also what lets the delivery job drop its announce route and
+// fail silently instead of announcing the host's empty-turn placeholder.
+export function deliveryTargetFromEnv(env: NodeJS.ProcessEnv): DeliveryTarget | undefined {
+  const to = env.SAPIENCE_DELIVERY_TO?.trim();
+  if (!to) return undefined;
+  return { channel: env.SAPIENCE_DELIVERY_CHANNEL?.trim() || "telegram", to };
 }
 
-function makeEffectors(agentId: string): FixEffectors {
+// An absolute path to the openclaw binary. The Gateway runs command payloads
+// through `sh -lc`, which on Debian/Ubuntu is dash and does not read the shell
+// profile that puts an npm-global bin directory on PATH — so a bare "openclaw"
+// exits 127. `command -v` in the doctor's own shell is the best answer;
+// node + this process's entry script is the guaranteed fallback, since it is
+// literally how this process was started.
+async function resolveOpenclawBin(): Promise<string> {
+  try {
+    const { stdout } = await exec("sh", ["-c", "command -v openclaw"]);
+    const resolved = stdout.trim();
+    if (resolved.startsWith("/")) return resolved;
+  } catch { /* fall through */ }
+  const entry = process.argv[1];
+  return entry ? `${process.execPath} ${entry}` : "openclaw";
+}
+
+function makeEffectors(agentId: string | undefined, env: NodeJS.ProcessEnv): FixEffectors {
+  const opts = { ...(agentId ? { agentId } : {}), ...(deliveryTargetFromEnv(env) ? { deliveryTarget: deliveryTargetFromEnv(env)! } : {}) };
   return {
     async setConfig(path, value) {
       await exec("openclaw", ["config", "set", path, JSON.stringify(value), "--strict-json"]);
     },
-    async registerCron(base) {
-      await exec("openclaw", cronRegisterArgs(base, agentId));
+    async registerCron(base, registerOpts) {
+      // An explicitly configured SAPIENCE_DELIVERY_TO wins; otherwise reuse the
+      // route the job being replaced already had. Falling through to neither
+      // means announce/last, which is the configuration that announces the
+      // host's empty-turn placeholder.
+      const target = opts.deliveryTarget ?? registerOpts?.deliveryTarget;
+      const withTarget = target ? { ...opts, deliveryTarget: target } : opts;
+      if (base === DELIVERY_POLL_CRON_BASE) {
+        await exec("openclaw", deliveryPollRegisterArgs({ ...opts, openclawBin: await resolveOpenclawBin() }));
+        return;
+      }
+      await exec("openclaw", cronRegisterArgs(base, withTarget));
+    },
+    async deleteCron(name) {
+      // `cron rm` takes an id positionally — there is no --name option on it,
+      // and the gateway rejects a non-id with "id not found". Resolve the name
+      // to every job carrying it (names are not unique, and duplicates are the
+      // thing being cleaned up), then delete each by id.
+      const { stdout } = await exec("openclaw", ["cron", "list", "--all", "--json"]);
+      const ids = resolveCronJobIds(parseCronListJson(stdout), name);
+      if (ids.length === 0) {
+        throw new Error(`no cron job named ${name} to delete`);
+      }
+      for (const id of ids) {
+        await exec("openclaw", ["cron", "rm", id]);
+      }
     },
     async updatePlugin(pluginId) {
       await exec("openclaw", ["plugins", "update", pluginId]);
@@ -106,6 +144,19 @@ export function registerSapienceDoctorCli(api: any): void {
       // Create a "sapience" group and nest doctor under it — mirrors how
       // memory-wiki builds `wiki doctor`. Top-level "doctor" collides with openclaw's own.
       const group = program.command("sapience").description("Sapience suite diagnostics");
+
+      // Run by the sapience-poll-delivery cron every 15 minutes. It reads the
+      // pending-delivery queue and starts the delivery agent turn only when
+      // there is something to send — see delivery-gate.ts for why that check
+      // moved out of the agent turn. Always prints exactly NO_REPLY and exits 0.
+      group
+        .command("deliver-check")
+        .description("Start the delivery agent turn only if deliveries are queued (used by the sapience-poll-delivery cron)")
+        .action(async () => {
+          const eventsPath = (await readStatusArtifacts(process.env))["sapience"]?.outputPaths?.eventsPath;
+          await runDeliverCheckCommand(makeDeliveryGateEffects(eventsPath));
+        });
+
       const cmd = group.command("doctor").description("Diagnose the sapience suite (crons, paths, memory config)");
       cmd.option("--fix", "apply the safe, auto-fixable findings (memory config, missing crons)");
       cmd.option("--only <id>", "with --fix, apply only the finding with this id (e.g. tools:goal-collision)");
@@ -131,8 +182,12 @@ export function registerSapienceDoctorCli(api: any): void {
           if (actions.length === 0) {
             console.log("Nothing to auto-fix.");
           } else {
-            const agentId = api?.runtime?.cron?.getDefaultAgentId?.() ?? "main";
-            const done = await applyFixes(actions, makeEffectors(agentId));
+            // Undefined rather than a guessed literal: with --agent omitted the
+            // scheduler resolves the configured default itself, which is always
+            // right. Registering with a name the install does not have produces
+            // a job that fails every run with "cron job agent is unavailable".
+            const agentId: string | undefined = api?.runtime?.cron?.getDefaultAgentId?.();
+            const done = await applyFixes(actions, makeEffectors(agentId, process.env));
             console.log("Applied fixes:");
             for (const d of done) console.log(`  • ${d}`);
             if (actions.some((a) => a.kind === "plugin-update")) {
